@@ -161,6 +161,18 @@ function ageE2ELoginSession(userKey, secondsAgo) {
     });
 }
 
+function resetE2ETestHub(payload = {}) {
+    return runE2EFixtureAction('reset_test_hub', payload);
+}
+
+function seedE2ETestHubJob(payload = {}) {
+    return runE2EFixtureAction('seed_test_hub_job', payload).job;
+}
+
+function getE2ETestHubJobs() {
+    return runE2EFixtureAction('test_hub_jobs', {}).jobs;
+}
+
 module.exports = {
     ageE2ELoginSession,
     clearE2ESecurityLogs,
@@ -171,14 +183,17 @@ module.exports = {
     getE2EFixture,
     getE2EGlobalTokenMeta,
     getE2EMustWatchAttempts,
+    getE2ETestHubJobs,
     getLatestE2EAttempt,
     getRecentE2ESecurityLogs,
     invalidateE2EAdminSideCache,
     invalidateE2ENonAttemptCache,
     resetE2EFixture,
     saveE2ERemoteState,
+    seedE2ETestHubJob,
     setE2EGlobalToken,
     setE2ESecurityConfig,
+    resetE2ETestHub,
     shiftLatestE2EAttemptStart,
     syncE2ESubjectBankQuestionsToFixture,
     updateE2EExamFixture,

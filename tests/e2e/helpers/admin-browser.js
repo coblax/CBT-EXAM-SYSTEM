@@ -106,6 +106,14 @@ async function openSetupSecurityNativePage(page) {
     await expect(page.locator('#cbt-setup-panel-native')).toBeVisible({ timeout: 20000 });
 }
 
+async function openTestHubPage(page, tab = 'sync_rest', scope = 'smoke_tests') {
+    const safeTab = encodeURIComponent(String(tab || 'sync_rest'));
+    const safeScope = encodeURIComponent(String(scope || 'smoke_tests'));
+    await page.goto(e2eUrl(`wp-admin/admin.php?page=cbt-test-hub&cbt_unit_test_tab=${safeTab}&cbt_checklist_scope=${safeScope}`), { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('.cbt-test-hub-page')).toBeVisible({ timeout: 20000 });
+    await expect(page.locator(`[data-unit-test-panel="${String(tab || 'sync_rest')}"]`)).toBeVisible({ timeout: 20000 });
+}
+
 async function openQuestionsImportPage(page) {
     await page.goto(e2eUrl('wp-admin/admin.php?page=cbt-question-bank'));
     const importTab = page.locator('[data-cbt-questions-tab="import"]').first();
@@ -626,6 +634,7 @@ module.exports = {
     openResultsPage,
     openSetupSecurityLogPage,
     openSetupSecurityNativePage,
+    openTestHubPage,
     prepareManualQuestion,
     insertEquationIntoTfMatrixStatement,
     insertEquationIntoWpEditor,

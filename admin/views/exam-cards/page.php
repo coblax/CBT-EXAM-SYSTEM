@@ -396,6 +396,87 @@
                 color: #9a3412;
                 line-height: 1.6;
             }
+            .cbt-exam-cards-local-progress {
+                display: none;
+                margin: 0 0 18px;
+                padding: 16px 18px;
+                border: 1px solid #bfdbfe;
+                border-radius: 18px;
+                background: linear-gradient(180deg, rgba(239, 246, 255, 0.92) 0%, rgba(255, 255, 255, 0.92) 100%);
+                box-shadow: 0 12px 24px rgba(37, 99, 235, 0.1);
+            }
+            .cbt-exam-cards-local-progress.is-active,
+            .cbt-exam-cards-local-progress.is-complete,
+            .cbt-exam-cards-local-progress.is-error {
+                display: block;
+            }
+            .cbt-exam-cards-local-progress.is-error {
+                border-color: #fecaca;
+                background: linear-gradient(180deg, #fff1f2 0%, #ffffff 100%);
+            }
+            .cbt-exam-cards-progress-head {
+                display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 14px;
+                margin-bottom: 12px;
+            }
+            .cbt-exam-cards-progress-title {
+                display: grid;
+                gap: 3px;
+                color: #1e3a5f;
+                line-height: 1.35;
+            }
+            .cbt-exam-cards-progress-title strong {
+                font-size: 14px;
+            }
+            .cbt-exam-cards-progress-title span,
+            .cbt-exam-cards-progress-step {
+                color: #64748b;
+                font-size: 12px;
+            }
+            .cbt-exam-cards-progress-percent {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 54px;
+                min-height: 30px;
+                padding: 0 10px;
+                border-radius: 999px;
+                background: #dbeafe;
+                color: #1d4ed8;
+                font-size: 12px;
+                font-weight: 800;
+            }
+            .cbt-exam-cards-local-progress.is-error .cbt-exam-cards-progress-percent {
+                background: #fee2e2;
+                color: #b91c1c;
+            }
+            .cbt-exam-cards-progress-track {
+                position: relative;
+                overflow: hidden;
+                height: 10px;
+                border-radius: 999px;
+                background: #dbeafe;
+            }
+            .cbt-exam-cards-progress-fill {
+                display: block;
+                width: 0%;
+                height: 100%;
+                border-radius: inherit;
+                background: linear-gradient(90deg, #2563eb 0%, #0ea5e9 58%, #22c55e 100%);
+                transition: width 220ms ease;
+            }
+            .cbt-exam-cards-local-progress.is-error .cbt-exam-cards-progress-fill {
+                background: linear-gradient(90deg, #ef4444 0%, #f97316 100%);
+            }
+            .cbt-exam-cards-progress-step {
+                margin: 10px 0 0;
+                line-height: 1.55;
+            }
+            .cbt-exam-cards-page.is-local-busy .cbt-exam-cards-panel {
+                box-shadow: 0 18px 34px rgba(37, 99, 235, 0.12);
+            }
             .cbt-exam-cards-form-actions {
                 display: flex;
                 align-items: center;
@@ -512,7 +593,7 @@
                 }
             }
         </style>
-        <div class="wrap cbt-exam-cards-page">
+        <div class="wrap cbt-exam-cards-page" data-cbt-exam-cards-root>
             <div class="cbt-exam-cards-shell">
                 <section class="cbt-exam-cards-hero">
                     <div class="cbt-exam-cards-hero-copy">
@@ -520,7 +601,7 @@
                         <h1>CBT Exam Cards</h1>
                         <p>Generate kartu peserta ujian berdasarkan filter siswa dengan output siap cetak untuk PDF A4. Operator bisa pilih filter lalu atur informasi apa saja yang mau ikut tercetak di kartu.</p>
                     </div>
-                    <div class="cbt-exam-cards-overview" aria-hidden="true">
+                    <div class="cbt-exam-cards-overview" aria-hidden="true" data-cbt-exam-cards-refresh-area="overview">
                         <span class="cbt-exam-cards-pill"><?php echo esc_html(sprintf('%d kelas tersedia', count($kelas_options))); ?></span>
                         <span class="cbt-exam-cards-pill"><?php echo esc_html(sprintf('%d ruang tersedia', count($ruang_options))); ?></span>
                         <span class="cbt-exam-cards-pill"><?php echo esc_html(sprintf('%d filter aktif', $active_filter_count)); ?></span>
@@ -537,14 +618,16 @@
                         <span class="cbt-exam-cards-chip">PDF A4 • 6 kartu / halaman</span>
                     </div>
 
+                    <div data-cbt-exam-cards-refresh-area="notices">
             <?php if ($notice): ?>
                         <div class="notice notice-success is-dismissible"><p><?php echo esc_html($notice); ?></p></div>
             <?php endif; ?>
             <?php if ($error): ?>
                         <div class="notice notice-error is-dismissible"><p><?php echo esc_html($error); ?></p></div>
             <?php endif; ?>
+                    </div>
 
-                    <div class="cbt-exam-cards-summary" aria-hidden="true">
+                    <div class="cbt-exam-cards-summary" aria-hidden="true" data-cbt-exam-cards-refresh-area="summary">
                         <span class="cbt-exam-cards-summary-label">Ringkasan:</span>
                         <span id="cbt-card-mode-summary" class="cbt-exam-cards-summary-item"><?php echo esc_html('Mode: ' . $selected_print_mode_label); ?></span>
                         <span class="cbt-exam-cards-summary-item"><?php echo esc_html('Kelas: ' . ($selected_kelas !== '' ? $selected_kelas : 'Semua kelas')); ?></span>
@@ -553,7 +636,21 @@
                         <span class="cbt-exam-cards-summary-item"><?php echo esc_html(sprintf('Info kartu: %d item', $display_field_count)); ?></span>
                     </div>
 
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                    <div class="cbt-exam-cards-local-progress" data-cbt-exam-cards-progress role="status" aria-live="polite" aria-hidden="true">
+                        <div class="cbt-exam-cards-progress-head">
+                            <div class="cbt-exam-cards-progress-title">
+                                <strong data-cbt-exam-cards-progress-title>Siap memproses kartu ujian</strong>
+                                <span>Progress berjalan di area ini tanpa reload halaman global.</span>
+                            </div>
+                            <span class="cbt-exam-cards-progress-percent" data-cbt-exam-cards-progress-percent>0%</span>
+                        </div>
+                        <div class="cbt-exam-cards-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-cbt-exam-cards-progress-track>
+                            <span class="cbt-exam-cards-progress-fill" data-cbt-exam-cards-progress-fill></span>
+                        </div>
+                        <p class="cbt-exam-cards-progress-step" data-cbt-exam-cards-progress-step>Atur filter lalu generate kartu.</p>
+                    </div>
+
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" data-cbt-exam-cards-refresh-area="form" data-cbt-exam-cards-print-form>
                         <?php wp_nonce_field('cbt_print_exam_cards'); ?>
                         <input type="hidden" name="action" value="cbt_print_exam_cards" />
                         <input type="hidden" name="cbt_card_fields_configured" value="1" />
@@ -678,7 +775,7 @@
                             <button id="cbt-card-submit-button" class="button button-primary" type="submit">
                                 <?php echo esc_html($is_desk_number_mode ? 'Generate & Print Nomor Meja' : 'Generate & Print Kartu'); ?>
                             </button>
-                            <a href="<?php echo esc_url($reset_url); ?>" class="button button-secondary">Reset Filter</a>
+                            <a href="<?php echo esc_url($reset_url); ?>" class="button button-secondary" data-cbt-exam-cards-async-link data-cbt-exam-cards-progress-profile="reset" data-cbt-exam-cards-refresh-areas="overview,notices,summary,form">Reset Filter</a>
                         </div>
                     </form>
                 </section>
@@ -701,85 +798,407 @@
         </div>
         <script>
             (function () {
-                const modeInput = document.getElementById('cbt-card-print-mode');
-                const fieldsRow = document.getElementById('cbt-card-fields-row');
-                const seatSettings = document.getElementById('cbt-card-seat-settings');
-                const seatSettingsNote = document.getElementById('cbt-card-seat-settings-note');
-                const participantNote = document.getElementById('cbt-card-participant-note');
-                const deskNote = document.getElementById('cbt-card-desk-note');
-                const modeTitle = document.getElementById('cbt-card-mode-title');
-                const modeCopy = document.getElementById('cbt-card-mode-copy');
-                const modePill = document.getElementById('cbt-card-mode-pill');
-                const modeSummary = document.getElementById('cbt-card-mode-summary');
-                const submitButton = document.getElementById('cbt-card-submit-button');
-                const fieldInputs = fieldsRow ? fieldsRow.querySelectorAll('input[type="checkbox"]') : [];
-                const modeTabs = document.querySelectorAll('[data-print-mode-tab]');
                 const modeDescriptions = <?php echo wp_json_encode($print_mode_options); ?>;
+                const progressProfiles = {
+                    generate: {
+                        title: 'Generate kartu sedang berjalan',
+                        steps: [
+                            'Memvalidasi mode cetak, filter kelas, ruang, dan pencarian siswa.',
+                            'Membuka tab cetak agar halaman admin tetap di tempat.',
+                            'Menyiapkan data peserta, password kosong, dan jadwal publish.',
+                            'Membangun layout print A4. Tab cetak akan siap sebentar lagi.'
+                        ],
+                        wait: 'Menunggu halaman print selesai dimuat di tab baru.'
+                    },
+                    reset: {
+                        title: 'Mereset filter Exam Cards',
+                        steps: [
+                            'Mengambil ulang konfigurasi awal dari server.',
+                            'Memperbarui ringkasan, filter, dan form di area ini.',
+                            'Menyambungkan ulang kontrol mode cetak tanpa reload global.'
+                        ],
+                        wait: 'Menunggu respons halaman Exam Cards.'
+                    }
+                };
+                let progressTimer = null;
+                let progressValue = 0;
 
-                if (!modeInput) {
-                    return;
+                function getRoot() {
+                    return document.querySelector('[data-cbt-exam-cards-root]');
                 }
 
-                const syncPrintMode = function () {
-                    const activeMode = modeInput.value === 'desk_number' ? 'desk_number' : 'participant';
-                    const isDeskMode = activeMode === 'desk_number';
-                    const activeModeDescription = modeDescriptions[activeMode] || {};
+                function getProgressParts() {
+                    const root = getRoot();
+                    const progress = root ? root.querySelector('[data-cbt-exam-cards-progress]') : null;
 
-                    if (fieldsRow) {
-                        fieldsRow.classList.toggle('cbt-exam-cards-row-hidden', isDeskMode);
-                    }
-                    if (seatSettings) {
-                        seatSettings.classList.toggle('cbt-exam-cards-row-hidden', !isDeskMode);
-                    }
-                    if (seatSettingsNote) {
-                        seatSettingsNote.classList.toggle('cbt-exam-cards-row-hidden', !isDeskMode);
-                    }
-                    if (participantNote) {
-                        participantNote.classList.toggle('cbt-exam-cards-row-hidden', isDeskMode);
-                    }
-                    if (deskNote) {
-                        deskNote.classList.toggle('cbt-exam-cards-row-hidden', !isDeskMode);
-                    }
+                    return {
+                        root: root,
+                        progress: progress,
+                        title: progress ? progress.querySelector('[data-cbt-exam-cards-progress-title]') : null,
+                        step: progress ? progress.querySelector('[data-cbt-exam-cards-progress-step]') : null,
+                        percent: progress ? progress.querySelector('[data-cbt-exam-cards-progress-percent]') : null,
+                        fill: progress ? progress.querySelector('[data-cbt-exam-cards-progress-fill]') : null,
+                        track: progress ? progress.querySelector('[data-cbt-exam-cards-progress-track]') : null
+                    };
+                }
 
-                    fieldInputs.forEach(function (input) {
-                        input.disabled = isDeskMode;
-                    });
+                function setExamCardsProgress(percent, stepText, state) {
+                    const parts = getProgressParts();
+                    const safePercent = Math.max(0, Math.min(100, Math.round(percent)));
+                    progressValue = safePercent;
 
-                    if (modeTitle) {
-                        modeTitle.textContent = activeModeDescription.label || activeMode;
-                    }
-                    if (modeCopy) {
-                        modeCopy.textContent = activeModeDescription.description || '';
-                    }
-                    if (modePill) {
-                        modePill.textContent = 'Mode: ' + (activeModeDescription.label || activeMode);
-                    }
-                    if (modeSummary) {
-                        modeSummary.textContent = 'Mode: ' + (activeModeDescription.label || activeMode);
-                    }
-                    if (submitButton) {
-                        submitButton.textContent = isDeskMode ? 'Generate & Print Nomor Meja' : 'Generate & Print Kartu';
+                    if (!parts.progress) {
+                        return;
                     }
 
-                    modeTabs.forEach(function (tab) {
-                        const isActive = tab.getAttribute('data-print-mode-tab') === activeMode;
-                        tab.classList.toggle('is-active', isActive);
-                        tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
-                    });
-                };
+                    parts.progress.classList.toggle('is-active', state === 'active');
+                    parts.progress.classList.toggle('is-complete', state === 'complete');
+                    parts.progress.classList.toggle('is-error', state === 'error');
+                    parts.progress.setAttribute('aria-hidden', 'false');
+                    if (parts.root) {
+                        parts.root.classList.toggle('is-local-busy', state === 'active');
+                    }
+                    if (parts.percent) {
+                        parts.percent.textContent = safePercent + '%';
+                    }
+                    if (parts.fill) {
+                        parts.fill.style.width = safePercent + '%';
+                    }
+                    if (parts.track) {
+                        parts.track.setAttribute('aria-valuenow', String(safePercent));
+                    }
+                    if (parts.step && stepText) {
+                        parts.step.textContent = stepText;
+                    }
+                }
 
-                modeTabs.forEach(function (tab) {
-                    tab.addEventListener('click', function () {
-                        const nextMode = tab.getAttribute('data-print-mode-tab');
-                        if (!nextMode) {
+                function startExamCardsProgress(profileKey) {
+                    const profile = progressProfiles[profileKey] || progressProfiles.generate;
+                    const parts = getProgressParts();
+                    const steps = profile.steps || [];
+                    let stepIndex = 0;
+
+                    window.clearInterval(progressTimer);
+                    progressValue = 8;
+                    if (parts.title) {
+                        parts.title.textContent = profile.title || 'Memproses Exam Cards';
+                    }
+                    setExamCardsProgress(progressValue, steps[0] || profile.wait || 'Memproses area Exam Cards.', 'active');
+
+                    progressTimer = window.setInterval(function () {
+                        const ceiling = profileKey === 'generate' ? 92 : 88;
+                        if (progressValue >= ceiling) {
+                            setExamCardsProgress(progressValue, profile.wait || steps[steps.length - 1] || 'Menunggu server selesai.', 'active');
                             return;
                         }
-                        modeInput.value = nextMode;
-                        syncPrintMode();
-                    });
-                });
 
-                syncPrintMode();
+                        progressValue += progressValue < 45 ? 9 : 5;
+                        stepIndex = Math.min(steps.length - 1, Math.floor((progressValue / 100) * Math.max(1, steps.length)));
+                        setExamCardsProgress(Math.min(progressValue, ceiling), steps[stepIndex] || profile.wait || 'Memproses area Exam Cards.', 'active');
+                    }, 420);
+                }
+
+                function completeExamCardsProgress(titleText, stepText, state) {
+                    const parts = getProgressParts();
+                    window.clearInterval(progressTimer);
+                    progressTimer = null;
+                    if (parts.title && titleText) {
+                        parts.title.textContent = titleText;
+                    }
+                    setExamCardsProgress(state === 'error' ? Math.max(progressValue, 100) : 100, stepText, state || 'complete');
+                    if (parts.root) {
+                        parts.root.classList.remove('is-local-busy');
+                    }
+                }
+
+                function showExamCardsLocalError(titleText, detailText) {
+                    completeExamCardsProgress(titleText, detailText, 'error');
+                }
+
+                function replaceExamCardsRefreshAreas(html, areas) {
+                    const parser = new DOMParser();
+                    const parsed = parser.parseFromString(html, 'text/html');
+                    const currentRoot = getRoot();
+                    const nextRoot = parsed.querySelector('[data-cbt-exam-cards-root]');
+                    let replaced = 0;
+
+                    if (!currentRoot || !nextRoot) {
+                        return 0;
+                    }
+
+                    areas.forEach(function (area) {
+                        const selector = '[data-cbt-exam-cards-refresh-area="' + area + '"]';
+                        const currentNode = currentRoot.querySelector(selector);
+                        const nextNode = nextRoot.querySelector(selector);
+
+                        if (!currentNode || !nextNode) {
+                            return;
+                        }
+
+                        currentNode.replaceWith(nextNode.cloneNode(true));
+                        replaced += 1;
+                    });
+
+                    return replaced;
+                }
+
+                async function runExamCardsLocalRefresh(source, requestUrl, options) {
+                    const config = options || {};
+                    const areas = config.areas || ['overview', 'notices', 'summary', 'form'];
+
+                    startExamCardsProgress(config.profile || 'reset');
+                    source.setAttribute('aria-busy', 'true');
+                    source.classList.add('is-loading');
+
+                    try {
+                        const response = await window.fetch(requestUrl.toString(), {
+                            credentials: 'same-origin',
+                            headers: {
+                                'X-Requested-With': 'XMLHttpRequest'
+                            }
+                        });
+                        const responseText = await response.text();
+
+                        if (!response.ok) {
+                            throw new Error('HTTP ' + response.status + ': ' + responseText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 180));
+                        }
+
+                        const replaced = replaceExamCardsRefreshAreas(responseText, areas);
+                        if (replaced === 0) {
+                            throw new Error('Respons server tidak berisi area Exam Cards yang bisa diganti.');
+                        }
+
+                        bindExamCardsUi();
+                        completeExamCardsProgress('Area Exam Cards sudah diperbarui', 'Filter, ringkasan, dan form berhasil disegarkan tanpa reload halaman global.', 'complete');
+                    } catch (error) {
+                        const message = error && error.message ? error.message : 'Koneksi gagal saat memperbarui area Exam Cards.';
+                        showExamCardsLocalError('Gagal memperbarui area Exam Cards', message);
+                    } finally {
+                        source.removeAttribute('aria-busy');
+                        source.classList.remove('is-loading');
+                    }
+                }
+
+                function validatePrintForm(form) {
+                    const modeInput = form.querySelector('#cbt-card-print-mode');
+                    const activeMode = modeInput && modeInput.value === 'desk_number' ? 'desk_number' : 'participant';
+
+                    if (activeMode !== 'participant') {
+                        return true;
+                    }
+
+                    if (form.querySelector('input[name="cbt_card_fields[]"]:checked')) {
+                        return true;
+                    }
+
+                    showExamCardsLocalError(
+                        'Kartu belum bisa digenerate',
+                        'Pilih minimal satu informasi kartu sebelum generate kartu peserta.'
+                    );
+                    return false;
+                }
+
+                function watchPrintWindow(printWindow, submitButton) {
+                    const startedAt = Date.now();
+                    const timeoutMs = 45000;
+                    let settled = false;
+
+                    const finish = function (title, message, state) {
+                        if (settled) {
+                            return;
+                        }
+                        settled = true;
+                        window.clearInterval(timer);
+                        if (submitButton) {
+                            submitButton.disabled = false;
+                        }
+                        completeExamCardsProgress(title, message, state);
+                    };
+
+                    const timer = window.setInterval(function () {
+                        if (!printWindow || printWindow.closed) {
+                            finish('Tab cetak ditutup', 'Generate dihentikan karena tab print ditutup sebelum halaman selesai dimuat.', 'error');
+                            return;
+                        }
+
+                        try {
+                            const href = String(printWindow.location.href || '');
+                            const readyState = printWindow.document ? printWindow.document.readyState : '';
+                            if (href && href !== 'about:blank' && readyState === 'complete') {
+                                finish('Halaman print siap', 'Tab cetak sudah terbuka. Gunakan tombol print atau simpan PDF dari tab tersebut.', 'complete');
+                                return;
+                            }
+                        } catch (error) {
+                            finish('Tab cetak sudah dibuka', 'Browser membatasi pengecekan tab baru, tetapi halaman admin tetap tidak direload.', 'complete');
+                            return;
+                        }
+
+                        if (Date.now() - startedAt > timeoutMs) {
+                            finish('Menunggu tab cetak', 'Jika tab cetak sudah terbuka, proses bisa dilanjutkan dari tab tersebut. Halaman admin tetap aman.', 'complete');
+                        }
+                    }, 500);
+                }
+
+                function bindPrintForm(form) {
+                    if (!form || form.dataset.cbtExamCardsPrintBound === '1') {
+                        return;
+                    }
+
+                    form.dataset.cbtExamCardsPrintBound = '1';
+                    form.addEventListener('submit', function (event) {
+                        if (!validatePrintForm(form)) {
+                            event.preventDefault();
+                            return;
+                        }
+
+                        const submitButton = form.querySelector('#cbt-card-submit-button');
+                        const targetName = 'cbt_exam_cards_print_' + Date.now();
+                        const printWindow = window.open('about:blank', targetName);
+
+                        if (!printWindow) {
+                            event.preventDefault();
+                            showExamCardsLocalError(
+                                'Tab cetak diblokir browser',
+                                'Izinkan pop-up untuk halaman admin ini, lalu klik Generate lagi agar halaman admin tidak berpindah.'
+                            );
+                            return;
+                        }
+
+                        form.setAttribute('target', targetName);
+                        startExamCardsProgress('generate');
+                        if (submitButton) {
+                            submitButton.disabled = true;
+                        }
+                        watchPrintWindow(printWindow, submitButton);
+                    });
+                }
+
+                function bindResetLinks(root) {
+                    root.querySelectorAll('[data-cbt-exam-cards-async-link]').forEach(function (link) {
+                        if (link.dataset.cbtExamCardsAsyncBound === '1') {
+                            return;
+                        }
+
+                        link.dataset.cbtExamCardsAsyncBound = '1';
+                        link.addEventListener('click', function (event) {
+                            const href = link.getAttribute('href');
+                            if (!href) {
+                                return;
+                            }
+
+                            event.preventDefault();
+                            const areas = (link.getAttribute('data-cbt-exam-cards-refresh-areas') || 'overview,notices,summary,form')
+                                .split(',')
+                                .map(function (area) {
+                                    return area.trim();
+                                })
+                                .filter(Boolean);
+                            runExamCardsLocalRefresh(
+                                link,
+                                new URL(href, document.baseURI),
+                                {
+                                    areas: areas,
+                                    profile: link.getAttribute('data-cbt-exam-cards-progress-profile') || 'reset'
+                                }
+                            );
+                        });
+                    });
+                }
+
+                function bindExamCardsUi() {
+                    const root = getRoot();
+                    if (!root) {
+                        return;
+                    }
+
+                    const modeInput = root.querySelector('#cbt-card-print-mode');
+                    const fieldsRow = root.querySelector('#cbt-card-fields-row');
+                    const seatSettings = root.querySelector('#cbt-card-seat-settings');
+                    const seatSettingsNote = root.querySelector('#cbt-card-seat-settings-note');
+                    const participantNote = root.querySelector('#cbt-card-participant-note');
+                    const deskNote = root.querySelector('#cbt-card-desk-note');
+                    const modeTitle = root.querySelector('#cbt-card-mode-title');
+                    const modeCopy = root.querySelector('#cbt-card-mode-copy');
+                    const modePill = root.querySelector('#cbt-card-mode-pill');
+                    const modeSummary = root.querySelector('#cbt-card-mode-summary');
+                    const submitButton = root.querySelector('#cbt-card-submit-button');
+                    const fieldInputs = fieldsRow ? fieldsRow.querySelectorAll('input[type="checkbox"]') : [];
+                    const modeTabs = root.querySelectorAll('[data-print-mode-tab]');
+                    const form = root.querySelector('[data-cbt-exam-cards-print-form]');
+
+                    if (!modeInput) {
+                        return;
+                    }
+
+                    const syncPrintMode = function () {
+                        const activeMode = modeInput.value === 'desk_number' ? 'desk_number' : 'participant';
+                        const isDeskMode = activeMode === 'desk_number';
+                        const activeModeDescription = modeDescriptions[activeMode] || {};
+
+                        if (fieldsRow) {
+                            fieldsRow.classList.toggle('cbt-exam-cards-row-hidden', isDeskMode);
+                        }
+                        if (seatSettings) {
+                            seatSettings.classList.toggle('cbt-exam-cards-row-hidden', !isDeskMode);
+                        }
+                        if (seatSettingsNote) {
+                            seatSettingsNote.classList.toggle('cbt-exam-cards-row-hidden', !isDeskMode);
+                        }
+                        if (participantNote) {
+                            participantNote.classList.toggle('cbt-exam-cards-row-hidden', isDeskMode);
+                        }
+                        if (deskNote) {
+                            deskNote.classList.toggle('cbt-exam-cards-row-hidden', !isDeskMode);
+                        }
+
+                        fieldInputs.forEach(function (input) {
+                            input.disabled = isDeskMode;
+                        });
+
+                        if (modeTitle) {
+                            modeTitle.textContent = activeModeDescription.label || activeMode;
+                        }
+                        if (modeCopy) {
+                            modeCopy.textContent = activeModeDescription.description || '';
+                        }
+                        if (modePill) {
+                            modePill.textContent = 'Mode: ' + (activeModeDescription.label || activeMode);
+                        }
+                        if (modeSummary) {
+                            modeSummary.textContent = 'Mode: ' + (activeModeDescription.label || activeMode);
+                        }
+                        if (submitButton) {
+                            submitButton.textContent = isDeskMode ? 'Generate & Print Nomor Meja' : 'Generate & Print Kartu';
+                        }
+
+                        modeTabs.forEach(function (tab) {
+                            const isActive = tab.getAttribute('data-print-mode-tab') === activeMode;
+                            tab.classList.toggle('is-active', isActive);
+                            tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+                        });
+                    };
+
+                    modeTabs.forEach(function (tab) {
+                        if (tab.dataset.cbtExamCardsModeBound === '1') {
+                            return;
+                        }
+                        tab.dataset.cbtExamCardsModeBound = '1';
+                        tab.addEventListener('click', function () {
+                            const nextMode = tab.getAttribute('data-print-mode-tab');
+                            if (!nextMode) {
+                                return;
+                            }
+                            modeInput.value = nextMode;
+                            syncPrintMode();
+                        });
+                    });
+
+                    bindPrintForm(form);
+                    bindResetLinks(root);
+                    syncPrintMode();
+                }
+
+                bindExamCardsUi();
             })();
         </script>
         <?php

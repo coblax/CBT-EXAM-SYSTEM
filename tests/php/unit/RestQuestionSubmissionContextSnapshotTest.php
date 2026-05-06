@@ -45,6 +45,56 @@ final class RestQuestionSubmissionContextSnapshotTest extends TestCase
     }
 
     #[RunInSeparateProcess]
+    public function test_submit_answers_batch_internal_accepts_object_map_answers_for_new_question_types(): void
+    {
+        $this->bootstrapRestScaffold();
+        $this->setSubmissionContextRedisUnavailable();
+        $this->setRuntimeRedisUnavailable();
+
+        global $wpdb;
+        $wpdb = new RestQuestionSubmissionContextFakeWpdb();
+
+        $method = new ReflectionMethod('CBT_REST', 'submit_answers_batch_internal');
+        $method->setAccessible(true);
+
+        $result = $method->invoke(
+            null,
+            178,
+            [
+                ['question_id' => 601, 'answer' => ['1' => 6101, '2' => 6103]],
+                ['question_id' => 602, 'answer' => ['1' => 62011, '2' => 62021]],
+                ['question_id' => 603, 'answer' => ['1' => 6301, '2' => 6301, '3' => 6301]],
+                ['question_id' => 604, 'answer' => ['A1' => '  Tokyo.  ', 'B1' => 64021]],
+            ],
+            7,
+            'siswa'
+        );
+
+        self::assertIsArray($result);
+        self::assertSame(4, $result['accepted_count']);
+        self::assertSame(0, $result['runtime_used']);
+        self::assertSame([601, 602, 603, 604], array_map(static fn(array $item): int => (int) ($item['question_id'] ?? 0), $result['items']));
+
+        $itemsByQuestionId = [];
+        foreach ((array) $result['items'] as $item) {
+            $itemsByQuestionId[(int) ($item['question_id'] ?? 0)] = $item;
+        }
+
+        self::assertSame(0, $itemsByQuestionId[601]['is_correct']);
+        self::assertSame(2.0, $itemsByQuestionId[601]['score_awarded']);
+        self::assertSame(0, $itemsByQuestionId[602]['is_correct']);
+        self::assertSame(3.0, $itemsByQuestionId[602]['score_awarded']);
+        self::assertSame(0, $itemsByQuestionId[603]['is_correct']);
+        self::assertSame(4.0, $itemsByQuestionId[603]['score_awarded']);
+        self::assertSame(0, $itemsByQuestionId[604]['is_correct']);
+        self::assertSame(4.0, $itemsByQuestionId[604]['score_awarded']);
+        self::assertSame(1, $wpdb->attemptGetRowCalls);
+        self::assertSame(1, $wpdb->contextQuestionHydrateCalls);
+        self::assertSame(1, $wpdb->contextOptionHydrateCalls);
+        self::assertSame(1, $wpdb->answerPersistQueryCalls);
+    }
+
+    #[RunInSeparateProcess]
     public function test_submit_answers_batch_internal_lets_buffer_entries_ensure_runtime_state_once(): void
     {
         $this->bootstrapRestScaffold();
@@ -108,6 +158,64 @@ final class RestQuestionSubmissionContextSnapshotTest extends TestCase
         self::assertSame(1, $wpdb->contextQuestionHydrateCalls);
         self::assertSame(1, $wpdb->contextOptionHydrateCalls);
         self::assertSame(0, $wpdb->detailGetRowCalls);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_result_payload_includes_object_map_review_rows_for_new_question_types(): void
+    {
+        $this->bootstrapRestScaffold();
+        $this->setSubmissionContextRedisUnavailable();
+
+        global $wpdb;
+        $wpdb = new RestQuestionSubmissionContextFakeWpdb();
+
+        $method = new ReflectionMethod('CBT_REST', 'build_result_payload');
+        $method->setAccessible(true);
+
+        $payload = $method->invoke(null, [
+            'id' => 188,
+            'exam_id' => 177,
+            'student_id' => 7,
+            'status' => 'completed',
+            'started_at' => '2026-04-02 08:00:00',
+            'finished_at' => '2026-04-02 08:30:00',
+            'score' => 13.0,
+            'max_score' => 24.0,
+            'question_order' => '[601,602,603,604]',
+            'option_order' => '',
+        ]);
+
+        self::assertIsArray($payload);
+        self::assertSame(13.0, $payload['attempt']['score']);
+        self::assertSame(24.0, $payload['attempt']['max_score']);
+        self::assertSame(54.17, $payload['percentage']);
+        self::assertSame(4, $payload['review_summary']['wrong_questions'] ?? -1);
+        self::assertCount(4, $payload['review_items']);
+
+        $items = [];
+        foreach ((array) $payload['review_items'] as $item) {
+            $items[(string) ($item['question_type'] ?? '')] = (array) $item;
+        }
+
+        self::assertSame('wrong', $items['matching']['status'] ?? '');
+        self::assertSame(2.0, $items['matching']['score_awarded'] ?? -1);
+        self::assertSame('Tokyo', $items['matching']['matching_rows'][0]['submitted_text'] ?? '');
+        self::assertSame('Seoul', $items['matching']['matching_rows'][1]['correct_text'] ?? '');
+
+        self::assertSame('wrong', $items['cloze_dropdown']['status'] ?? '');
+        self::assertSame(3.0, $items['cloze_dropdown']['score_awarded'] ?? -1);
+        self::assertSame('Jepang', $items['cloze_dropdown']['cloze_dropdown_rows'][0]['submitted_text'] ?? '');
+        self::assertSame('Tokyo', $items['cloze_dropdown']['cloze_dropdown_rows'][1]['correct_text'] ?? '');
+
+        self::assertSame('wrong', $items['categorization']['status'] ?? '');
+        self::assertSame(4.0, $items['categorization']['score_awarded'] ?? -1);
+        self::assertSame('Mamalia', $items['categorization']['categorization_rows'][0]['submitted_text'] ?? '');
+        self::assertSame('Reptil', $items['categorization']['categorization_rows'][1]['correct_text'] ?? '');
+
+        self::assertSame('wrong', $items['table_completion']['status'] ?? '');
+        self::assertSame(4.0, $items['table_completion']['score_awarded'] ?? -1);
+        self::assertSame('Tokyo', $items['table_completion']['table_completion_rows'][0]['submitted_text'] ?? '');
+        self::assertSame('Jepang', $items['table_completion']['table_completion_rows'][1]['correct_text'] ?? '');
     }
 
     #[RunInSeparateProcess]
@@ -647,9 +755,27 @@ final class RestQuestionSubmissionContextFakeWpdb
                     'extra_time_minutes' => 0,
                 ];
             }
+            if ($attemptId === 178) {
+                return [
+                    'id' => 178,
+                    'exam_id' => 177,
+                    'student_id' => 7,
+                    'status' => 'in_progress',
+                    'started_at' => '2026-04-02 08:00:00',
+                    'extra_time_minutes' => 0,
+                ];
+            }
         }
 
         if (strpos($query, 'SELECT id, randomize_questions') !== false && strpos($query, 'FROM wp_cbt_exams') !== false) {
+            $examId = isset($args[0]) ? (int) $args[0] : 0;
+            if ($examId === 177) {
+                return [
+                    'id' => 177,
+                    'randomize_questions' => 0,
+                ];
+            }
+
             return [
                 'id' => 77,
                 'randomize_questions' => 0,
@@ -658,7 +784,39 @@ final class RestQuestionSubmissionContextFakeWpdb
 
         if (strpos($query, 'FROM wp_cbt_question_') !== false) {
             $this->detailGetRowCalls++;
+            $questionId = isset($args[0]) ? (int) $args[0] : 0;
+            if ($questionId >= 601 && $questionId <= 604) {
+                if (strpos($query, 'wp_cbt_question_matching') !== false) {
+                    return ['question_id' => 601, 'scoring_mode' => 'partial', 'shuffle_choices' => 1];
+                }
+                if (strpos($query, 'wp_cbt_question_cloze_dropdown') !== false) {
+                    return ['question_id' => 602, 'scoring_mode' => 'partial'];
+                }
+                if (strpos($query, 'wp_cbt_question_categorization') !== false) {
+                    return ['question_id' => 603, 'scoring_mode' => 'partial', 'shuffle_items' => 1];
+                }
+                if (strpos($query, 'wp_cbt_question_table_completion') !== false) {
+                    return ['question_id' => 604, 'scoring_mode' => 'partial', 'row_count' => 1, 'column_count' => 2];
+                }
+            }
+
             return null;
+        }
+
+        if (strpos($query, 'SELECT e.id, e.title') !== false && strpos($query, 'FROM wp_cbt_exams') !== false) {
+            $examId = isset($args[0]) ? (int) $args[0] : 0;
+            if ($examId === 177) {
+                return [
+                    'id' => 177,
+                    'title' => 'Object Map Result Fixture',
+                    'duration_minutes' => 60,
+                    'kkm_percentage' => 75,
+                    'show_student_result' => 1,
+                    'subject_id' => 1,
+                    'subject_name' => 'QA',
+                    'subject_code' => 'QA',
+                ];
+            }
         }
 
         return null;
@@ -710,6 +868,42 @@ final class RestQuestionSubmissionContextFakeWpdb
                     'true_false_correct_value' => null,
                     'short_answer_correct_text' => 'Jakarta',
                 ],
+                601 => [
+                    'id' => 601,
+                    'exam_id' => 177,
+                    'question_type' => 'matching',
+                    'points' => 4,
+                    'correct_text' => '',
+                    'true_false_correct_value' => null,
+                    'short_answer_correct_text' => null,
+                ],
+                602 => [
+                    'id' => 602,
+                    'exam_id' => 177,
+                    'question_type' => 'cloze_dropdown',
+                    'points' => 6,
+                    'correct_text' => '',
+                    'true_false_correct_value' => null,
+                    'short_answer_correct_text' => null,
+                ],
+                603 => [
+                    'id' => 603,
+                    'exam_id' => 177,
+                    'question_type' => 'categorization',
+                    'points' => 6,
+                    'correct_text' => '',
+                    'true_false_correct_value' => null,
+                    'short_answer_correct_text' => null,
+                ],
+                604 => [
+                    'id' => 604,
+                    'exam_id' => 177,
+                    'question_type' => 'table_completion',
+                    'points' => 8,
+                    'correct_text' => '',
+                    'true_false_correct_value' => null,
+                    'short_answer_correct_text' => null,
+                ],
             ];
 
             $results = [];
@@ -725,6 +919,46 @@ final class RestQuestionSubmissionContextFakeWpdb
         if (strpos($query, 'SELECT id, question_text, question_type, points, correct_text, explanation') !== false) {
             $examId = isset($args[0]) ? (int) $args[0] : 0;
             if ($examId !== 77) {
+                if ($examId === 177) {
+                    return [
+                        [
+                            'id' => 601,
+                            'question_text' => '<p>Pasangkan kota dan negara.</p>',
+                            'question_type' => 'matching',
+                            'points' => 4,
+                            'correct_text' => '',
+                            'explanation' => '',
+                            'is_active' => 1,
+                        ],
+                        [
+                            'id' => 602,
+                            'question_text' => '<p>[DROPDOWN_1] adalah negara. [DROPDOWN_2] adalah kota.</p>',
+                            'question_type' => 'cloze_dropdown',
+                            'points' => 6,
+                            'correct_text' => '',
+                            'explanation' => '',
+                            'is_active' => 1,
+                        ],
+                        [
+                            'id' => 603,
+                            'question_text' => '<p>Kategorikan hewan.</p>',
+                            'question_type' => 'categorization',
+                            'points' => 6,
+                            'correct_text' => '',
+                            'explanation' => '',
+                            'is_active' => 1,
+                        ],
+                        [
+                            'id' => 604,
+                            'question_text' => '<p>Lengkapi tabel.</p>',
+                            'question_type' => 'table_completion',
+                            'points' => 8,
+                            'correct_text' => '',
+                            'explanation' => '',
+                            'is_active' => 1,
+                        ],
+                    ];
+                }
                 return [];
             }
 
@@ -762,6 +996,114 @@ final class RestQuestionSubmissionContextFakeWpdb
             return $rows;
         }
 
+        if (strpos($query, 'FROM wp_cbt_question_matching_items') !== false) {
+            return [
+                [
+                    'id' => 1,
+                    'question_id' => 601,
+                    'item_key' => '1',
+                    'item_position' => 1,
+                    'prompt_text' => '<p>Jepang</p>',
+                    'correct_option_id' => 6101,
+                    'correct_option_text' => 'Tokyo',
+                    'correct_option_key' => 'A',
+                ],
+                [
+                    'id' => 2,
+                    'question_id' => 601,
+                    'item_key' => '2',
+                    'item_position' => 2,
+                    'prompt_text' => '<p>Korea Selatan</p>',
+                    'correct_option_id' => 6102,
+                    'correct_option_text' => 'Seoul',
+                    'correct_option_key' => 'B',
+                ],
+            ];
+        }
+
+        if (strpos($query, 'FROM wp_cbt_question_cloze_dropdown_blanks') !== false) {
+            return [
+                ['id' => 6201, 'question_id' => 602, 'blank_key' => '1', 'blank_position' => 1],
+                ['id' => 6202, 'question_id' => 602, 'blank_key' => '2', 'blank_position' => 2],
+            ];
+        }
+
+        if (strpos($query, 'FROM wp_cbt_question_cloze_dropdown_options') !== false) {
+            return [
+                ['id' => 62011, 'question_id' => 602, 'blank_id' => 6201, 'option_key' => 'A', 'option_text' => 'Jepang', 'is_correct' => 1, 'option_order' => 1],
+                ['id' => 62012, 'question_id' => 602, 'blank_id' => 6201, 'option_key' => 'B', 'option_text' => 'Tokyo', 'is_correct' => 0, 'option_order' => 2],
+                ['id' => 62021, 'question_id' => 602, 'blank_id' => 6202, 'option_key' => 'A', 'option_text' => 'Seoul', 'is_correct' => 0, 'option_order' => 1],
+                ['id' => 62022, 'question_id' => 602, 'blank_id' => 6202, 'option_key' => 'B', 'option_text' => 'Tokyo', 'is_correct' => 1, 'option_order' => 2],
+            ];
+        }
+
+        if (strpos($query, 'FROM wp_cbt_question_categorization_items') !== false) {
+            return [
+                [
+                    'id' => 1,
+                    'question_id' => 603,
+                    'item_key' => '1',
+                    'item_position' => 1,
+                    'item_text' => '<strong>Kucing</strong>',
+                    'correct_option_id' => 6301,
+                    'correct_option_text' => 'Mamalia',
+                    'correct_option_key' => 'A',
+                ],
+                [
+                    'id' => 2,
+                    'question_id' => 603,
+                    'item_key' => '2',
+                    'item_position' => 2,
+                    'item_text' => '<strong>Ular</strong>',
+                    'correct_option_id' => 6302,
+                    'correct_option_text' => 'Reptil',
+                    'correct_option_key' => 'B',
+                ],
+                [
+                    'id' => 3,
+                    'question_id' => 603,
+                    'item_key' => '3',
+                    'item_position' => 3,
+                    'item_text' => '<strong>Paus</strong>',
+                    'correct_option_id' => 6301,
+                    'correct_option_text' => 'Mamalia',
+                    'correct_option_key' => 'A',
+                ],
+            ];
+        }
+
+        if (strpos($query, 'FROM wp_cbt_question_table_completion_cells') !== false) {
+            return [
+                [
+                    'id' => 6401,
+                    'question_id' => 604,
+                    'cell_key' => 'A1',
+                    'row_position' => 1,
+                    'column_position' => 1,
+                    'cell_type' => 'text',
+                    'cell_text' => 'Ibu kota Jepang',
+                    'correct_text' => 'Tokyo',
+                ],
+                [
+                    'id' => 6402,
+                    'question_id' => 604,
+                    'cell_key' => 'B1',
+                    'row_position' => 1,
+                    'column_position' => 2,
+                    'cell_type' => 'dropdown',
+                    'cell_text' => 'Negara',
+                    'correct_text' => '',
+                ],
+            ];
+        }
+
+        if (strpos($query, 'FROM wp_cbt_question_table_completion_cell_options') !== false) {
+            return [
+                ['id' => 64021, 'question_id' => 604, 'cell_id' => 6402, 'option_key' => 'A', 'option_text' => 'Korea', 'is_correct' => 0, 'option_order' => 1],
+                ['id' => 64022, 'question_id' => 604, 'cell_id' => 6402, 'option_key' => 'B', 'option_text' => 'Jepang', 'is_correct' => 1, 'option_order' => 2],
+            ];
+        }
+
         if (strpos($query, 'SELECT id, question_id, option_text, is_correct') !== false) {
             $this->contextOptionHydrateCalls++;
             $ids = $this->extractIdsFromInClause($query);
@@ -777,6 +1119,39 @@ final class RestQuestionSubmissionContextFakeWpdb
 
         if (strpos($query, 'FROM wp_cbt_answers') !== false) {
             $attemptId = isset($args[0]) ? (int) $args[0] : 0;
+            if ($attemptId === 188) {
+                return [
+                    [
+                        'question_id' => 601,
+                        'selected_option_ids' => '',
+                        'answer_text' => '{"1":6101,"2":6103}',
+                        'is_correct' => 0,
+                        'score_awarded' => 0,
+                    ],
+                    [
+                        'question_id' => 602,
+                        'selected_option_ids' => '',
+                        'answer_text' => '{"1":62011,"2":62021}',
+                        'is_correct' => 0,
+                        'score_awarded' => 0,
+                    ],
+                    [
+                        'question_id' => 603,
+                        'selected_option_ids' => '',
+                        'answer_text' => '{"1":6301,"2":6301,"3":6301}',
+                        'is_correct' => 0,
+                        'score_awarded' => 0,
+                    ],
+                    [
+                        'question_id' => 604,
+                        'selected_option_ids' => '',
+                        'answer_text' => '{"A1":"Tokyo","B1":64021}',
+                        'is_correct' => 0,
+                        'score_awarded' => 0,
+                    ],
+                ];
+            }
+
             if ($attemptId !== 88) {
                 return [];
             }
@@ -844,6 +1219,15 @@ final class RestQuestionSubmissionContextFakeWpdb
                 ['id' => 9201, 'question_id' => 301, 'option_text' => 'Benar', 'is_correct' => 1],
                 ['id' => 9202, 'question_id' => 301, 'option_text' => 'Salah', 'is_correct' => 0],
             ],
+            601 => [
+                ['id' => 6101, 'question_id' => 601, 'option_text' => 'Tokyo', 'is_correct' => 0],
+                ['id' => 6102, 'question_id' => 601, 'option_text' => 'Seoul', 'is_correct' => 0],
+                ['id' => 6103, 'question_id' => 601, 'option_text' => 'Busan', 'is_correct' => 0],
+            ],
+            603 => [
+                ['id' => 6301, 'question_id' => 603, 'option_text' => 'Mamalia', 'is_correct' => 0],
+                ['id' => 6302, 'question_id' => 603, 'option_text' => 'Reptil', 'is_correct' => 0],
+            ],
         ];
     }
 
@@ -856,6 +1240,15 @@ final class RestQuestionSubmissionContextFakeWpdb
             301 => [
                 ['id' => 9201, 'question_id' => 301, 'option_key' => 'A', 'option_text' => 'Benar', 'is_correct' => 1],
                 ['id' => 9202, 'question_id' => 301, 'option_key' => 'B', 'option_text' => 'Salah', 'is_correct' => 0],
+            ],
+            601 => [
+                ['id' => 6101, 'question_id' => 601, 'option_key' => 'A', 'option_text' => 'Tokyo', 'is_correct' => 0],
+                ['id' => 6102, 'question_id' => 601, 'option_key' => 'B', 'option_text' => 'Seoul', 'is_correct' => 0],
+                ['id' => 6103, 'question_id' => 601, 'option_key' => 'C', 'option_text' => 'Busan', 'is_correct' => 0],
+            ],
+            603 => [
+                ['id' => 6301, 'question_id' => 603, 'option_key' => 'A', 'option_text' => 'Mamalia', 'is_correct' => 0],
+                ['id' => 6302, 'question_id' => 603, 'option_key' => 'B', 'option_text' => 'Reptil', 'is_correct' => 0],
             ],
         ];
     }

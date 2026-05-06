@@ -218,6 +218,91 @@
                 opacity: 0.72;
                 transition: opacity 0.18s ease;
             }
+            .cbt-users-progress {
+                display: none;
+                gap: 10px;
+                padding: 14px 16px;
+                border: 1px solid #bfdbfe;
+                border-radius: 18px;
+                background: linear-gradient(135deg, rgba(239, 246, 255, 0.97), rgba(240, 253, 250, 0.92));
+                box-shadow: 0 14px 30px rgba(37, 99, 235, 0.12);
+            }
+            .cbt-users-progress.is-active {
+                display: grid;
+            }
+            .cbt-users-progress.is-error {
+                border-color: #fecaca;
+                background: linear-gradient(135deg, rgba(254, 242, 242, 0.98), rgba(255, 247, 237, 0.94));
+                box-shadow: 0 14px 30px rgba(239, 68, 68, 0.10);
+            }
+            .cbt-users-progress-head {
+                display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 14px;
+                flex-wrap: wrap;
+            }
+            .cbt-users-progress-title {
+                display: grid;
+                gap: 3px;
+                min-width: 0;
+            }
+            .cbt-users-progress-title strong {
+                color: #0f172a;
+                font-size: 14px;
+                line-height: 1.25;
+            }
+            .cbt-users-progress-title span,
+            .cbt-users-progress-step {
+                color: #52637a;
+                font-size: 13px;
+                line-height: 1.45;
+            }
+            .cbt-users-progress-percent {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 54px;
+                min-height: 30px;
+                padding: 0 10px;
+                border: 1px solid #bfdbfe;
+                border-radius: 999px;
+                background: #ffffff;
+                color: #1d4ed8;
+                font-size: 12px;
+                font-weight: 800;
+                letter-spacing: 0.04em;
+            }
+            .cbt-users-progress.is-error .cbt-users-progress-percent {
+                color: #b91c1c;
+                border-color: #fecaca;
+            }
+            .cbt-users-progress-track {
+                height: 9px;
+                overflow: hidden;
+                border-radius: 999px;
+                background: rgba(148, 163, 184, 0.22);
+            }
+            .cbt-users-progress-fill {
+                display: block;
+                width: var(--cbt-users-progress, 0%);
+                height: 100%;
+                border-radius: inherit;
+                background: linear-gradient(90deg, #2563eb 0%, #06b6d4 54%, #10b981 100%);
+                transition: width 0.24s ease;
+            }
+            .cbt-users-progress.is-error .cbt-users-progress-fill {
+                background: linear-gradient(90deg, #ef4444 0%, #f97316 100%);
+            }
+            .cbt-users-progress-step {
+                margin: 0;
+                font-weight: 600;
+            }
+            .cbt-users-panel .button.is-loading,
+            .cbt-users-row-action.is-loading {
+                pointer-events: none;
+                opacity: 0.78;
+            }
             .cbt-users-panel-header {
                 display: flex;
                 align-items: flex-start;
@@ -1119,7 +1204,7 @@
                 }
             }
         </style>
-        <div class="wrap cbt-users-page" data-cbt-users-default-tab="<?php echo esc_attr($default_user_tab); ?>" data-cbt-users-force-tab="<?php echo $user_tab_is_forced ? '1' : '0'; ?>">
+        <div class="wrap cbt-users-page" data-cbt-users-default-tab="<?php echo esc_attr($default_user_tab); ?>" data-cbt-users-force-tab="<?php echo $user_tab_is_forced ? '1' : '0'; ?>" data-cbt-users-root>
             <div class="cbt-users-shell">
                 <section class="cbt-users-hero">
                     <div class="cbt-users-hero-copy">
@@ -1127,19 +1212,35 @@
                         <h1>CBT Users</h1>
                         <p>Kelola user CBT secara lengkap: buat manual, import massal CSV/XLSX, dan kelola daftar user dengan filter cepat.</p>
                     </div>
-                    <div class="cbt-users-overview" aria-hidden="true">
+                    <div class="cbt-users-overview" data-cbt-users-refresh-area="overview" aria-hidden="true">
                         <span class="cbt-users-pill"><?php echo esc_html(sprintf('Total: %d user', $total_users)); ?></span>
                         <span class="cbt-users-pill"><?php echo esc_html($is_editing_user ? 'Mode edit aktif' : 'Tambah manual siap'); ?></span>
                         <span class="cbt-users-pill"><?php echo esc_html(is_array($import_state) ? 'Import berjalan' : 'Import siap'); ?></span>
                     </div>
                 </section>
 
-                <?php if ($notice): ?>
-                    <div class="notice notice-success is-dismissible"><p><?php echo esc_html($notice); ?></p></div>
-                <?php endif; ?>
-                <?php if ($error): ?>
-                    <div class="notice notice-error is-dismissible"><p><?php echo esc_html($error); ?></p></div>
-                <?php endif; ?>
+                <div class="cbt-users-notices" data-cbt-users-refresh-area="notices">
+                    <?php if ($notice): ?>
+                        <div class="notice notice-success is-dismissible"><p><?php echo esc_html($notice); ?></p></div>
+                    <?php endif; ?>
+                    <?php if ($error): ?>
+                        <div class="notice notice-error is-dismissible"><p><?php echo esc_html($error); ?></p></div>
+                    <?php endif; ?>
+                </div>
+
+                <div class="cbt-users-progress" data-cbt-users-progress role="status" aria-live="polite" aria-hidden="true">
+                    <div class="cbt-users-progress-head">
+                        <div class="cbt-users-progress-title">
+                            <strong data-cbt-users-progress-label>Menunggu aksi CBT Users...</strong>
+                            <span>Progress ini memperbarui panel Users yang terdampak saja, tanpa reload halaman global.</span>
+                        </div>
+                        <span class="cbt-users-progress-percent" data-cbt-users-progress-percent>0%</span>
+                    </div>
+                    <div class="cbt-users-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-cbt-users-progress-track>
+                        <span class="cbt-users-progress-fill" data-cbt-users-progress-fill></span>
+                    </div>
+                    <p class="cbt-users-progress-step" data-cbt-users-progress-step>Siap memproses perubahan user.</p>
+                </div>
 
                 <div class="cbt-users-tabs" role="tablist" aria-label="Navigasi CBT Users">
                     <button type="button" class="cbt-users-tab" data-cbt-users-tab="form" role="tab" aria-selected="false">Form User</button>
@@ -1147,21 +1248,21 @@
                     <button type="button" class="cbt-users-tab" data-cbt-users-tab="list" role="tab" aria-selected="false">Daftar Users</button>
                 </div>
 
-                <section class="cbt-users-panel" data-cbt-users-panel="form" role="tabpanel">
+                <section class="cbt-users-panel" data-cbt-users-panel="form" data-cbt-users-refresh-area="form-panel" role="tabpanel">
                     <div class="cbt-users-panel-header">
                         <div>
                             <h2><?php echo $is_editing_user ? 'Edit User' : 'Tambah User Manual'; ?></h2>
                             <p><?php echo $is_editing_user ? 'Perbarui identitas, role, kelas, ruang, jenis kelamin, dan foto user tanpa pindah ke area daftar.' : 'Buat user baru secara manual untuk kebutuhan cepat tanpa harus upload file import.'; ?></p>
                         </div>
                         <?php if ($is_editing_user): ?>
-                            <a href="<?php echo esc_url($user_clear_edit_url); ?>" class="button button-secondary" data-cbt-users-tab-link="list">Batal Edit</a>
+                            <a href="<?php echo esc_url($user_clear_edit_url); ?>" class="button button-secondary" data-cbt-users-tab-link="list" data-cbt-users-async-link data-cbt-users-progress-profile="save" data-cbt-users-refresh-areas="notices,overview,form-panel,list-panel" data-cbt-users-success-tab="list">Batal Edit</a>
                         <?php else: ?>
                             <span class="cbt-users-chip">Manual</span>
                         <?php endif; ?>
                     </div>
 
                     <?php if ($is_editing_user): ?>
-                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" enctype="multipart/form-data" data-cbt-users-tab-submit="form">
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" enctype="multipart/form-data" data-cbt-users-tab-submit="form" data-cbt-users-async-form data-cbt-users-progress-profile="save" data-cbt-users-refresh-areas="notices,overview,form-panel,list-panel" data-cbt-users-success-tab="list">
                             <?php wp_nonce_field('cbt_update_user_manual'); ?>
                             <input type="hidden" name="action" value="cbt_update_user_manual" />
                             <input type="hidden" name="user_id" value="<?php echo (int) $editing_user->ID; ?>" />
@@ -1280,11 +1381,11 @@
 
                             <div class="cbt-users-form-actions">
                                 <?php echo get_submit_button('Update User', 'primary', 'submit', false); ?>
-                                <a href="<?php echo esc_url($user_clear_edit_url); ?>" class="button button-secondary" data-cbt-users-tab-link="list">Batal Edit</a>
+                                <a href="<?php echo esc_url($user_clear_edit_url); ?>" class="button button-secondary" data-cbt-users-tab-link="list" data-cbt-users-async-link data-cbt-users-progress-profile="save" data-cbt-users-refresh-areas="notices,overview,form-panel,list-panel" data-cbt-users-success-tab="list">Batal Edit</a>
                             </div>
                         </form>
                     <?php else: ?>
-                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" enctype="multipart/form-data" data-cbt-users-tab-submit="form">
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" enctype="multipart/form-data" data-cbt-users-tab-submit="form" data-cbt-users-async-form data-cbt-users-progress-profile="save" data-cbt-users-refresh-areas="notices,overview,form-panel,list-panel" data-cbt-users-success-tab="list">
                             <?php wp_nonce_field('cbt_create_user_manual'); ?>
                             <input type="hidden" name="action" value="cbt_create_user_manual" />
 
@@ -1393,7 +1494,7 @@
                     <?php endif; ?>
                 </section>
 
-                <section class="cbt-users-panel" data-cbt-users-panel="import" role="tabpanel">
+                <section class="cbt-users-panel" data-cbt-users-panel="import" data-cbt-users-refresh-area="import-panel" role="tabpanel">
                     <div class="cbt-users-panel-header">
                         <div>
                             <h2>Import Users</h2>
@@ -1403,7 +1504,15 @@
                     </div>
 
                     <?php if (is_array($import_state)): ?>
-                        <div class="cbt-users-import-progress">
+                        <div
+                            class="cbt-users-import-progress"
+                            data-cbt-users-import-progress
+                            data-cbt-users-import-running="<?php echo $import_is_running ? '1' : '0'; ?>"
+                            data-cbt-users-import-continue-url="<?php echo esc_url($import_continue_url); ?>"
+                            data-cbt-users-progress-profile="import"
+                            data-cbt-users-refresh-areas="notices,overview,import-panel,list-panel"
+                            data-cbt-users-success-tab="import"
+                        >
                             <strong>
                                 Progress Import User:
                                 <?php echo esc_html((string) $import_offset . ' / ' . (string) $import_total); ?>
@@ -1419,11 +1528,6 @@
                                 <br />
                                 <?php if ($import_is_running): ?>
                                     Memproses batch user berikutnya...
-                                    <script>
-                                        window.setTimeout(function () {
-                                            window.location.href = <?php echo wp_json_encode($import_continue_url); ?>;
-                                        }, 350);
-                                    </script>
                                 <?php else: ?>
                                     <span style="color:#0a7a2f; font-weight:600;">Import user selesai diproses.</span>
                                 <?php endif; ?>
@@ -1453,14 +1557,14 @@
                             <?php endif; ?>
                             <div class="cbt-users-form-actions">
                                 <?php if (!empty($import_preview['can_continue'])): ?>
-                                    <form method="post" action="<?php echo esc_url($import_preview_run_url); ?>" style="margin:0;">
+                                    <form method="post" action="<?php echo esc_url($import_preview_run_url); ?>" style="margin:0;" data-cbt-users-async-form data-cbt-users-progress-profile="import" data-cbt-users-refresh-areas="notices,overview,import-panel,list-panel" data-cbt-users-success-tab="import">
                                         <?php wp_nonce_field('cbt_run_previewed_import_users'); ?>
                                         <input type="hidden" name="action" value="cbt_run_previewed_import_users" />
                                         <input type="hidden" name="cbt_import_preview_token" value="<?php echo esc_attr($import_preview_token); ?>" />
                                         <?php echo get_submit_button('Lanjut Import', 'primary', 'submit', false); ?>
                                     </form>
                                 <?php endif; ?>
-                                <a class="button button-secondary" href="<?php echo esc_url($import_preview_clear_url); ?>">Upload Ulang</a>
+                                <a class="button button-secondary" href="<?php echo esc_url($import_preview_clear_url); ?>" data-cbt-users-async-link data-cbt-users-progress-profile="import" data-cbt-users-refresh-areas="notices,overview,import-panel" data-cbt-users-success-tab="import">Upload Ulang</a>
                             </div>
                         </div>
                     <?php endif; ?>
@@ -1474,7 +1578,7 @@
                         </a>
                     </div>
 
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" enctype="multipart/form-data" data-cbt-users-tab-submit="import">
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" enctype="multipart/form-data" data-cbt-users-tab-submit="import" data-cbt-users-async-form data-cbt-users-progress-profile="import" data-cbt-users-refresh-areas="notices,overview,import-panel,list-panel" data-cbt-users-success-tab="import">
                         <?php wp_nonce_field('cbt_preview_import_users'); ?>
                         <input type="hidden" name="action" value="cbt_preview_import_users" />
 
@@ -1565,19 +1669,19 @@
                             <?php endif; ?>
                             <div class="cbt-users-form-actions">
                                 <?php if (!empty($subject_choice_preview['can_continue'])): ?>
-                                    <form method="post" action="<?php echo esc_url($subject_choice_preview_run_url); ?>" style="margin:0;">
+                                    <form method="post" action="<?php echo esc_url($subject_choice_preview_run_url); ?>" style="margin:0;" data-cbt-users-async-form data-cbt-users-progress-profile="subject-choice" data-cbt-users-refresh-areas="notices,overview,import-panel,list-panel" data-cbt-users-success-tab="import">
                                         <?php wp_nonce_field('cbt_run_previewed_student_subject_choices'); ?>
                                         <input type="hidden" name="action" value="cbt_run_previewed_student_subject_choices" />
                                         <input type="hidden" name="cbt_subject_choice_preview_token" value="<?php echo esc_attr($subject_choice_preview_token); ?>" />
                                         <?php echo get_submit_button('Lanjut Import Mapel', 'primary', 'submit', false); ?>
                                     </form>
                                 <?php endif; ?>
-                                <a class="button button-secondary" href="<?php echo esc_url($subject_choice_preview_clear_url); ?>">Upload Ulang</a>
+                                <a class="button button-secondary" href="<?php echo esc_url($subject_choice_preview_clear_url); ?>" data-cbt-users-async-link data-cbt-users-progress-profile="subject-choice" data-cbt-users-refresh-areas="notices,overview,import-panel" data-cbt-users-success-tab="import">Upload Ulang</a>
                             </div>
                         </div>
                     <?php endif; ?>
 
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" enctype="multipart/form-data" data-cbt-users-tab-submit="import" style="margin-top:14px;">
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" enctype="multipart/form-data" data-cbt-users-tab-submit="import" data-cbt-users-async-form data-cbt-users-progress-profile="subject-choice" data-cbt-users-refresh-areas="notices,overview,import-panel,list-panel" data-cbt-users-success-tab="import" style="margin-top:14px;">
                         <?php wp_nonce_field('cbt_preview_import_student_subject_choices'); ?>
                         <input type="hidden" name="action" value="cbt_preview_import_student_subject_choices" />
                         <div class="cbt-users-import-card">
@@ -1603,7 +1707,7 @@
                     </form>
                 </section>
 
-                <section class="cbt-users-panel" data-cbt-users-panel="list" role="tabpanel">
+                <section class="cbt-users-panel" data-cbt-users-panel="list" data-cbt-users-refresh-area="list-panel" role="tabpanel">
                     <div class="cbt-users-panel-header">
                         <div>
                             <h2>Daftar User CBT</h2>
@@ -1613,7 +1717,7 @@
                     </div>
 
                     <div class="cbt-users-list-toolbar">
-                        <form method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>" class="cbt-users-filter-form" data-cbt-users-tab-submit="list">
+                        <form method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>" class="cbt-users-filter-form" data-cbt-users-tab-submit="list" data-cbt-users-progress-profile="list">
                             <input type="hidden" name="page" value="cbt-user-import" />
                             <input type="hidden" name="cbt_user_paged" value="1" />
                             <input type="search" id="cbt-users-filter-search" name="cbt_user_q" value="<?php echo esc_attr($search); ?>" placeholder="Cari username / nama / email" />
@@ -1676,7 +1780,7 @@
                     $diagnostic_username = trim((string) ($diagnostic_student['username'] ?? ''));
                     ?>
 
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" data-cbt-users-tab-submit="list">
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" data-cbt-users-tab-submit="list" data-cbt-users-async-form data-cbt-users-progress-profile="delete" data-cbt-users-refresh-areas="notices,overview,list-panel" data-cbt-users-success-tab="list">
                         <?php wp_nonce_field('cbt_bulk_delete_users'); ?>
                         <input type="hidden" name="action" value="cbt_bulk_delete_users" />
                         <input type="hidden" name="cbt_user_q" value="<?php echo esc_attr($search); ?>" />
@@ -1840,12 +1944,12 @@
                                         </td>
                                         <td>
                                             <div class="cbt-admin-row-actions cbt-users-row-actions">
-                                                <a class="cbt-admin-action cbt-admin-action--edit cbt-users-row-action cbt-users-row-action--edit" href="<?php echo esc_url($edit_url); ?>">Edit</a>
+                                                <a class="cbt-admin-action cbt-admin-action--edit cbt-users-row-action cbt-users-row-action--edit" href="<?php echo esc_url($edit_url); ?>" data-cbt-users-async-link data-cbt-users-progress-profile="save" data-cbt-users-refresh-areas="notices,overview,form-panel,list-panel" data-cbt-users-success-tab="form">Edit</a>
                                                 <?php if ($is_student_role): ?>
-                                                    <a class="cbt-admin-action cbt-admin-action--view cbt-users-row-action cbt-users-row-action--diagnose cbt-users-diagnose-link" href="<?php echo esc_url($diagnose_url); ?>" data-cbt-users-tab-link="list" aria-expanded="<?php echo $is_diagnosed_user ? 'true' : 'false'; ?>">Diagnosa</a>
+                                                <a class="cbt-admin-action cbt-admin-action--view cbt-users-row-action cbt-users-row-action--diagnose cbt-users-diagnose-link" href="<?php echo esc_url($diagnose_url); ?>" data-cbt-users-tab-link="list" data-cbt-users-progress-profile="diagnose" aria-expanded="<?php echo $is_diagnosed_user ? 'true' : 'false'; ?>">Diagnosa</a>
                                                 <?php endif; ?>
                                                 <?php if (!$is_current_user): ?>
-                                                    <a class="cbt-admin-action cbt-admin-action--delete cbt-users-row-action cbt-users-row-action--delete" href="<?php echo esc_url($delete_url); ?>" onclick="return confirm('Hapus user ini?');">Delete</a>
+                                                    <a class="cbt-admin-action cbt-admin-action--delete cbt-users-row-action cbt-users-row-action--delete" href="<?php echo esc_url($delete_url); ?>" data-cbt-users-async-link data-cbt-users-progress-profile="delete" data-cbt-users-refresh-areas="notices,overview,list-panel" data-cbt-users-success-tab="list" onclick="return confirm('Hapus user ini?');">Delete</a>
                                                 <?php endif; ?>
                                             </div>
                                         </td>
@@ -1867,7 +1971,7 @@
                                                                 &middot; <?php echo esc_html((string) ($diagnostic_profile['jenis_kelamin'] ?? '-')); ?>
                                                             </p>
                                                         </div>
-                                                        <a href="<?php echo esc_url($diagnostic_clear_url); ?>" class="button button-secondary cbt-users-diagnostic-close" data-cbt-users-tab-link="list">Tutup Diagnosa</a>
+                                                        <a href="<?php echo esc_url($diagnostic_clear_url); ?>" class="button button-secondary cbt-users-diagnostic-close" data-cbt-users-tab-link="list" data-cbt-users-progress-profile="diagnose">Tutup Diagnosa</a>
                                                     </div>
                                                     <div class="cbt-users-diagnostic-summary">
                                                         <span class="cbt-users-diagnostic-pill">Total exam: <?php echo (int) ($diagnostic_summary['total'] ?? 0); ?></span>
@@ -1950,14 +2054,36 @@
         </div>
         <script>
             (function () {
-                const page = document.querySelector('.cbt-users-page');
+                const page = document.querySelector('[data-cbt-users-root]');
                 const tabButtons = Array.from(document.querySelectorAll('[data-cbt-users-tab]'));
-                const tabPanels = Array.from(document.querySelectorAll('[data-cbt-users-panel]'));
                 const tabStorageKey = 'cbt-users-active-tab';
                 const defaultTab = page ? String(page.getAttribute('data-cbt-users-default-tab') || 'list') : 'list';
                 const forceTab = page ? page.getAttribute('data-cbt-users-force-tab') === '1' : false;
+                const supportsPartialListRefresh = !!(window.fetch && window.DOMParser && window.FormData && window.URL);
+                let userFilterTimer = 0;
+                let userListRequestSeq = 0;
+                let usersProgressTimer = 0;
+                let usersProgressValue = 0;
+                let usersImportTimer = 0;
+                let usersImportInFlight = false;
+
+                function getUsersTabPanels() {
+                    return Array.from(document.querySelectorAll('[data-cbt-users-panel]'));
+                }
+
+                function getCurrentUsersTab() {
+                    const activePanel = getUsersTabPanels().find((panel) => panel.classList.contains('is-active'));
+                    return activePanel ? String(activePanel.getAttribute('data-cbt-users-panel') || 'list') : 'list';
+                }
+
+                function rememberUsersTab(tabId) {
+                    if (tabId !== '' && window.localStorage) {
+                        window.localStorage.setItem(tabStorageKey, tabId);
+                    }
+                }
 
                 function activateTab(tabId, persist) {
+                    const tabPanels = getUsersTabPanels();
                     let hasTarget = false;
                     tabButtons.forEach((button) => {
                         const isActive = button.getAttribute('data-cbt-users-tab') === tabId;
@@ -1971,16 +2097,283 @@
                         const isActive = panel.getAttribute('data-cbt-users-panel') === tabId;
                         panel.classList.toggle('is-active', isActive);
                     });
-                    if (persist && hasTarget && window.localStorage) {
-                        window.localStorage.setItem(tabStorageKey, tabId);
+                    if (persist && hasTarget) {
+                        rememberUsersTab(tabId);
                     }
                 }
 
-                if (page && tabButtons.length > 0 && tabPanels.length > 0) {
+                function getUsersProgressProfile(profile) {
+                    const profiles = {
+                        save: {
+                            start: 'Menyimpan data user...',
+                            detail: 'Validasi form, simpan profil, lalu segarkan form dan daftar user.',
+                            done: 'Data user sudah disimpan.',
+                            doneDetail: 'Panel form, ringkasan, dan daftar user sudah diperbarui lokal.'
+                        },
+                        import: {
+                            start: 'Memproses import user...',
+                            detail: 'Upload/preview/import batch berjalan di panel Import Users.',
+                            done: 'Import user diperbarui.',
+                            doneDetail: 'Status import, ringkasan, dan daftar user sudah disegarkan.'
+                        },
+                        'subject-choice': {
+                            start: 'Memproses mapel pilihan...',
+                            detail: 'Preview atau import mapel pilihan siswa sedang diproses.',
+                            done: 'Mapel pilihan diperbarui.',
+                            doneDetail: 'Panel import dan daftar user sudah memuat data terbaru.'
+                        },
+                        delete: {
+                            start: 'Menghapus user...',
+                            detail: 'Permintaan hapus diproses, lalu daftar user dimuat ulang secara lokal.',
+                            done: 'Daftar user sudah diperbarui.',
+                            doneDetail: 'User terhapus dan total daftar sudah disegarkan.'
+                        },
+                        diagnose: {
+                            start: 'Memuat diagnosa user...',
+                            detail: 'Status exam siswa sedang dihitung dan dibuka di baris daftar.',
+                            done: 'Diagnosa user sudah diperbarui.',
+                            doneDetail: 'Detail diagnosa tampil di panel daftar tanpa reload halaman.'
+                        },
+                        list: {
+                            start: 'Memuat daftar user...',
+                            detail: 'Filter, pencarian, atau paginasi sedang disegarkan di panel daftar.',
+                            done: 'Daftar user sudah diperbarui.',
+                            doneDetail: 'Panel daftar sekarang memakai hasil filter terbaru.'
+                        }
+                    };
+
+                    return profiles[profile] || profiles.list;
+                }
+
+                function getUsersProgressElements() {
+                    const progress = page ? page.querySelector('[data-cbt-users-progress]') : null;
+                    if (!progress) {
+                        return null;
+                    }
+
+                    return {
+                        root: progress,
+                        label: progress.querySelector('[data-cbt-users-progress-label]'),
+                        percent: progress.querySelector('[data-cbt-users-progress-percent]'),
+                        track: progress.querySelector('[data-cbt-users-progress-track]'),
+                        fill: progress.querySelector('[data-cbt-users-progress-fill]'),
+                        step: progress.querySelector('[data-cbt-users-progress-step]')
+                    };
+                }
+
+                function clampUsersProgress(value) {
+                    return Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+                }
+
+                function setUsersProgress(value, label, step, tone) {
+                    const elements = getUsersProgressElements();
+                    if (!elements) {
+                        return;
+                    }
+
+                    usersProgressValue = clampUsersProgress(value);
+                    elements.root.classList.add('is-active');
+                    elements.root.classList.toggle('is-error', tone === 'error');
+                    elements.root.setAttribute('aria-hidden', 'false');
+                    elements.root.style.setProperty('--cbt-users-progress', usersProgressValue + '%');
+                    if (elements.percent) {
+                        elements.percent.textContent = usersProgressValue + '%';
+                    }
+                    if (elements.track) {
+                        elements.track.setAttribute('aria-valuenow', String(usersProgressValue));
+                    }
+                    if (elements.label && label) {
+                        elements.label.textContent = label;
+                    }
+                    if (elements.step && step) {
+                        elements.step.textContent = step;
+                    }
+                }
+
+                function startUsersProgress(profile) {
+                    const config = getUsersProgressProfile(profile);
+                    window.clearInterval(usersProgressTimer);
+                    setUsersProgress(8, config.start, config.detail, 'active');
+                    usersProgressTimer = window.setInterval(function () {
+                        if (usersProgressValue >= 88) {
+                            window.clearInterval(usersProgressTimer);
+                            return;
+                        }
+                        setUsersProgress(usersProgressValue + Math.max(2, Math.round((88 - usersProgressValue) / 7)), config.start, config.detail, 'active');
+                    }, 360);
+                }
+
+                function completeUsersProgress(label, step, tone) {
+                    const elements = getUsersProgressElements();
+                    window.clearInterval(usersProgressTimer);
+                    setUsersProgress(tone === 'error' ? Math.max(usersProgressValue, 72) : 100, label, step, tone);
+
+                    if (!elements || tone === 'error') {
+                        return;
+                    }
+
+                    window.setTimeout(function () {
+                        const nextElements = getUsersProgressElements();
+                        if (!nextElements) {
+                            return;
+                        }
+                        nextElements.root.classList.remove('is-active', 'is-error');
+                        nextElements.root.setAttribute('aria-hidden', 'true');
+                    }, 1800);
+                }
+
+                function extractUsersResponseError(html, status) {
+                    const fallback = 'HTTP ' + String(status || 0);
+                    if (!html) {
+                        return fallback;
+                    }
+
+                    try {
+                        const parsed = new DOMParser().parseFromString(String(html), 'text/html');
+                        const title = parsed.querySelector('title');
+                        const bodyText = String((parsed.body && parsed.body.textContent) || '').replace(/\s+/g, ' ').trim();
+                        const titleText = title ? String(title.textContent || '').replace(/\s+/g, ' ').trim() : '';
+                        const message = bodyText || titleText || fallback;
+                        return fallback + ': ' + message.slice(0, 220);
+                    } catch (error) {
+                        return fallback;
+                    }
+                }
+
+                async function fetchUsersHtml(nextUrl, options) {
+                    const fetchOptions = Object.assign({
+                        credentials: 'same-origin',
+                        cache: 'no-store',
+                        redirect: 'follow',
+                        headers: {}
+                    }, options || {});
+                    fetchOptions.headers = Object.assign({
+                        Accept: 'text/html, */*',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }, fetchOptions.headers || {});
+
+                    const response = await window.fetch(nextUrl.toString(), fetchOptions);
+                    const html = await response.text();
+                    if (!response.ok) {
+                        throw new Error(extractUsersResponseError(html, response.status));
+                    }
+
+                    return {
+                        html: html,
+                        url: response.url || nextUrl.toString()
+                    };
+                }
+
+                function updateUsersHistory(nextUrl) {
+                    if (!window.history || typeof window.history.replaceState !== 'function') {
+                        return;
+                    }
+
+                    const parsedUrl = new URL(nextUrl.toString(), window.location.href);
+                    if (parsedUrl.origin !== window.location.origin) {
+                        return;
+                    }
+
+                    window.history.replaceState({}, '', parsedUrl.toString());
+                }
+
+                function getUsersAreaList(source, fallbackAreas) {
+                    const raw = source ? String(source.getAttribute('data-cbt-users-refresh-areas') || '') : '';
+                    const parsed = raw.split(',').map((area) => area.trim()).filter(Boolean);
+                    return parsed.length > 0 ? parsed : fallbackAreas;
+                }
+
+                function replaceUsersRefreshAreas(html, areas) {
+                    const parsed = new DOMParser().parseFromString(html, 'text/html');
+                    const replaced = [];
+                    (areas || []).forEach((area) => {
+                        const currentArea = page ? page.querySelector('[data-cbt-users-refresh-area="' + area + '"]') : null;
+                        const nextArea = parsed.querySelector('[data-cbt-users-refresh-area="' + area + '"]');
+                        if (!currentArea || !nextArea) {
+                            return;
+                        }
+
+                        currentArea.replaceWith(nextArea);
+                        replaced.push(area);
+                    });
+
+                    const nextRoot = parsed.querySelector('[data-cbt-users-root]');
+                    if (page && nextRoot) {
+                        page.setAttribute('data-cbt-users-default-tab', String(nextRoot.getAttribute('data-cbt-users-default-tab') || defaultTab));
+                        page.setAttribute('data-cbt-users-force-tab', String(nextRoot.getAttribute('data-cbt-users-force-tab') || '0'));
+                    }
+
+                    return replaced;
+                }
+
+                function getUsersTargetTab(source, replacedAreas) {
+                    const explicit = source ? String(source.getAttribute('data-cbt-users-success-tab') || '') : '';
+                    if (explicit !== '') {
+                        return explicit;
+                    }
+                    if ((replacedAreas || []).includes('form-panel')) {
+                        return 'form';
+                    }
+                    if ((replacedAreas || []).includes('import-panel')) {
+                        return 'import';
+                    }
+                    return getCurrentUsersTab();
+                }
+
+                function setUsersElementLoading(element, isLoading) {
+                    if (!element) {
+                        return;
+                    }
+                    element.classList.toggle('is-loading', isLoading);
+                    element.setAttribute('aria-busy', isLoading ? 'true' : 'false');
+                    if ('disabled' in element) {
+                        element.disabled = isLoading;
+                    }
+                }
+
+                function getUsersProfileName(source, fallback) {
+                    return source ? String(source.getAttribute('data-cbt-users-progress-profile') || fallback || 'list') : (fallback || 'list');
+                }
+
+                function rebindUsersLocalUi(replacedAreas, targetTab) {
+                    bindUsersManualFormHelpers();
+                    bindUsersLocalActions();
+                    bindUsersListPanel();
+                    bindUsersImportContinuation();
+                    activateTab(targetTab || getCurrentUsersTab(), true);
+                }
+
+                async function runUsersLocalAction(source, requestUrl, options) {
+                    const profileName = getUsersProfileName(source, 'list');
+                    const profile = getUsersProgressProfile(profileName);
+                    const areas = getUsersAreaList(source, ['notices', 'overview', 'list-panel']);
+
+                    if (!supportsPartialListRefresh) {
+                        completeUsersProgress('Browser belum mendukung refresh lokal.', 'Aksi tidak dijalankan agar halaman tidak melakukan reload global.', 'error');
+                        return;
+                    }
+
+                    startUsersProgress(profileName);
+                    const result = await fetchUsersHtml(requestUrl, options);
+                    const replacedAreas = replaceUsersRefreshAreas(result.html, areas);
+                    if (replacedAreas.length === 0) {
+                        throw new Error('Respons tidak memuat area Users yang bisa diperbarui.');
+                    }
+
+                    updateUsersHistory(new URL(result.url, window.location.href));
+                    rebindUsersLocalUi(replacedAreas, getUsersTargetTab(source, replacedAreas));
+                    completeUsersProgress(profile.done, profile.doneDetail, 'success');
+                }
+
+                function bindUsersTabs() {
+                    if (!page || tabButtons.length === 0 || getUsersTabPanels().length === 0) {
+                        return;
+                    }
+
                     let initialTab = defaultTab;
                     if (!forceTab && window.localStorage) {
                         const savedTab = window.localStorage.getItem(tabStorageKey);
-                        if (savedTab && tabPanels.some((panel) => panel.getAttribute('data-cbt-users-panel') === savedTab)) {
+                        if (savedTab && getUsersTabPanels().some((panel) => panel.getAttribute('data-cbt-users-panel') === savedTab)) {
                             initialTab = savedTab;
                         }
                     }
@@ -1988,26 +2381,12 @@
                     activateTab(initialTab, false);
 
                     tabButtons.forEach((button) => {
+                        if (button.dataset.cbtTabBound === '1') {
+                            return;
+                        }
+                        button.dataset.cbtTabBound = '1';
                         button.addEventListener('click', function () {
                             activateTab(String(button.getAttribute('data-cbt-users-tab') || ''), true);
-                        });
-                    });
-
-                    Array.from(document.querySelectorAll('form[data-cbt-users-tab-submit]')).forEach((form) => {
-                        form.addEventListener('submit', function () {
-                            const tabId = String(form.getAttribute('data-cbt-users-tab-submit') || '');
-                            if (tabId !== '' && window.localStorage) {
-                                window.localStorage.setItem(tabStorageKey, tabId);
-                            }
-                        });
-                    });
-
-                    Array.from(document.querySelectorAll('[data-cbt-users-tab-link]')).forEach((link) => {
-                        link.addEventListener('click', function () {
-                            const tabId = String(link.getAttribute('data-cbt-users-tab-link') || '');
-                            if (tabId !== '' && window.localStorage) {
-                                window.localStorage.setItem(tabStorageKey, tabId);
-                            }
                         });
                     });
                 }
@@ -2015,10 +2394,11 @@
                 function bindRoleAwareJenisKelamin(roleSelector, jenisKelaminSelector) {
                     const roleField = document.querySelector(roleSelector);
                     const jenisKelaminField = document.querySelector(jenisKelaminSelector);
-                    if (!roleField || !jenisKelaminField) {
+                    if (!roleField || !jenisKelaminField || roleField.dataset.cbtJenisKelaminBound === '1') {
                         return;
                     }
 
+                    roleField.dataset.cbtJenisKelaminBound = '1';
                     const syncState = function () {
                         const roleValue = String(roleField.value || '').toLowerCase();
                         const isStudent = roleValue === 'siswa';
@@ -2030,15 +2410,9 @@
                     syncState();
                 }
 
-                bindRoleAwareJenisKelamin('#cbt-user-role', '#cbt-user-jenis-kelamin');
-                bindRoleAwareJenisKelamin('#cbt-edit-user-role', '#cbt-edit-user-jenis-kelamin');
-
-                const supportsPartialListRefresh = !!(window.fetch && window.DOMParser);
-                let userFilterTimer = 0;
-                let userListRequestSeq = 0;
-
-                function getUsersListPanel() {
-                    return page ? page.querySelector('[data-cbt-users-panel="list"]') : null;
+                function bindUsersManualFormHelpers() {
+                    bindRoleAwareJenisKelamin('#cbt-user-role', '#cbt-user-jenis-kelamin');
+                    bindRoleAwareJenisKelamin('#cbt-edit-user-role', '#cbt-edit-user-jenis-kelamin');
                 }
 
                 function buildUsersFilterUrl(form) {
@@ -2063,6 +2437,10 @@
 
                     panel.classList.toggle('is-loading', isLoading);
                     panel.setAttribute('aria-busy', isLoading ? 'true' : 'false');
+                }
+
+                function getUsersListPanel() {
+                    return page ? page.querySelector('[data-cbt-users-panel="list"]') : null;
                 }
 
                 function captureUsersListFocus(panel) {
@@ -2108,63 +2486,42 @@
                     }
                 }
 
-                function updateUsersListHistory(nextUrl) {
-                    if (!window.history || typeof window.history.replaceState !== 'function') {
-                        return;
-                    }
-
-                    window.history.replaceState({}, '', nextUrl.toString());
+                function showUsersLocalRefreshError(message) {
+                    completeUsersProgress('Gagal memperbarui area Users.', message || 'Form masih bisa dicoba lagi setelah koneksi stabil.', 'error');
                 }
 
-                function navigateUsersList(nextUrl) {
-                    window.location.assign(nextUrl.toString());
-                }
-
-                async function refreshUsersListPanel(nextUrl) {
+                async function refreshUsersListPanel(nextUrl, profileName) {
                     const currentPanel = getUsersListPanel();
                     if (!currentPanel || !supportsPartialListRefresh) {
-                        navigateUsersList(nextUrl);
+                        showUsersLocalRefreshError('Browser tidak mendukung partial refresh untuk panel daftar.');
                         return;
                     }
 
                     userListRequestSeq += 1;
                     const requestSeq = userListRequestSeq;
                     const focusState = captureUsersListFocus(currentPanel);
+                    const profile = getUsersProgressProfile(profileName || 'list');
                     setUsersListPanelLoading(currentPanel, true);
+                    startUsersProgress(profileName || 'list');
 
                     try {
-                        const response = await window.fetch(nextUrl.toString(), {
-                            credentials: 'same-origin',
-                            cache: 'no-store',
-                            headers: {
-                                'X-Requested-With': 'XMLHttpRequest'
-                            }
-                        });
-
-                        if (!response.ok) {
-                            navigateUsersList(nextUrl);
-                            return;
-                        }
-
-                        const html = await response.text();
+                        const result = await fetchUsersHtml(nextUrl, {});
                         if (requestSeq !== userListRequestSeq) {
                             return;
                         }
 
-                        const parsed = new DOMParser().parseFromString(html, 'text/html');
-                        const nextPanel = parsed.querySelector('[data-cbt-users-panel="list"]');
-                        if (!nextPanel) {
-                            navigateUsersList(nextUrl);
-                            return;
+                        const replacedAreas = replaceUsersRefreshAreas(result.html, ['notices', 'overview', 'list-panel']);
+                        if (!replacedAreas.includes('list-panel')) {
+                            throw new Error('Respons tidak memuat panel daftar user.');
                         }
 
-                        currentPanel.innerHTML = nextPanel.innerHTML;
-                        updateUsersListHistory(nextUrl);
-                        bindUsersListPanel();
+                        updateUsersHistory(new URL(result.url, window.location.href));
+                        rebindUsersLocalUi(replacedAreas, 'list');
                         restoreUsersListFocus(focusState);
+                        completeUsersProgress(profile.done, profile.doneDetail, 'success');
                     } catch (error) {
                         if (requestSeq === userListRequestSeq) {
-                            navigateUsersList(nextUrl);
+                            showUsersLocalRefreshError(error && error.message ? error.message : 'Daftar user belum bisa dimuat lokal.');
                         }
                     } finally {
                         if (requestSeq === userListRequestSeq) {
@@ -2178,21 +2535,114 @@
                         return;
                     }
 
-                    if (window.localStorage) {
-                        window.localStorage.setItem(tabStorageKey, 'list');
-                    }
+                    rememberUsersTab('list');
+                    window.clearTimeout(userFilterTimer);
+                    refreshUsersListPanel(buildUsersFilterUrl(form), 'list');
+                }
 
-                    if (supportsPartialListRefresh) {
-                        refreshUsersListPanel(buildUsersFilterUrl(form));
+                function bindUsersLocalActions() {
+                    Array.from(document.querySelectorAll('form[data-cbt-users-tab-submit]')).forEach((form) => {
+                        if (form.dataset.cbtTabMemoryBound === '1') {
+                            return;
+                        }
+                        form.dataset.cbtTabMemoryBound = '1';
+                        form.addEventListener('submit', function () {
+                            rememberUsersTab(String(form.getAttribute('data-cbt-users-tab-submit') || ''));
+                        });
+                    });
+
+                    Array.from(document.querySelectorAll('[data-cbt-users-tab-link]')).forEach((link) => {
+                        if (link.dataset.cbtTabMemoryBound === '1') {
+                            return;
+                        }
+                        link.dataset.cbtTabMemoryBound = '1';
+                        link.addEventListener('click', function () {
+                            rememberUsersTab(String(link.getAttribute('data-cbt-users-tab-link') || ''));
+                        });
+                    });
+
+                    Array.from(document.querySelectorAll('[data-cbt-users-async-form]')).forEach((form) => {
+                        if (form.dataset.cbtLocalActionBound === '1') {
+                            return;
+                        }
+                        form.dataset.cbtLocalActionBound = '1';
+                        form.addEventListener('submit', function (event) {
+                            if (event.defaultPrevented) {
+                                return;
+                            }
+                            event.preventDefault();
+                            const submitter = event.submitter || document.activeElement;
+                            const actionUrl = new URL(form.getAttribute('action') || window.location.href, window.location.href);
+                            const formData = new FormData(form);
+                            formData.set('cbt_users_local_refresh', '1');
+                            if (
+                                submitter &&
+                                submitter.name &&
+                                !formData.has(submitter.name)
+                            ) {
+                                formData.append(submitter.name, submitter.value || '');
+                            }
+
+                            setUsersElementLoading(submitter, true);
+                            runUsersLocalAction(form, actionUrl, {
+                                method: String(form.getAttribute('method') || 'post').toUpperCase(),
+                                body: formData
+                            }).catch((error) => {
+                                showUsersLocalRefreshError(error && error.message ? error.message : 'Aksi user gagal diproses lokal.');
+                            }).finally(() => {
+                                setUsersElementLoading(submitter, false);
+                            });
+                        });
+                    });
+
+                    Array.from(document.querySelectorAll('[data-cbt-users-async-link]')).forEach((link) => {
+                        if (link.dataset.cbtLocalActionBound === '1') {
+                            return;
+                        }
+                        link.dataset.cbtLocalActionBound = '1';
+                        link.addEventListener('click', function (event) {
+                            if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+                                return;
+                            }
+                            event.preventDefault();
+                            const nextUrl = new URL(link.getAttribute('href') || window.location.href, window.location.href);
+                            nextUrl.searchParams.set('cbt_users_local_refresh', '1');
+                            setUsersElementLoading(link, true);
+                            runUsersLocalAction(link, nextUrl, {
+                                method: 'GET'
+                            }).catch((error) => {
+                                showUsersLocalRefreshError(error && error.message ? error.message : 'Link user gagal diproses lokal.');
+                            }).finally(() => {
+                                setUsersElementLoading(link, false);
+                            });
+                        });
+                    });
+                }
+
+                function bindUsersImportContinuation() {
+                    const progress = page ? page.querySelector('[data-cbt-users-import-progress]') : null;
+                    if (!progress || progress.getAttribute('data-cbt-users-import-running') !== '1') {
+                        return;
+                    }
+                    const continueUrl = String(progress.getAttribute('data-cbt-users-import-continue-url') || '');
+                    if (continueUrl === '' || usersImportInFlight || progress.dataset.cbtImportContinuationBound === '1') {
                         return;
                     }
 
-                    if (typeof form.requestSubmit === 'function') {
-                        form.requestSubmit();
-                        return;
-                    }
-
-                    form.submit();
+                    progress.dataset.cbtImportContinuationBound = '1';
+                    usersImportInFlight = true;
+                    window.clearTimeout(usersImportTimer);
+                    usersImportTimer = window.setTimeout(function () {
+                        const nextUrl = new URL(continueUrl, window.location.href);
+                        nextUrl.searchParams.set('cbt_users_local_refresh', '1');
+                        runUsersLocalAction(progress, nextUrl, {
+                            method: 'GET'
+                        }).catch((error) => {
+                            showUsersLocalRefreshError(error && error.message ? error.message : 'Batch import user berikutnya gagal dimuat lokal.');
+                        }).finally(() => {
+                            usersImportInFlight = false;
+                        });
+                    }, 420);
                 }
 
                 function bindUsersListSelection(panel) {
@@ -2253,13 +2703,10 @@
 
                     if (userFilterForm && userFilterForm.dataset.cbtAsyncBound !== '1') {
                         userFilterForm.dataset.cbtAsyncBound = '1';
-                        if (supportsPartialListRefresh) {
-                            userFilterForm.addEventListener('submit', function (event) {
-                                event.preventDefault();
-                                window.clearTimeout(userFilterTimer);
-                                submitUserFilters(userFilterForm);
-                            });
-                        }
+                        userFilterForm.addEventListener('submit', function (event) {
+                            event.preventDefault();
+                            submitUserFilters(userFilterForm);
+                        });
                     }
 
                     [userFilterRole, userFilterKelas, userFilterRuang, userFilterAgama, userFilterJenisKelamin, userFilterPerPage].forEach((field) => {
@@ -2269,7 +2716,6 @@
 
                         field.dataset.cbtAutoBound = '1';
                         field.addEventListener('change', function () {
-                            window.clearTimeout(userFilterTimer);
                             submitUserFilters(userFilterForm);
                         });
                     });
@@ -2283,7 +2729,6 @@
                             }, 280);
                         });
                         userFilterSearch.addEventListener('search', function () {
-                            window.clearTimeout(userFilterTimer);
                             submitUserFilters(userFilterForm);
                         });
                         userFilterSearch.addEventListener('keydown', function (event) {
@@ -2291,12 +2736,11 @@
                                 return;
                             }
                             event.preventDefault();
-                            window.clearTimeout(userFilterTimer);
                             submitUserFilters(userFilterForm);
                         });
                     }
 
-                    if (supportsPartialListRefresh && userFilterReset && userFilterReset.dataset.cbtAsyncBound !== '1') {
+                    if (userFilterReset && userFilterReset.dataset.cbtAsyncBound !== '1') {
                         userFilterReset.dataset.cbtAsyncBound = '1';
                         userFilterReset.addEventListener('click', function (event) {
                             if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
@@ -2305,51 +2749,51 @@
 
                             event.preventDefault();
                             window.clearTimeout(userFilterTimer);
-                            refreshUsersListPanel(new URL(userFilterReset.getAttribute('href') || window.location.href, window.location.href));
+                            refreshUsersListPanel(new URL(userFilterReset.getAttribute('href') || window.location.href, window.location.href), 'list');
                         });
                     }
 
-                    if (supportsPartialListRefresh) {
-                        paginationLinks.forEach((link) => {
-                            if (!link || link.dataset.cbtAsyncBound === '1') {
+                    paginationLinks.forEach((link) => {
+                        if (!link || link.dataset.cbtAsyncBound === '1') {
+                            return;
+                        }
+
+                        link.dataset.cbtAsyncBound = '1';
+                        link.addEventListener('click', function (event) {
+                            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
                                 return;
                             }
 
-                            link.dataset.cbtAsyncBound = '1';
-                            link.addEventListener('click', function (event) {
-                                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
-                                    return;
-                                }
-
-                                event.preventDefault();
-                                window.clearTimeout(userFilterTimer);
-                                refreshUsersListPanel(new URL(link.getAttribute('href') || window.location.href, window.location.href));
-                            });
+                            event.preventDefault();
+                            window.clearTimeout(userFilterTimer);
+                            refreshUsersListPanel(new URL(link.getAttribute('href') || window.location.href, window.location.href), 'list');
                         });
-                    }
+                    });
 
-                    if (supportsPartialListRefresh) {
-                        diagnosticLinks.forEach((link) => {
-                            if (!link || link.dataset.cbtAsyncBound === '1') {
+                    diagnosticLinks.forEach((link) => {
+                        if (!link || link.dataset.cbtAsyncBound === '1') {
+                            return;
+                        }
+
+                        link.dataset.cbtAsyncBound = '1';
+                        link.addEventListener('click', function (event) {
+                            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
                                 return;
                             }
 
-                            link.dataset.cbtAsyncBound = '1';
-                            link.addEventListener('click', function (event) {
-                                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
-                                    return;
-                                }
-
-                                event.preventDefault();
-                                window.clearTimeout(userFilterTimer);
-                                refreshUsersListPanel(new URL(link.getAttribute('href') || window.location.href, window.location.href));
-                            });
+                            event.preventDefault();
+                            window.clearTimeout(userFilterTimer);
+                            refreshUsersListPanel(new URL(link.getAttribute('href') || window.location.href, window.location.href), 'diagnose');
                         });
-                    }
+                    });
 
                     bindUsersListSelection(panel);
                 }
 
-                    bindUsersListPanel();
-                })();
-            </script>
+                bindUsersTabs();
+                bindUsersManualFormHelpers();
+                bindUsersLocalActions();
+                bindUsersListPanel();
+                bindUsersImportContinuation();
+            })();
+        </script>

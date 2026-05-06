@@ -388,14 +388,26 @@ export function createAnswerSyncManager(deps) {
     }
 
     function restoreQuestionAutoSaveState(snapshot) {
-        var normalizedState = normalizeStoredAutoSaveState(snapshot);
-        lastSubmittedPayloadByQuestion = Object.assign({}, normalizedState.lastSubmittedPayloadByQuestion);
-        pendingAnswerBatchByQuestion = Object.assign({}, normalizedState.pendingAnswerBatchByQuestion);
-        pendingAnswerBatchOrder = normalizedState.pendingAnswerBatchOrder.slice();
+        var normalizedState = normalizeStoredAutoSaveState(snapshot) || {};
+        lastSubmittedPayloadByQuestion = Object.assign(
+            {},
+            normalizedState.lastSubmittedPayloadByQuestion && typeof normalizedState.lastSubmittedPayloadByQuestion === 'object'
+                ? normalizedState.lastSubmittedPayloadByQuestion
+                : {}
+        );
+        pendingAnswerBatchByQuestion = Object.assign(
+            {},
+            normalizedState.pendingAnswerBatchByQuestion && typeof normalizedState.pendingAnswerBatchByQuestion === 'object'
+                ? normalizedState.pendingAnswerBatchByQuestion
+                : {}
+        );
+        pendingAnswerBatchOrder = Array.isArray(normalizedState.pendingAnswerBatchOrder)
+            ? normalizedState.pendingAnswerBatchOrder.slice()
+            : [];
         autoSaveCongestedUntil = Math.max(0, Number(normalizedState.autoSaveCongestedUntil) || 0);
-        state.lastSyncError = normalizedState.lastSyncError;
-        state.examLockedForPendingFinish = normalizedState.examLockedForPendingFinish;
-        state.syncBlockingReason = normalizedState.syncBlockingReason;
+        state.lastSyncError = String(normalizedState.lastSyncError || '');
+        state.examLockedForPendingFinish = !!normalizedState.examLockedForPendingFinish;
+        state.syncBlockingReason = String(normalizedState.syncBlockingReason || '');
         answerSyncRetryCount = 0;
         lastSyncErrorRetryable = String(state.lastSyncError || '') !== ''
             && (String(state.syncBlockingReason || '').indexOf('pending') >= 0 || String(state.syncBlockingReason || '').indexOf('offline') >= 0);
@@ -483,7 +495,10 @@ export function createAnswerSyncManager(deps) {
 
     function initializeSubmittedPayloadCache() {
         lastSubmittedPayloadByQuestion = {};
-        primeSubmittedPayloadCacheFromQuestionItems(Object.keys(state.questionPayloadById).reduce(function (accumulator, key) {
+        var payloadLookup = state.questionPayloadById && typeof state.questionPayloadById === 'object'
+            ? state.questionPayloadById
+            : {};
+        primeSubmittedPayloadCacheFromQuestionItems(Object.keys(payloadLookup).reduce(function (accumulator, key) {
             var questionId = Number(key) || 0;
             var question = getQuestionPayloadById(questionId);
             if (question) {
@@ -499,8 +514,11 @@ export function createAnswerSyncManager(deps) {
 
     function queueLoadedQuestionAnswersForFlush() {
         var queuedCount = 0;
+        var payloadLookup = state.questionPayloadById && typeof state.questionPayloadById === 'object'
+            ? state.questionPayloadById
+            : {};
 
-        Object.keys(state.questionPayloadById).forEach(function (key) {
+        Object.keys(payloadLookup).forEach(function (key) {
             var questionId = Number(key) || 0;
             var question = getQuestionPayloadById(questionId);
             if (!question) {

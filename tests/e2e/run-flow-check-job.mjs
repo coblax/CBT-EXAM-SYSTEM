@@ -7,6 +7,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..', '..');
 const workerScriptPath = path.resolve(__filename);
+let activeChild = null;
+let cancelRequested = false;
 
 function getArgValue(name) {
     const prefix = `${name}=`;
@@ -25,11 +27,22 @@ function getArgValue(name) {
 
 function normalizeJobStatus(status) {
     const safe = String(status || '').trim().toLowerCase();
-    if (['queued', 'running', 'passed', 'failed'].includes(safe)) {
+    if (['queued', 'running', 'cancelling', 'passed', 'failed', 'cancelled'].includes(safe)) {
         return safe;
     }
 
-    return 'queued';
+    return 'unknown';
+}
+
+function normalizeJobId(value) {
+    const raw = String(value || '').trim();
+    if (raw === '') {
+        return '';
+    }
+
+    return raw
+        .replace(/[^A-Za-z0-9._-]/g, '-')
+        .replace(/^[.-]+|[.-]+$/g, '');
 }
 
 function readJobFile(jobFilePath) {
@@ -59,6 +72,70 @@ function currentUnixTime() {
     return Math.floor(Date.now() / 1000);
 }
 
+function isCancellationRequested(payload) {
+    if (!payload || typeof payload !== 'object') {
+        return false;
+    }
+
+    const status = normalizeJobStatus(payload.status);
+    return status === 'cancelling'
+        || status === 'cancelled'
+        || Number(payload.cancel_requested_at || 0) > 0;
+}
+
+function syncJobFromDisk() {
+    const latest = readJobFile(jobFilePath);
+    if (!latest || String(latest.job_id || '') !== jobId) {
+        return null;
+    }
+
+    Object.assign(job, latest);
+    return latest;
+}
+
+function markJobCancelled(reason = 'Job flow check dibatalkan dari CBT Test Hub.') {
+    const currentResults = Array.isArray(job.results) ? job.results : [];
+    const currentStdout = String(job.stdout || '');
+    const currentStderr = String(job.stderr || '');
+    syncJobFromDisk();
+    if (currentResults.length > 0) {
+        job.results = currentResults;
+    }
+    if (currentStdout !== '') {
+        job.stdout = currentStdout;
+    }
+    if (currentStderr !== '') {
+        job.stderr = currentStderr;
+    }
+    job.status = 'cancelled';
+    job.finished_at = currentUnixTime();
+    job.heartbeat_at = currentUnixTime();
+    job.cancel_requested_at = Number(job.cancel_requested_at || 0) > 0 ? Number(job.cancel_requested_at || 0) : currentUnixTime();
+    job.exit_code = 1;
+    job.failure_kind = 'cancelled';
+    job.failure_summary = reason;
+    job.active_child_pid = 0;
+    job.worker_pid = process.pid;
+    if (!Array.isArray(job.results)) {
+        job.results = [];
+    }
+    writeJobLog(job);
+    writeJobFile(jobFilePath, job);
+}
+
+function requestCancellation(reason = 'Job flow check dibatalkan dari CBT Test Hub.') {
+    cancelRequested = true;
+    if (activeChild && !activeChild.killed) {
+        try {
+            activeChild.kill('SIGTERM');
+        } catch (error) {
+            // Best effort only; final status still becomes cancelled.
+        }
+    }
+
+    markJobCancelled(reason);
+}
+
 function summarizeFailure(stdout, stderr) {
     const combined = `${String(stderr || '')}\n${String(stdout || '')}`
         .replace(/\r\n/g, '\n')
@@ -77,10 +154,8 @@ function summarizeFailure(stdout, stderr) {
 }
 
 function writeJobLog(job) {
-    const logPath = String(job.log_path || '').trim();
-    if (logPath === '') {
-        return;
-    }
+    const logPath = resolveJobLogPath(job);
+    job.log_path = logPath;
 
     const sections = [];
     const results = Array.isArray(job.results) ? job.results : [];
@@ -105,6 +180,25 @@ function writeJobLog(job) {
     }
 }
 
+function resolveJobLogPath(job) {
+    const safeJobId = normalizeJobId(job && job.job_id) || 'flow-job';
+    const fallbackPath = path.join(jobDirectory, `${safeJobId}.log`);
+    const rawPath = String(job && job.log_path ? job.log_path : '').trim();
+    if (rawPath === '') {
+        return fallbackPath;
+    }
+
+    const rootPath = path.resolve(jobDirectory);
+    const candidatePath = path.isAbsolute(rawPath)
+        ? path.resolve(rawPath)
+        : path.resolve(jobDirectory, rawPath);
+    if (candidatePath === rootPath || !candidatePath.startsWith(`${rootPath}${path.sep}`)) {
+        return fallbackPath;
+    }
+
+    return candidatePath;
+}
+
 function buildCommandEnvironment() {
     return {
         ...process.env,
@@ -115,6 +209,19 @@ function buildCommandEnvironment() {
 function runCommand(commandDefinition) {
     const label = String(commandDefinition && commandDefinition.label ? commandDefinition.label : 'Flow Check Command');
     const command = String(commandDefinition && commandDefinition.command ? commandDefinition.command : '').trim();
+    if (cancelRequested || isCancellationRequested(readJobFile(jobFilePath))) {
+        cancelRequested = true;
+        return Promise.resolve({
+            label,
+            command,
+            success: false,
+            exit_code: 1,
+            stdout: '',
+            stderr: 'Command dibatalkan sebelum dijalankan.',
+            failure_summary: 'Job flow check dibatalkan dari CBT Test Hub.',
+        });
+    }
+
     if (command === '') {
         return Promise.resolve({
             label,
@@ -133,6 +240,10 @@ function runCommand(commandDefinition) {
             env: buildCommandEnvironment(),
             stdio: ['ignore', 'pipe', 'pipe'],
         });
+        activeChild = child;
+        job.active_child_pid = Number(child.pid || 0);
+        job.heartbeat_at = currentUnixTime();
+        writeJobFile(jobFilePath, job);
 
         let stdout = '';
         let stderr = '';
@@ -160,7 +271,22 @@ function runCommand(commandDefinition) {
         }
 
         child.on('error', (error) => {
+            activeChild = null;
+            job.active_child_pid = 0;
             const safeError = error instanceof Error ? error.message : String(error || 'Unknown process error.');
+            if (cancelRequested || isCancellationRequested(readJobFile(jobFilePath))) {
+                resolveOnce({
+                    label,
+                    command,
+                    success: false,
+                    exit_code: 1,
+                    stdout: stdout.trim(),
+                    stderr: `${stderr}\n${safeError}`.trim(),
+                    failure_summary: 'Job flow check dibatalkan dari CBT Test Hub.',
+                });
+                return;
+            }
+
             resolveOnce({
                 label,
                 command,
@@ -173,10 +299,27 @@ function runCommand(commandDefinition) {
         });
 
         child.on('close', (code) => {
+            activeChild = null;
+            job.active_child_pid = 0;
             const cleanStdout = stdout.trim();
             const cleanStderr = stderr.trim();
+            if (cancelRequested || isCancellationRequested(readJobFile(jobFilePath))) {
+                cancelRequested = true;
+                resolveOnce({
+                    label,
+                    command,
+                    success: false,
+                    exit_code: 1,
+                    stdout: cleanStdout,
+                    stderr: cleanStderr,
+                    failure_summary: 'Job flow check dibatalkan dari CBT Test Hub.',
+                });
+                return;
+            }
+
             const exitCode = typeof code === 'number' ? code : 1;
-            const skipped = cleanStdout.includes('PLAYWRIGHT RECOVERY FLOW SKIPPED') || cleanStderr.includes('PLAYWRIGHT RECOVERY FLOW SKIPPED');
+            const skipped = /PLAYWRIGHT\s+.+\s+FLOW\s+SKIPPED/i.test(cleanStdout)
+                || /PLAYWRIGHT\s+.+\s+FLOW\s+SKIPPED/i.test(cleanStderr);
             const success = exitCode === 0 && !skipped;
 
             resolveOnce({
@@ -208,30 +351,36 @@ function findNextQueuedJob(jobDirectory, currentJobId) {
         .sort((left, right) => Number(left.created_at || 0) - Number(right.created_at || 0));
 
     const hasOtherRunning = jobs.some((job) => {
+        const jobId = normalizeJobId(job.job_id);
+        if (jobId === '') {
+            return false;
+        }
+
         const status = normalizeJobStatus(job.status);
-        return status === 'running' && String(job.job_id || '') !== String(currentJobId || '');
+        return ['running', 'cancelling'].includes(status) && jobId !== String(currentJobId || '');
     });
     if (hasOtherRunning) {
         return null;
     }
 
-    return jobs.find((job) => normalizeJobStatus(job.status) === 'queued') || null;
+    return jobs.find((job) => normalizeJobStatus(job.status) === 'queued' && normalizeJobId(job.job_id) !== '') || null;
 }
 
 function launchNextQueuedJob(jobDirectory, currentJobId) {
     const nextJob = findNextQueuedJob(jobDirectory, currentJobId);
-    if (!nextJob || !nextJob.job_id) {
+    const nextJobId = normalizeJobId(nextJob && nextJob.job_id);
+    if (!nextJob || nextJobId === '') {
         return;
     }
 
-    const child = spawn(process.execPath, [workerScriptPath, `--job-id=${String(nextJob.job_id)}`], {
+    const child = spawn(process.execPath, [workerScriptPath, `--job-id=${nextJobId}`], {
         cwd: projectRoot,
         detached: true,
         stdio: 'ignore',
         env: {
             ...process.env,
-            CBT_FLOW_JOB_ID: String(nextJob.job_id),
-            CBT_FLOW_JOB_FILE: path.join(jobDirectory, `${String(nextJob.job_id)}.json`),
+            CBT_FLOW_JOB_ID: nextJobId,
+            CBT_FLOW_JOB_FILE: path.join(jobDirectory, `${nextJobId}.json`),
         },
     });
     child.unref();
@@ -250,13 +399,42 @@ if (!job || String(job.job_id || '') !== jobId) {
     process.exit(1);
 }
 
+if (normalizeJobStatus(job.status) === 'cancelled' || isCancellationRequested(job)) {
+    markJobCancelled();
+    launchNextQueuedJob(jobDirectory, jobId);
+    process.exit(1);
+}
+
+process.on('SIGTERM', () => {
+    requestCancellation();
+    if (!activeChild) {
+        launchNextQueuedJob(jobDirectory, jobId);
+        process.exit(1);
+    }
+});
+
+process.on('SIGINT', () => {
+    requestCancellation();
+    if (!activeChild) {
+        launchNextQueuedJob(jobDirectory, jobId);
+        process.exit(1);
+    }
+});
+
 job.status = 'running';
 job.started_at = currentUnixTime();
 job.heartbeat_at = currentUnixTime();
 job.worker_pid = process.pid;
+job.active_child_pid = 0;
 writeJobFile(jobFilePath, job);
 
 const heartbeatTimer = setInterval(() => {
+    const latest = readJobFile(jobFilePath);
+    if (isCancellationRequested(latest)) {
+        requestCancellation();
+        return;
+    }
+
     job.heartbeat_at = currentUnixTime();
     job.worker_pid = process.pid;
     writeJobFile(jobFilePath, job);
@@ -268,26 +446,62 @@ const results = [];
 let success = true;
 
 try {
-    for (const commandDefinition of commandDefinitions) {
-        const result = await runCommand(commandDefinition);
-        results.push(result);
-        if (!result.success) {
-            success = false;
+    if (commandDefinitions.length === 0) {
+        success = false;
+        results.push({
+            label: String(job.item_label || 'Flow Check Command'),
+            command: '',
+            success: false,
+            exit_code: 1,
+            stdout: '',
+            stderr: 'Command flow check kosong.',
+            failure_summary: 'Command flow check kosong.',
+        });
+    } else {
+        for (const commandDefinition of commandDefinitions) {
+            if (cancelRequested || isCancellationRequested(readJobFile(jobFilePath))) {
+                cancelRequested = true;
+                break;
+            }
+
+            const result = await runCommand(commandDefinition);
+            results.push(result);
+            if (cancelRequested || isCancellationRequested(readJobFile(jobFilePath))) {
+                cancelRequested = true;
+                break;
+            }
+
+            if (!result.success) {
+                success = false;
+            }
         }
     }
 
-    job.results = results;
-    job.stdout = results.map((result) => String(result.stdout || '')).filter(Boolean).join('\n\n');
-    job.stderr = results.map((result) => String(result.stderr || '')).filter(Boolean).join('\n\n');
-    job.exit_code = success ? 0 : Number((results.find((result) => !result.success) || {}).exit_code || 1);
-    job.failure_summary = success ? '' : summarizeFailure(job.stdout, job.stderr);
-    job.status = success ? 'passed' : 'failed';
-    job.finished_at = currentUnixTime();
-    job.heartbeat_at = currentUnixTime();
+    if (cancelRequested || isCancellationRequested(readJobFile(jobFilePath))) {
+        cancelRequested = true;
+        job.results = results;
+        job.stdout = results.map((result) => String(result.stdout || '')).filter(Boolean).join('\n\n');
+        job.stderr = results.map((result) => String(result.stderr || '')).filter(Boolean).join('\n\n');
+        markJobCancelled();
+        success = false;
+    } else {
+        job.results = results;
+        job.stdout = results.map((result) => String(result.stdout || '')).filter(Boolean).join('\n\n');
+        job.stderr = results.map((result) => String(result.stderr || '')).filter(Boolean).join('\n\n');
+        job.exit_code = success ? 0 : Number((results.find((result) => !result.success) || {}).exit_code || 1);
+        job.failure_summary = success ? '' : summarizeFailure(job.stdout, job.stderr);
+        job.status = success ? 'passed' : 'failed';
+        job.finished_at = currentUnixTime();
+        job.heartbeat_at = currentUnixTime();
+    }
 } finally {
     clearInterval(heartbeatTimer);
-    writeJobLog(job);
-    writeJobFile(jobFilePath, job);
+    if (cancelRequested || normalizeJobStatus(job.status) === 'cancelled') {
+        markJobCancelled();
+    } else {
+        writeJobLog(job);
+        writeJobFile(jobFilePath, job);
+    }
     launchNextQueuedJob(jobDirectory, jobId);
 }
 

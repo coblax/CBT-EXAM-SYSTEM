@@ -53,13 +53,94 @@ final class CBT_Admin_Maintenance_Common
             $args['cbt_err'] = $error;
         }
 
+        self::redirect_maintenance_page_args($args);
+    }
+
+    /**
+     * @param array<string,mixed> $args
+     */
+    public static function redirect_maintenance_page_args(array $args): void
+    {
+        $args = self::sanitize_maintenance_page_args($args);
         $location = add_query_arg($args, admin_url('admin.php'));
         if (defined('PHPUNIT_COMPOSER_INSTALL')) {
             $GLOBALS['cbt_test_last_redirect'] = (string) $location;
             throw new RuntimeException(self::TEST_REDIRECT_SIGNAL);
         }
 
+        if (self::is_async_request()) {
+            self::send_async_page_response($args);
+        }
+
         wp_safe_redirect($location);
+        exit;
+    }
+
+    public static function is_async_request(): bool
+    {
+        $requested_with = isset($_SERVER['HTTP_X_REQUESTED_WITH']) && is_scalar($_SERVER['HTTP_X_REQUESTED_WITH'])
+            ? strtolower((string) $_SERVER['HTTP_X_REQUESTED_WITH'])
+            : '';
+        if ($requested_with === 'xmlhttprequest') {
+            return true;
+        }
+
+        return isset($_REQUEST['cbt_maintenance_async'])
+            && is_scalar($_REQUEST['cbt_maintenance_async'])
+            && (string) wp_unslash((string) $_REQUEST['cbt_maintenance_async']) === '1';
+    }
+
+    /**
+     * @param array<string,mixed> $args
+     * @return array<string,string>
+     */
+    private static function sanitize_maintenance_page_args(array $args): array
+    {
+        $sanitized = ['page' => 'cbt-maintenance'];
+        $schema = [
+            'cbt_maintenance_tab' => 'sanitize_key',
+            'cbt_reset_progress_token' => 'sanitize_key',
+            'cbt_seed_progress_token' => 'sanitize_key',
+            'cbt_seed_preset' => 'sanitize_key',
+            'cbt_msg' => 'sanitize_text_field',
+            'cbt_err' => 'sanitize_text_field',
+        ];
+
+        foreach ($schema as $key => $sanitizer) {
+            if (!isset($args[$key]) || !is_scalar($args[$key])) {
+                continue;
+            }
+
+            $value = (string) $sanitizer((string) wp_unslash((string) $args[$key]));
+            if ($value !== '') {
+                $sanitized[$key] = $value;
+            }
+        }
+
+        if (isset($sanitized['cbt_maintenance_tab']) && !in_array($sanitized['cbt_maintenance_tab'], self::allowed_maintenance_tabs(), true)) {
+            unset($sanitized['cbt_maintenance_tab']);
+        }
+
+        return $sanitized;
+    }
+
+    /**
+     * @param array<string,mixed> $args
+     */
+    private static function send_async_page_response(array $args): void
+    {
+        if (function_exists('nocache_headers')) {
+            nocache_headers();
+        }
+        if (!headers_sent()) {
+            header('Content-Type: text/html; charset=' . get_option('blog_charset'));
+        }
+
+        if (!class_exists('CBT_Admin_Maintenance_Page')) {
+            require_once CBT_EXAM_SYSTEM_PATH . 'admin/class-cbt-admin-maintenance-page.php';
+        }
+
+        CBT_Admin_Maintenance_Page::render_for_query(self::sanitize_maintenance_page_args($args));
         exit;
     }
 

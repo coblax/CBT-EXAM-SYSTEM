@@ -233,7 +233,7 @@ final class CBT_Admin_Maintenance_Seed_Service
                         'action' => 'cbt_generate_test_dataset',
                         'cbt_seed_progress_token' => $seed_progress_token,
                     ],
-                    admin_url('admin-post.php')
+                    admin_url('admin-ajax.php')
                 );
                 $seed_progress_preset = self::normalize_test_data_seed_preset((array) ($seed_progress_state['preset'] ?? []));
                 $seed_progress_preset_label = (string) ($seed_progress_preset['label'] ?? $seed_progress_preset_label);
@@ -409,14 +409,11 @@ public static function handle_generate_test_dataset(): void
             CBT_Admin_Maintenance_Common::redirect_maintenance_page(null, 'Gagal menyiapkan sesi generate data uji. Coba ulang lagi.', 'seed');
         }
 
-        wp_safe_redirect(add_query_arg(
-            [
-                'page' => 'cbt-maintenance',
-                'cbt_seed_progress_token' => $token,
-            ],
-            admin_url('admin.php')
-        ));
-        exit;
+        CBT_Admin_Maintenance_Common::redirect_maintenance_page_args([
+            'page' => 'cbt-maintenance',
+            'cbt_maintenance_tab' => 'seed',
+            'cbt_seed_progress_token' => $token,
+        ]);
     }
 
     private static function continue_generate_test_dataset(string $token): void
@@ -1060,14 +1057,11 @@ public static function handle_generate_test_dataset(): void
             CBT_Admin_Maintenance_Common::redirect_maintenance_page(null, 'Gagal menyimpan progres generator data uji. Silakan mulai ulang.', 'seed');
         }
 
-        wp_safe_redirect(add_query_arg(
-            [
-                'page' => 'cbt-maintenance',
-                'cbt_seed_progress_token' => $token,
-            ],
-            admin_url('admin.php')
-        ));
-        exit;
+        CBT_Admin_Maintenance_Common::redirect_maintenance_page_args([
+            'page' => 'cbt-maintenance',
+            'cbt_maintenance_tab' => 'seed',
+            'cbt_seed_progress_token' => $token,
+        ]);
     }
 
     private static function redirect_maintenance_page(?string $message = null, ?string $error = null, ?string $tab = null): void
@@ -1504,6 +1498,13 @@ public static function handle_generate_test_dataset(): void
             return (string) $source_map[$asset_key];
         }
 
+        $plugin_asset_url = self::build_test_data_seed_plugin_asset_url($asset_key);
+        if ($plugin_asset_url !== '') {
+            $source_map[$asset_key] = $plugin_asset_url;
+
+            return $plugin_asset_url;
+        }
+
         $binary = @file_get_contents($asset_path);
         if (!is_string($binary) || $binary === '') {
             return '';
@@ -1515,6 +1516,23 @@ public static function handle_generate_test_dataset(): void
         }
 
         return $src;
+    }
+
+    private static function build_test_data_seed_plugin_asset_url(string $asset_key): string
+    {
+        $asset_key = ltrim(str_replace('\\', '/', trim($asset_key)), '/');
+        if ($asset_key === '' || str_contains($asset_key, '..') || !defined('CBT_EXAM_SYSTEM_URL')) {
+            return '';
+        }
+
+        $segments = array_values(array_filter(explode('/', $asset_key), static function (string $segment): bool {
+            return $segment !== '';
+        }));
+        if (empty($segments)) {
+            return '';
+        }
+
+        return esc_url_raw(trailingslashit(CBT_EXAM_SYSTEM_URL) . implode('/', array_map('rawurlencode', $segments)));
     }
 
     private static function store_test_data_seed_image_and_get_url(string $binary, string $filename): string
@@ -1541,7 +1559,9 @@ public static function handle_generate_test_dataset(): void
 
         $mime = self::guess_test_data_seed_image_mime_from_extension($safe_ext);
 
-        return 'data:' . $mime . ';base64,' . base64_encode($binary);
+        return strlen($binary) <= 65536
+            ? 'data:' . $mime . ';base64,' . base64_encode($binary)
+            : '';
     }
 
     private static function guess_test_data_seed_image_mime_from_extension(string $ext): string
@@ -4259,7 +4279,7 @@ public static function handle_generate_test_dataset(): void
                         'position' => $idx,
                         'item_key' => (string) $idx,
                         'prompt_text' => sprintf('Konsep %d: %d x %d', $idx, $value, $idx + 1),
-                        'option_text' => sprintf('Hasil %d', $value * ($idx + 1)),
+                        'option_text' => sprintf('Hasil %d untuk konsep %d', $value * ($idx + 1), $idx),
                     ];
                 }
                 $row = [

@@ -25,6 +25,9 @@ function createFixture(overrides = {}) {
         autoSaveTextDelayMs: 500,
         clearMessages: function () {
             calls.clearMessages += 1;
+            if (typeof overrides.clearMessages === 'function') {
+                overrides.clearMessages(state);
+            }
         },
         documentRef: document,
         normalizeExamToken: overrides.normalizeExamToken || function (value) {
@@ -235,6 +238,201 @@ describe('createAnswerInputManager', function () {
             },
             reason: 'answer-change'
         });
+    });
+
+    it('updates structured dropdown object-map answers without remounting the input region', function () {
+        var fixture = createFixture({
+            renderExamPartial: function () {
+                return true;
+            },
+            state: {
+                answers: {},
+                answeredQuestionLookup: {}
+            }
+        });
+        var cases = [
+            {
+                action: 'answer-matching',
+                attr: 'data-matching-key',
+                inputType: 'matching',
+                key: '1',
+                optionId: 701,
+                qid: 81
+            },
+            {
+                action: 'answer-cloze-dropdown',
+                attr: 'data-cloze-key',
+                inputType: 'cloze-dropdown',
+                key: '2',
+                optionId: 702,
+                qid: 82
+            },
+            {
+                action: 'answer-categorization',
+                attr: 'data-categorization-key',
+                inputType: 'categorization',
+                key: '3',
+                optionId: 703,
+                qid: 83
+            }
+        ];
+
+        cases.forEach(function (testCase) {
+            var select = document.createElement('select');
+            select.setAttribute('data-action', testCase.action);
+            select.setAttribute('data-qid', String(testCase.qid));
+            select.setAttribute(testCase.attr, testCase.key);
+            select.innerHTML = '<option value=""></option><option value="' + testCase.optionId + '">Option</option>';
+            select.value = String(testCase.optionId);
+
+            fixture.manager.handleChangeTarget(select);
+
+            expect(fixture.state.answers[testCase.qid]).toEqual({
+                [testCase.key]: testCase.optionId
+            });
+            expect(fixture.state.answeredQuestionLookup[testCase.qid]).toBe(true);
+            expect(fixture.calls.renderExamPartial.at(-1)).toEqual({
+                meta: {
+                    inputType: testCase.inputType,
+                    questionId: testCase.qid
+                },
+                reason: 'answer-change',
+                regions: {
+                    navigation: true,
+                    questionFooterProgress: true,
+                    questionSaveFeedback: true
+                }
+            });
+        });
+
+        var clearSelect = document.createElement('select');
+        clearSelect.setAttribute('data-action', 'answer-matching');
+        clearSelect.setAttribute('data-qid', '81');
+        clearSelect.setAttribute('data-matching-key', '1');
+        clearSelect.innerHTML = '<option value=""></option><option value="701">Option</option>';
+        clearSelect.value = '';
+
+        fixture.manager.handleChangeTarget(clearSelect);
+
+        expect(fixture.state.answers[81]).toEqual({});
+        expect(Object.prototype.hasOwnProperty.call(fixture.state.answeredQuestionLookup, 81)).toBe(false);
+        expect(fixture.calls.scheduleQuestionCachePersist).toEqual([240, 240, 240, 240]);
+        expect(fixture.calls.scheduleAutoSave).toEqual([
+            {
+                delayMs: 250,
+                questionId: 81
+            },
+            {
+                delayMs: 250,
+                questionId: 82
+            },
+            {
+                delayMs: 250,
+                questionId: 83
+            },
+            {
+                delayMs: 250,
+                questionId: 81
+            }
+        ]);
+    });
+
+    it('updates table completion mixed cell answers and keeps notice refresh scoped', function () {
+        var fixture = createFixture({
+            clearMessages: function (state) {
+                state.error = '';
+                state.notice = '';
+                state.success = '';
+            },
+            renderExamPartial: function () {
+                return true;
+            },
+            state: {
+                answers: {},
+                answeredQuestionLookup: {},
+                error: 'Pesan lama',
+                notice: '',
+                success: ''
+            }
+        });
+        var dropdown = document.createElement('select');
+        dropdown.setAttribute('data-action', 'answer-table-completion-dropdown');
+        dropdown.setAttribute('data-qid', '91');
+        dropdown.setAttribute('data-table-key', 'b1');
+        dropdown.innerHTML = '<option value=""></option><option value="801">Jepang</option>';
+        dropdown.value = '801';
+
+        fixture.manager.handleChangeTarget(dropdown);
+
+        expect(fixture.state.answers[91]).toEqual({
+            B1: 801
+        });
+        expect(fixture.state.answeredQuestionLookup[91]).toBe(true);
+        expect(fixture.calls.renderExamPartial[0]).toEqual({
+            meta: {
+                inputType: 'table-completion',
+                questionId: 91
+            },
+            reason: 'answer-change',
+            regions: {
+                navigation: true,
+                notice: true,
+                questionFooterProgress: true,
+                questionSaveFeedback: true
+            }
+        });
+
+        var textInput = document.createElement('input');
+        textInput.setAttribute('data-action', 'answer-table-completion-text');
+        textInput.setAttribute('data-qid', '91');
+        textInput.setAttribute('data-table-key', 'a1');
+        textInput.value = '  Tokyo  ';
+
+        fixture.manager.handleInputTarget(textInput);
+
+        expect(fixture.state.answers[91]).toEqual({
+            A1: '  Tokyo  ',
+            B1: 801
+        });
+        expect(fixture.calls.renderExamPartial[1]).toEqual({
+            meta: {
+                inputType: 'table-completion',
+                questionId: 91
+            },
+            reason: 'answer-input',
+            regions: {
+                navigation: true,
+                questionFooterProgress: true,
+                questionSaveFeedback: true
+            }
+        });
+
+        dropdown.value = '';
+        fixture.manager.handleChangeTarget(dropdown);
+        textInput.value = '';
+        fixture.manager.handleInputTarget(textInput);
+
+        expect(fixture.state.answers[91]).toEqual({});
+        expect(Object.prototype.hasOwnProperty.call(fixture.state.answeredQuestionLookup, 91)).toBe(false);
+        expect(fixture.calls.scheduleQuestionCachePersist).toEqual([240, 500, 240, 500]);
+        expect(fixture.calls.scheduleAutoSave).toEqual([
+            {
+                delayMs: 250,
+                questionId: 91
+            },
+            {
+                delayMs: 500,
+                questionId: 91
+            },
+            {
+                delayMs: 250,
+                questionId: 91
+            },
+            {
+                delayMs: 500,
+                questionId: 91
+            }
+        ]);
     });
 
     it('uses partial question patch for single choice changes without remounting the full question region', function () {

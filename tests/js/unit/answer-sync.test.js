@@ -23,7 +23,10 @@ function createFixture(overrides = {}) {
     var manager = createAnswerSyncManager({
         answerSyncRetryBaseDelayMs: 200,
         answerSyncRetryMaxDelayMs: 1000,
-        apiRequest: async function () {
+        apiRequest: async function (path, options) {
+            if (typeof overrides.apiRequest === 'function') {
+                return overrides.apiRequest(path, options);
+            }
             return {};
         },
         autoSaveBatchMaxItems: 5,
@@ -53,6 +56,10 @@ function createFixture(overrides = {}) {
             return value;
         },
         normalizeStoredAutoSaveState: function (snapshot) {
+            if (typeof overrides.normalizeStoredAutoSaveState === 'function') {
+                return overrides.normalizeStoredAutoSaveState(snapshot);
+            }
+
             return snapshot || {};
         },
         payloadSignature: overrides.payloadSignature || function (value) {
@@ -282,5 +289,103 @@ describe('createAnswerSyncManager', function () {
             label: 'Belum terkirim',
             tone: 'pending'
         });
+    });
+
+    it('keeps object-map answer payload intact through autosave batch submission', async function () {
+        var requests = [];
+        var objectMapAnswer = {
+            1: 123,
+            2: 456
+        };
+        var question = {
+            id: 202,
+            question_type: 'matching'
+        };
+        var fixture = createFixture({
+            apiRequest: async function (path, options) {
+                requests.push({
+                    body: JSON.parse(JSON.stringify(options && options.body ? options.body : {})),
+                    path: path
+                });
+
+                return {
+                    attempt_id: 55,
+                    accepted_count: 1,
+                    buffered: 0,
+                    flushed: 1,
+                    pending_count: 0,
+                    items: [
+                        {
+                            question_id: 202,
+                            is_correct: 0,
+                            score_awarded: 0.5,
+                            deferred: 0,
+                            cleared: 0
+                        }
+                    ]
+                };
+            },
+            getQuestionById: function () {
+                return question;
+            },
+            payloadSignature: function (payload) {
+                return JSON.stringify(payload);
+            },
+            questionAnswerPayload: function () {
+                return objectMapAnswer;
+            }
+        });
+
+        expect(fixture.manager.queueQuestionAnswer(question)).toBe(true);
+        await fixture.manager.flushPendingAnswerBatch({ flushAll: true });
+
+        expect(requests).toEqual([
+            {
+                path: 'submit_answers_batch',
+                body: {
+                    attempt_id: 55,
+                    answers: [
+                        {
+                            question_id: 202,
+                            answer: {
+                                1: 123,
+                                2: 456
+                            }
+                        }
+                    ]
+                }
+            }
+        ]);
+        expect(fixture.manager.getAutoSaveState().lastSubmittedPayloadByQuestion).toEqual({
+            202: JSON.stringify(objectMapAnswer)
+        });
+        expect(fixture.state.pendingSyncCount).toBe(0);
+        expect(fixture.state.syncBlockingReason).toBe('');
+    });
+
+    it('restores sparse autosave snapshots and empty question payload maps without crashing', function () {
+        var fixture = createFixture({
+            state: {
+                questionPayloadById: null
+            }
+        });
+
+        expect(function () {
+            fixture.manager.restoreQuestionAutoSaveState({
+                lastSyncError: 'Koneksi terputus'
+            });
+        }).not.toThrow();
+        expect(fixture.manager.getAutoSaveState()).toMatchObject({
+            lastSubmittedPayloadByQuestion: {},
+            lastSyncError: 'Koneksi terputus',
+            pendingAnswerBatchByQuestion: {},
+            pendingAnswerBatchOrder: [],
+            syncBlockingReason: ''
+        });
+
+        expect(function () {
+            fixture.manager.initializeSubmittedPayloadCache();
+        }).not.toThrow();
+        expect(fixture.manager.queueLoadedQuestionAnswersForFlush()).toBe(0);
     });
 });

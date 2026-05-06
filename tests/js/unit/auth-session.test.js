@@ -100,6 +100,26 @@ describe('createAuthSessionManager', function () {
         expect(manager.normalizePersistedStage('weird-stage')).toBe('');
     });
 
+    it('rejects malformed persisted tokens before bootstrap can reuse them', function () {
+        var storage = globalThis.sessionStorage;
+        storage.setItem('cbt-auth-session', JSON.stringify({
+            token: { value: 'token-object' },
+            user: {
+                user_id: 9,
+                role: 'student',
+                display_name: 'Ayu'
+            },
+            selected_exam_id: 44,
+            last_stage: 'confirm'
+        }));
+        var manager = createManager({}, storage);
+
+        expect(manager.normalizePersistedToken('  token-123  ')).toBe('token-123');
+        expect(manager.normalizePersistedToken({ value: 'token-object' })).toBe('');
+        expect(manager.normalizePersistedToken(str_repeat('a', 4097))).toBe('');
+        expect(manager.readPersistedAuthSession()).toBeNull();
+    });
+
     it('returns null when persisted payload is malformed', function () {
         var storage = globalThis.sessionStorage;
         storage.setItem('cbt-auth-session', '{"token":"","user":{}}');
@@ -139,3 +159,7 @@ describe('createAuthSessionManager', function () {
         }).not.toThrow();
     });
 });
+
+function str_repeat(value, count) {
+    return String(value || '').repeat(Number(count) || 0);
+}

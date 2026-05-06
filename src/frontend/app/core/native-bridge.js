@@ -29,12 +29,25 @@ export function createNativeBridgeManager(deps) {
         return JSON.stringify(cloneSnapshot(snapshot));
     }
 
+    function normalizeSnapshotToken(rawToken) {
+        if (typeof rawToken !== 'string') {
+            return '';
+        }
+
+        var token = rawToken.trim();
+        if (token === '' || token.length > 4096) {
+            return '';
+        }
+
+        return token;
+    }
+
     function buildSnapshot() {
         var persisted = typeof readPersistedAuthSession === 'function'
             ? readPersistedAuthSession()
             : null;
         var activeUser = state && state.user ? state.user : (persisted && persisted.user ? persisted.user : null);
-        var token = String(state && state.token ? state.token : (persisted && persisted.token ? persisted.token : ''));
+        var token = normalizeSnapshotToken(state && state.token ? state.token : (persisted && persisted.token ? persisted.token : ''));
         var attemptId = Number(state && state.attemptId ? state.attemptId : 0) || 0;
         var stage = String(state && state.stage ? state.stage : '');
         var selectedExamId = Number(state && state.selectedExamId ? state.selectedExamId : (persisted && persisted.selectedExamId ? persisted.selectedExamId : 0)) || 0;

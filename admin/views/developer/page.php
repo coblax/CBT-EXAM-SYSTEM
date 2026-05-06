@@ -72,20 +72,22 @@ if ($is_stable_mode) {
     $live_launcher_label = $launcher_available ? ($launcher_running ? 'RUNNING' : ($launcher_can_autostart ? 'READY' : 'SKIPPED')) : 'UNAVAILABLE';
 }
 ?>
-<div class="wrap cbt-developer-page">
-    <?php if ($notice !== ''): ?>
-        <div class="notice notice-success is-dismissible"><p><?php echo esc_html($notice); ?></p></div>
-    <?php endif; ?>
+<div class="wrap cbt-developer-page" data-cbt-developer-root>
+    <div data-cbt-developer-refresh-area="notices">
+        <?php if ($notice !== ''): ?>
+            <div class="notice notice-success is-dismissible"><p><?php echo esc_html($notice); ?></p></div>
+        <?php endif; ?>
 
-    <?php if ($error !== ''): ?>
-        <div class="notice notice-error"><p><?php echo esc_html($error); ?></p></div>
-    <?php endif; ?>
+        <?php if ($error !== ''): ?>
+            <div class="notice notice-error"><p><?php echo esc_html($error); ?></p></div>
+        <?php endif; ?>
 
-    <?php if ($is_constant_override): ?>
-        <div class="notice notice-warning">
-            <p><strong>Constant Override aktif.</strong> Frontend sekarang dipaksa memakai dev server dari <code>CBT_EXAM_FRONTEND_DEV_SERVER</code>. Pengaturan admin di bawah hanya informasional sampai constant dilepas.</p>
-        </div>
-    <?php endif; ?>
+        <?php if ($is_constant_override): ?>
+            <div class="notice notice-warning">
+                <p><strong>Constant Override aktif.</strong> Frontend sekarang dipaksa memakai dev server dari <code>CBT_EXAM_FRONTEND_DEV_SERVER</code>. Pengaturan admin di bawah hanya informasional sampai constant dilepas.</p>
+            </div>
+        <?php endif; ?>
+    </div>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
@@ -235,6 +237,30 @@ if ($is_stable_mode) {
     .cbt-dev-actions .button-primary { background: linear-gradient(135deg, var(--cbt-primary), var(--cbt-secondary)); border: none; color: #ffffff; box-shadow: var(--cbt-shadow-sm); }
     .cbt-dev-actions .button-primary:hover { border: none; color: #ffffff; transform: translateY(-2px); box-shadow: var(--cbt-shadow-md), var(--cbt-shadow-glow); }
     .cbt-dev-actions .button:disabled { background: #f1f5f9; color: #94a3b8; border-color: #e2e8f0; cursor: not-allowed; box-shadow: none; transform: none; }
+
+    .cbt-developer-local-progress {
+        display: none;
+        gap: 12px;
+        padding: 16px 18px;
+        border: 1px solid rgba(59, 130, 246, 0.22);
+        border-radius: var(--cbt-radius-md);
+        background: rgba(239, 246, 255, 0.86);
+        box-shadow: var(--cbt-shadow-sm);
+    }
+    .cbt-developer-local-progress.is-active,
+    .cbt-developer-local-progress.is-complete,
+    .cbt-developer-local-progress.is-error { display: grid; }
+    .cbt-developer-local-progress.is-complete { border-color: rgba(16, 185, 129, 0.26); background: rgba(236, 253, 245, 0.9); }
+    .cbt-developer-local-progress.is-error { border-color: rgba(239, 68, 68, 0.26); background: rgba(254, 242, 242, 0.92); }
+    .cbt-developer-progress-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; align-items: center; }
+    .cbt-developer-progress-title { margin: 0; color: var(--cbt-text-main); font-size: 13px; font-weight: 800; }
+    .cbt-developer-progress-percent { min-width: 48px; color: var(--cbt-primary-hover); font-size: 12px; font-weight: 800; text-align: right; }
+    .cbt-developer-progress-track { position: relative; overflow: hidden; width: 100%; height: 9px; border-radius: 999px; background: rgba(148, 163, 184, 0.22); }
+    .cbt-developer-progress-fill { display: block; width: 0%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--cbt-primary), var(--cbt-secondary)); transition: width 0.24s ease; }
+    .cbt-developer-local-progress.is-complete .cbt-developer-progress-fill { background: linear-gradient(90deg, var(--cbt-success), #22c55e); }
+    .cbt-developer-local-progress.is-error .cbt-developer-progress-fill { background: linear-gradient(90deg, #ef4444, #f97316); }
+    .cbt-developer-progress-step { margin: 0; color: var(--cbt-text-muted); font-size: 12px; line-height: 1.5; }
+    .cbt-developer-page.is-local-busy [data-cbt-developer-refresh-area] { opacity: 0.72; transition: opacity 0.2s ease; }
     
     .cbt-dev-status-list { display: grid; gap: 12px; }
     .cbt-dev-status-item { padding: 16px; border-radius: var(--cbt-radius-sm); background: rgba(255, 255, 255, 0.6); border: 1px solid var(--cbt-border); transition: var(--cbt-transition); }
@@ -398,7 +424,7 @@ if ($is_stable_mode) {
 </style>
 
     <div class="cbt-dev-shell">
-    <section class="cbt-dev-hero">
+    <section class="cbt-dev-hero" data-cbt-developer-refresh-area="hero">
         <div class="cbt-dev-hero-copy">
             <span class="cbt-dev-kicker">Developer</span>
             <h1>CBT Developer</h1>
@@ -432,6 +458,17 @@ if ($is_stable_mode) {
         </aside>
     </section>
 
+    <div class="cbt-developer-local-progress" data-cbt-developer-progress role="status" aria-live="polite" aria-hidden="true">
+        <div class="cbt-developer-progress-head">
+            <p class="cbt-developer-progress-title" data-cbt-developer-progress-title>Menyiapkan aksi Developer</p>
+            <span class="cbt-developer-progress-percent" data-cbt-developer-progress-percent>0%</span>
+        </div>
+        <div class="cbt-developer-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <span class="cbt-developer-progress-fill" data-cbt-developer-progress-fill></span>
+        </div>
+        <p class="cbt-developer-progress-step" data-cbt-developer-progress-step>Progress berjalan di area ini tanpa reload halaman global.</p>
+    </div>
+
     <div class="cbt-dev-tabs" role="tablist" aria-label="CBT Developer Sections">
         <button type="button" class="cbt-dev-tab-button is-active" data-dev-tab="overview" role="tab" aria-selected="true">Overview</button>
         <button type="button" class="cbt-dev-tab-button" data-dev-tab="state" role="tab" aria-selected="false">State</button>
@@ -444,7 +481,7 @@ if ($is_stable_mode) {
     <div class="cbt-dev-tab-panel is-active" data-dev-tab-panel="overview">
     <div class="cbt-dev-grid">
         <div class="cbt-dev-col">
-<section class="cbt-dev-card">
+<section class="cbt-dev-card" data-cbt-developer-refresh-area="frontend-mode">
             <h2>Frontend Mode</h2>
             <p class="cbt-dev-card-subtitle">Pilih asset source yang dipakai shortcode frontend CBT.</p>
 
@@ -460,7 +497,7 @@ if ($is_stable_mode) {
                 </span>
             </div>
 
-            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-dev-stack">
+            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-dev-stack" data-cbt-developer-local-form data-cbt-developer-progress-profile="settings">
                 <?php wp_nonce_field('cbt_save_developer_settings'); ?>
                 <input type="hidden" name="action" value="cbt_save_developer_settings" />
 
@@ -518,7 +555,7 @@ if ($is_stable_mode) {
         </section>
         </div>
         <div class="cbt-dev-col">
-<section class="cbt-dev-card">
+<section class="cbt-dev-card" data-cbt-developer-refresh-area="runtime-status">
             <h2>Runtime Status</h2>
             <p class="cbt-dev-card-subtitle">Ringkasan source asset aktif dan health check dev server.</p>
 
@@ -545,12 +582,12 @@ if ($is_stable_mode) {
                         <span class="cbt-dev-muted">Last checked: <?php echo esc_html($checked_at_label); ?></span>
                     </div>
                     <div class="cbt-dev-actions" style="margin-top:12px;">
-                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" data-cbt-developer-local-form data-cbt-developer-progress-profile="check">
                             <?php wp_nonce_field('cbt_check_developer_dev_server'); ?>
                             <input type="hidden" name="action" value="cbt_check_developer_dev_server" />
                             <button type="submit" class="button">Check Dev Server</button>
                         </form>
-                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" data-cbt-developer-local-form data-cbt-developer-progress-profile="stop">
                             <?php wp_nonce_field('cbt_stop_developer_dev_server'); ?>
                             <input type="hidden" name="action" value="cbt_stop_developer_dev_server" />
                             <button type="submit" class="button" <?php disabled(!$launcher_available); ?>>Matikan Dev Server</button>
@@ -1284,6 +1321,8 @@ if ($is_stable_mode) {
             var activeStorageDetailIndex = -1;
             var scenarioFormDirty = false;
             var tabStorageKey = 'cbt_developer_active_tab_v1';
+            var developerProgressTimer = 0;
+            var developerLocalActionActive = false;
 
             function escapeHtml(value) {
                 return String(value || '')
@@ -1345,6 +1384,300 @@ if ($is_stable_mode) {
 
                 node.textContent = message;
                 node.style.color = tone === 'error' ? '#b91c1c' : '#047857';
+            }
+
+            function getDeveloperRoot() {
+                return document.querySelector('[data-cbt-developer-root]');
+            }
+
+            function getDeveloperProgressParts() {
+                var root = getDeveloperRoot();
+                var progress = root ? root.querySelector('[data-cbt-developer-progress]') : null;
+                return {
+                    root: root,
+                    progress: progress,
+                    title: progress ? progress.querySelector('[data-cbt-developer-progress-title]') : null,
+                    percent: progress ? progress.querySelector('[data-cbt-developer-progress-percent]') : null,
+                    fill: progress ? progress.querySelector('[data-cbt-developer-progress-fill]') : null,
+                    bar: progress ? progress.querySelector('[role="progressbar"]') : null,
+                    step: progress ? progress.querySelector('[data-cbt-developer-progress-step]') : null
+                };
+            }
+
+            function setDeveloperProgress(value, title, step, state) {
+                var parts = getDeveloperProgressParts();
+                var percent = Math.max(0, Math.min(100, parseInt(String(value || 0), 10) || 0));
+
+                if (!parts.progress) {
+                    return;
+                }
+
+                parts.progress.classList.toggle('is-active', state === 'active');
+                parts.progress.classList.toggle('is-complete', state === 'complete');
+                parts.progress.classList.toggle('is-error', state === 'error');
+                parts.progress.setAttribute('aria-hidden', 'false');
+
+                if (parts.title) {
+                    parts.title.textContent = title || 'Memproses CBT Developer';
+                }
+                if (parts.percent) {
+                    parts.percent.textContent = percent + '%';
+                }
+                if (parts.fill) {
+                    parts.fill.style.width = percent + '%';
+                }
+                if (parts.bar) {
+                    parts.bar.setAttribute('aria-valuenow', String(percent));
+                }
+                if (parts.step) {
+                    parts.step.textContent = step || 'Progress berjalan di area ini tanpa reload halaman global.';
+                }
+            }
+
+            function getDeveloperProgressProfile(profileKey) {
+                var profiles = {
+                    settings: {
+                        title: 'Menyimpan pengaturan Developer',
+                        steps: [
+                            [18, 'Mengirim mode frontend dan URL dev server ke WordPress.'],
+                            [42, 'Memvalidasi permission, nonce, dan konfigurasi mode.'],
+                            [68, 'Menyiapkan launcher atau build watcher bila dibutuhkan.'],
+                            [88, 'Memuat ulang status Developer di area ini.']
+                        ],
+                        done: 'Pengaturan Developer selesai diperbarui.'
+                    },
+                    check: {
+                        title: 'Mengecek Dev Server',
+                        steps: [
+                            [20, 'Menghubungi dev server dari backend WordPress.'],
+                            [50, 'Menyimpan snapshot health terbaru.'],
+                            [78, 'Mengambil ulang kartu Runtime Status.'],
+                            [90, 'Menyiapkan hasil check untuk ditampilkan.']
+                        ],
+                        done: 'Health check dev server selesai.'
+                    },
+                    stop: {
+                        title: 'Mematikan Dev Server',
+                        steps: [
+                            [20, 'Mengirim sinyal stop ke launcher dev server.'],
+                            [48, 'Membersihkan PID dan state proses lokal.'],
+                            [72, 'Mengembalikan source frontend bila perlu.'],
+                            [90, 'Memuat ulang status runtime terbaru.']
+                        ],
+                        done: 'Dev server stop flow selesai diproses.'
+                    }
+                };
+
+                return profiles[profileKey] || {
+                    title: 'Memproses CBT Developer',
+                    steps: [
+                        [24, 'Mengirim aksi ke WordPress.'],
+                        [58, 'Menunggu response admin.'],
+                        [86, 'Memuat ulang area Developer.']
+                    ],
+                    done: 'Area Developer selesai diperbarui.'
+                };
+            }
+
+            function startDeveloperProgress(profileKey) {
+                var profile = getDeveloperProgressProfile(profileKey);
+                var index = 0;
+
+                window.clearInterval(developerProgressTimer);
+                setDeveloperProgress(6, profile.title, 'Menyiapkan request area lokal...', 'active');
+
+                developerProgressTimer = window.setInterval(function () {
+                    var next = profile.steps[index];
+                    if (!next) {
+                        window.clearInterval(developerProgressTimer);
+                        return;
+                    }
+
+                    setDeveloperProgress(next[0], profile.title, next[1], 'active');
+                    index += 1;
+                }, 520);
+            }
+
+            function completeDeveloperProgress(profileKey, state, detail) {
+                var profile = getDeveloperProgressProfile(profileKey);
+                var isError = state === 'error';
+
+                window.clearInterval(developerProgressTimer);
+                setDeveloperProgress(
+                    isError ? 100 : 100,
+                    isError ? 'Aksi Developer gagal diproses lokal' : profile.title,
+                    detail || profile.done,
+                    isError ? 'error' : 'complete'
+                );
+            }
+
+            function setDeveloperLocalControlsDisabled(disabled) {
+                var root = getDeveloperRoot();
+                if (!root) {
+                    return;
+                }
+
+                Array.prototype.slice.call(root.querySelectorAll('[data-cbt-developer-local-form] button, [data-cbt-developer-local-form] input, [data-cbt-developer-local-form] select')).forEach(function (control) {
+                    if (!(control instanceof HTMLElement)) {
+                        return;
+                    }
+
+                    if (disabled) {
+                        if (control.hasAttribute('disabled')) {
+                            control.setAttribute('data-cbt-developer-was-disabled', '1');
+                            return;
+                        }
+
+                        control.setAttribute('data-cbt-developer-local-disabled', '1');
+                        control.setAttribute('disabled', 'disabled');
+                        return;
+                    }
+
+                    if (control.getAttribute('data-cbt-developer-local-disabled') === '1') {
+                        control.removeAttribute('disabled');
+                    }
+                    control.removeAttribute('data-cbt-developer-local-disabled');
+                    control.removeAttribute('data-cbt-developer-was-disabled');
+                });
+            }
+
+            function updateDeveloperAddress(responseUrl) {
+                if (!responseUrl || !window.URL || !window.history || typeof window.history.replaceState !== 'function') {
+                    return;
+                }
+
+                try {
+                    var nextUrl = new URL(responseUrl, window.location.href);
+                    if (nextUrl.origin !== window.location.origin) {
+                        return;
+                    }
+
+                    nextUrl.hash = window.location.hash ? window.location.hash.replace(/^#/, '') : '';
+                    window.history.replaceState(null, '', nextUrl.toString());
+                } catch (error) {
+                    // Ignore malformed redirect URLs.
+                }
+            }
+
+            function replaceDeveloperRefreshAreas(responseHtml) {
+                var parser = new DOMParser();
+                var doc = parser.parseFromString(responseHtml, 'text/html');
+                var incomingRoot = doc.querySelector('[data-cbt-developer-root]');
+                var currentRoot = getDeveloperRoot();
+                var refreshed = [];
+
+                if (!incomingRoot || !currentRoot) {
+                    throw new Error('Response tidak memuat area CBT Developer.');
+                }
+
+                ['notices', 'hero', 'frontend-mode', 'runtime-status'].forEach(function (areaName) {
+                    var selector = '[data-cbt-developer-refresh-area="' + areaName + '"]';
+                    var currentArea = currentRoot.querySelector(selector);
+                    var incomingArea = incomingRoot.querySelector(selector);
+
+                    if (!currentArea || !incomingArea) {
+                        return;
+                    }
+
+                    currentArea.replaceWith(document.importNode(incomingArea, true));
+                    refreshed.push(areaName);
+                });
+
+                if (!refreshed.length) {
+                    throw new Error('Tidak ada area Developer yang bisa diperbarui dari response.');
+                }
+
+                document.dispatchEvent(new CustomEvent('cbt:developer:local-refresh', {
+                    detail: {
+                        areas: refreshed
+                    }
+                }));
+            }
+
+            function showDeveloperLocalError(message) {
+                var root = getDeveloperRoot();
+                var notices = root ? root.querySelector('[data-cbt-developer-refresh-area="notices"]') : null;
+
+                if (!notices) {
+                    return;
+                }
+
+                notices.innerHTML = '<div class="notice notice-error"><p>' + escapeHtml(message) + '</p></div>';
+            }
+
+            function getDeveloperResponseExcerpt(html) {
+                var text = String(html || '').replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+                return text ? text.slice(0, 220) : '';
+            }
+
+            function runDeveloperLocalForm(form) {
+                var profileKey = String(form.getAttribute('data-cbt-developer-progress-profile') || 'default');
+                var actionUrl = form.getAttribute('action') || window.location.href;
+                var method = String(form.getAttribute('method') || 'post').toUpperCase();
+                var formData = method === 'GET' ? null : new FormData(form);
+                var root = getDeveloperRoot();
+
+                if (developerLocalActionActive) {
+                    return;
+                }
+
+                developerLocalActionActive = true;
+                if (root) {
+                    root.classList.add('is-local-busy');
+                }
+                setDeveloperLocalControlsDisabled(true);
+                startDeveloperProgress(profileKey);
+
+                window.fetch(actionUrl, {
+                    method: method,
+                    body: formData,
+                    credentials: 'same-origin',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                }).then(function (response) {
+                    return response.text().then(function (html) {
+                        if (!response.ok) {
+                            var excerpt = getDeveloperResponseExcerpt(html);
+                            throw new Error('HTTP ' + response.status + (excerpt ? ': ' + excerpt : ''));
+                        }
+
+                        replaceDeveloperRefreshAreas(html);
+                        updateDeveloperAddress(response.url || '');
+                        completeDeveloperProgress(profileKey, 'complete', getDeveloperProgressProfile(profileKey).done);
+                    });
+                }).catch(function (error) {
+                    var detail = error && error.message ? error.message : 'unknown error';
+                    var message = 'Gagal memperbarui area Developer tanpa reload global. Detail: ' + detail;
+                    showDeveloperLocalError(message);
+                    completeDeveloperProgress(profileKey, 'error', message);
+                }).finally(function () {
+                    var currentRoot = getDeveloperRoot();
+                    developerLocalActionActive = false;
+                    if (currentRoot) {
+                        currentRoot.classList.remove('is-local-busy');
+                    }
+                    setDeveloperLocalControlsDisabled(false);
+                });
+            }
+
+            function bindDeveloperLocalActions() {
+                if (window.CBTDeveloperLocalActionsBound) {
+                    return;
+                }
+
+                window.CBTDeveloperLocalActionsBound = true;
+                document.addEventListener('submit', function (event) {
+                    var target = event.target instanceof Element ? event.target : null;
+                    var form = target ? target.closest('[data-cbt-developer-local-form]') : null;
+
+                    if (!(form instanceof HTMLFormElement)) {
+                        return;
+                    }
+
+                    event.preventDefault();
+                    runDeveloperLocalForm(form);
+                });
             }
 
             function isKnownTab(tabId) {
@@ -3079,6 +3412,8 @@ if ($is_stable_mode) {
                     setStatus(scenarioStatusNode, 'Gagal menyalin scenario summary.', 'error');
                 });
             }
+
+            bindDeveloperLocalActions();
 
             if (tabButtons.length) {
                 tabButtons.forEach(function (button) {

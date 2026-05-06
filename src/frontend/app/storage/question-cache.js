@@ -1012,7 +1012,13 @@ export function createQuestionCacheStorage(deps) {
     }
 
     function normalizeQuestionCacheSnapshot(snapshot, attemptId) {
-        var safeAttemptId = Number(attemptId || (snapshot && snapshot.attempt_id)) || 0;
+        var requestedAttemptId = Number(attemptId) || 0;
+        var snapshotAttemptId = Number(snapshot && snapshot.attempt_id) || 0;
+        if (requestedAttemptId > 0 && snapshotAttemptId > 0 && requestedAttemptId !== snapshotAttemptId) {
+            return null;
+        }
+
+        var safeAttemptId = requestedAttemptId || snapshotAttemptId;
         if (safeAttemptId <= 0 || !snapshot || typeof snapshot !== 'object') {
             return null;
         }

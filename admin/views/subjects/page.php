@@ -196,6 +196,91 @@
                 opacity: 0.72;
                 transition: opacity 0.18s ease;
             }
+            .cbt-subject-progress {
+                display: none;
+                gap: 10px;
+                padding: 14px 16px;
+                border: 1px solid #bfdbfe;
+                border-radius: 18px;
+                background: linear-gradient(135deg, rgba(239, 246, 255, 0.97), rgba(240, 253, 250, 0.92));
+                box-shadow: 0 14px 30px rgba(37, 99, 235, 0.12);
+            }
+            .cbt-subject-progress.is-active {
+                display: grid;
+            }
+            .cbt-subject-progress.is-error {
+                border-color: #fecaca;
+                background: linear-gradient(135deg, rgba(254, 242, 242, 0.98), rgba(255, 247, 237, 0.94));
+                box-shadow: 0 14px 30px rgba(239, 68, 68, 0.10);
+            }
+            .cbt-subject-progress-head {
+                display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 14px;
+                flex-wrap: wrap;
+            }
+            .cbt-subject-progress-title {
+                display: grid;
+                gap: 3px;
+                min-width: 0;
+            }
+            .cbt-subject-progress-title strong {
+                color: #0f172a;
+                font-size: 14px;
+                line-height: 1.25;
+            }
+            .cbt-subject-progress-title span,
+            .cbt-subject-progress-step {
+                color: #52637a;
+                font-size: 13px;
+                line-height: 1.45;
+            }
+            .cbt-subject-progress-percent {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 54px;
+                min-height: 30px;
+                padding: 0 10px;
+                border: 1px solid #bfdbfe;
+                border-radius: 999px;
+                background: #ffffff;
+                color: #1d4ed8;
+                font-size: 12px;
+                font-weight: 800;
+                letter-spacing: 0.04em;
+            }
+            .cbt-subject-progress.is-error .cbt-subject-progress-percent {
+                color: #b91c1c;
+                border-color: #fecaca;
+            }
+            .cbt-subject-progress-track {
+                height: 9px;
+                overflow: hidden;
+                border-radius: 999px;
+                background: rgba(148, 163, 184, 0.22);
+            }
+            .cbt-subject-progress-fill {
+                display: block;
+                width: var(--cbt-subject-progress, 0%);
+                height: 100%;
+                border-radius: inherit;
+                background: linear-gradient(90deg, #2563eb 0%, #06b6d4 54%, #10b981 100%);
+                transition: width 0.24s ease;
+            }
+            .cbt-subject-progress.is-error .cbt-subject-progress-fill {
+                background: linear-gradient(90deg, #ef4444 0%, #f97316 100%);
+            }
+            .cbt-subject-progress-step {
+                margin: 0;
+                font-weight: 600;
+            }
+            .cbt-subject-panel .button.is-loading,
+            .cbt-subject-row-action.is-loading {
+                pointer-events: none;
+                opacity: 0.78;
+            }
             .cbt-subject-panel-header {
                 display: flex;
                 align-items: flex-start;
@@ -753,6 +838,7 @@
             class="wrap cbt-subject-page"
             data-cbt-subject-default-tab="<?php echo esc_attr($default_subject_tab); ?>"
             data-cbt-subject-force-tab="<?php echo $subject_tab_is_forced ? '1' : '0'; ?>"
+            data-cbt-subject-root
         >
             <div class="cbt-subject-shell">
                 <section class="cbt-subject-hero">
@@ -761,19 +847,35 @@
                         <h1>CBT Subjects</h1>
                         <p>Kelola mapel CBT melalui tab yang terpisah agar proses tambah, import, dan pengelolaan daftar subject terasa lebih ringkas.</p>
                     </div>
-                    <div class="cbt-subject-overview" aria-hidden="true">
+                    <div class="cbt-subject-overview" data-cbt-subject-refresh-area="overview" aria-hidden="true">
                         <span class="cbt-subject-pill"><?php echo esc_html(sprintf('Total: %d subject', $total_subjects)); ?></span>
                         <span class="cbt-subject-pill"><?php echo esc_html(!empty($editing) ? 'Mode edit aktif' : 'Mode tambah'); ?></span>
                         <span class="cbt-subject-pill"><?php echo esc_html(is_array($subject_import_state) ? 'Import berjalan' : 'Import siap'); ?></span>
                     </div>
                 </section>
 
-                <?php if ($notice): ?>
-                    <div class="notice notice-success is-dismissible"><p><?php echo esc_html($notice); ?></p></div>
-                <?php endif; ?>
-                <?php if ($error): ?>
-                    <div class="notice notice-error is-dismissible"><p><?php echo esc_html($error); ?></p></div>
-                <?php endif; ?>
+                <div class="cbt-subject-notices" data-cbt-subject-refresh-area="notices">
+                    <?php if ($notice): ?>
+                        <div class="notice notice-success is-dismissible"><p><?php echo esc_html($notice); ?></p></div>
+                    <?php endif; ?>
+                    <?php if ($error): ?>
+                        <div class="notice notice-error is-dismissible"><p><?php echo esc_html($error); ?></p></div>
+                    <?php endif; ?>
+                </div>
+
+                <div class="cbt-subject-progress" data-cbt-subject-progress role="status" aria-live="polite" aria-hidden="true">
+                    <div class="cbt-subject-progress-head">
+                        <div class="cbt-subject-progress-title">
+                            <strong data-cbt-subject-progress-label>Menunggu aksi CBT Subjects...</strong>
+                            <span>Progress ini memperbarui panel Subjects yang terdampak saja, tanpa reload halaman global.</span>
+                        </div>
+                        <span class="cbt-subject-progress-percent" data-cbt-subject-progress-percent>0%</span>
+                    </div>
+                    <div class="cbt-subject-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-cbt-subject-progress-track>
+                        <span class="cbt-subject-progress-fill" data-cbt-subject-progress-fill></span>
+                    </div>
+                    <p class="cbt-subject-progress-step" data-cbt-subject-progress-step>Siap memproses perubahan subject.</p>
+                </div>
 
                 <div class="cbt-subject-tabs" role="tablist" aria-label="Navigasi CBT Subject">
                     <button type="button" class="cbt-subject-tab<?php echo $default_subject_tab === 'form' ? ' is-active' : ''; ?>" data-cbt-subject-tab="form" role="tab" aria-selected="<?php echo $default_subject_tab === 'form' ? 'true' : 'false'; ?>">Form Subject</button>
@@ -781,7 +883,7 @@
                     <button type="button" class="cbt-subject-tab<?php echo $default_subject_tab === 'list' ? ' is-active' : ''; ?>" data-cbt-subject-tab="list" role="tab" aria-selected="<?php echo $default_subject_tab === 'list' ? 'true' : 'false'; ?>">Daftar Subject</button>
                 </div>
 
-                <section class="cbt-subject-panel<?php echo $default_subject_tab === 'form' ? ' is-active' : ''; ?>" data-cbt-subject-panel="form" role="tabpanel">
+                <section class="cbt-subject-panel<?php echo $default_subject_tab === 'form' ? ' is-active' : ''; ?>" data-cbt-subject-panel="form" data-cbt-subject-refresh-area="form-panel" role="tabpanel">
                     <div class="cbt-subject-panel-header">
                         <div>
                             <h2><?php echo $editing ? 'Edit Subject' : 'Add Subject'; ?></h2>
@@ -793,7 +895,7 @@
                             <span class="cbt-subject-chip">Manual</span>
                         <?php endif; ?>
                     </div>
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" data-cbt-subject-tab-submit="form">
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" data-cbt-subject-tab-submit="form" data-cbt-subject-async-form data-cbt-subject-progress-profile="save" data-cbt-subject-refresh-areas="notices,overview,form-panel,list-panel" data-cbt-subject-success-tab="list">
                         <?php wp_nonce_field('cbt_save_subject'); ?>
                         <input type="hidden" name="action" value="cbt_save_subject" />
                         <input type="hidden" name="id" value="<?php echo esc_attr($editing['id'] ?? 0); ?>" />
@@ -828,7 +930,7 @@
                     </form>
                 </section>
 
-                <section class="cbt-subject-panel<?php echo $default_subject_tab === 'import' ? ' is-active' : ''; ?>" data-cbt-subject-panel="import" role="tabpanel">
+                <section class="cbt-subject-panel<?php echo $default_subject_tab === 'import' ? ' is-active' : ''; ?>" data-cbt-subject-panel="import" data-cbt-subject-refresh-area="import-panel" role="tabpanel">
                     <div class="cbt-subject-panel-header">
                         <div>
                             <h2>Import CBT Subjects</h2>
@@ -837,7 +939,15 @@
                         <span class="cbt-subject-chip">CSV / XLSX</span>
                     </div>
                     <?php if (is_array($subject_import_state)): ?>
-                        <div class="cbt-subject-import-progress">
+                        <div
+                            class="cbt-subject-import-progress"
+                            data-cbt-subject-import-progress
+                            data-cbt-subject-import-running="<?php echo $subject_import_is_running ? '1' : '0'; ?>"
+                            data-cbt-subject-import-continue-url="<?php echo esc_url($subject_import_continue_url); ?>"
+                            data-cbt-subject-progress-profile="import"
+                            data-cbt-subject-refresh-areas="notices,overview,import-panel,list-panel"
+                            data-cbt-subject-success-tab="import"
+                        >
                             <strong>
                                 Progress Import Subject:
                                 <?php echo esc_html((string) $subject_import_offset . ' / ' . (string) $subject_import_total); ?>
@@ -853,11 +963,6 @@
                                 <br />
                                 <?php if ($subject_import_is_running): ?>
                                     Memproses batch subject berikutnya...
-                                    <script>
-                                        window.setTimeout(function () {
-                                            window.location.href = <?php echo wp_json_encode($subject_import_continue_url); ?>;
-                                        }, 350);
-                                    </script>
                                 <?php else: ?>
                                     <span style="color:#0a7a2f; font-weight:600;">Import subject selesai diproses.</span>
                                 <?php endif; ?>
@@ -872,7 +977,7 @@
                             Download Template XLSX
                         </a>
                     </div>
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" enctype="multipart/form-data" data-cbt-subject-tab-submit="import">
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" enctype="multipart/form-data" data-cbt-subject-tab-submit="import" data-cbt-subject-async-form data-cbt-subject-progress-profile="import" data-cbt-subject-refresh-areas="notices,overview,import-panel,list-panel" data-cbt-subject-success-tab="import">
                         <?php wp_nonce_field('cbt_import_subjects'); ?>
                         <input type="hidden" name="action" value="cbt_import_subjects" />
                         <table class="form-table" role="presentation">
@@ -900,7 +1005,7 @@
                     </form>
                 </section>
 
-                <section class="cbt-subject-panel<?php echo $default_subject_tab === 'list' ? ' is-active' : ''; ?>" data-cbt-subject-panel="list" role="tabpanel">
+                <section class="cbt-subject-panel<?php echo $default_subject_tab === 'list' ? ' is-active' : ''; ?>" data-cbt-subject-panel="list" data-cbt-subject-refresh-area="list-panel" role="tabpanel">
                     <div class="cbt-subject-panel-header">
                         <div>
                             <h2>Subject List</h2>
@@ -909,7 +1014,7 @@
                         <span class="cbt-subject-chip"><?php echo esc_html($subject_list_chip_label); ?></span>
                     </div>
                     <div class="cbt-subject-list-toolbar">
-                        <form method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>" class="cbt-subject-filter-form" data-cbt-subject-tab-submit="list">
+                        <form method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>" class="cbt-subject-filter-form" data-cbt-subject-tab-submit="list" data-cbt-subject-progress-profile="list">
                             <input type="hidden" name="page" value="cbt-subjects" />
                             <div class="cbt-subject-filter-field">
                                 <label for="cbt-subject-filter-id">Nama Subject</label>
@@ -937,7 +1042,7 @@
                             </div>
                         </form>
                     </div>
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" data-cbt-subject-tab-submit="list" style="margin: 8px 0 0;">
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" data-cbt-subject-tab-submit="list" data-cbt-subject-async-form data-cbt-subject-progress-profile="delete" data-cbt-subject-refresh-areas="notices,overview,list-panel" data-cbt-subject-success-tab="list" style="margin: 8px 0 0;">
                         <?php wp_nonce_field('cbt_bulk_delete_subjects'); ?>
                         <input type="hidden" name="action" value="cbt_bulk_delete_subjects" />
                         <input type="hidden" name="cbt_subject_per_page" value="<?php echo (int) $subject_per_page; ?>" />
@@ -988,7 +1093,7 @@
                                                     'action' => 'cbt_delete_subject',
                                                     'id' => (int) $subject['id'],
                                                     'cbt_subject_paged' => $subject_current_page,
-                                                ], $subject_list_query_args), admin_url('admin-post.php')), 'cbt_delete_subject_' . (int) $subject['id'])); ?>" onclick="return confirm('Delete this subject?');">Delete</a>
+                                                ], $subject_list_query_args), admin_url('admin-post.php')), 'cbt_delete_subject_' . (int) $subject['id'])); ?>" data-cbt-subject-async-link data-cbt-subject-progress-profile="delete" data-cbt-subject-refresh-areas="notices,overview,list-panel" data-cbt-subject-success-tab="list" onclick="return confirm('Delete this subject?');">Delete</a>
                                             </div>
                                         </td>
                                     </tr>
@@ -1017,11 +1122,13 @@
             (function () {
                 const page = document.querySelector('.cbt-subject-page');
                 const tabButtons = Array.from(document.querySelectorAll('[data-cbt-subject-tab]'));
-                const tabPanels = Array.from(document.querySelectorAll('[data-cbt-subject-panel]'));
                 const tabStorageKey = 'cbt-subject-active-tab';
                 const defaultTab = page ? String(page.getAttribute('data-cbt-subject-default-tab') || 'list') : 'list';
                 const forceTab = page ? page.getAttribute('data-cbt-subject-force-tab') === '1' : false;
                 let subjectTabStorage = null;
+                let subjectProgressTimer = 0;
+                let subjectImportTimer = 0;
+                let subjectImportInFlight = false;
 
                 try {
                     subjectTabStorage = window.localStorage;
@@ -1052,8 +1159,13 @@
                     }
                 }
 
+                function getSubjectTabPanels() {
+                    return Array.from(document.querySelectorAll('[data-cbt-subject-panel]'));
+                }
+
                 function activateTab(tabId, persist) {
                     let hasTarget = false;
+                    const tabPanels = getSubjectTabPanels();
                     tabButtons.forEach((button) => {
                         const isActive = button.getAttribute('data-cbt-subject-tab') === tabId;
                         button.classList.toggle('is-active', isActive);
@@ -1071,11 +1183,202 @@
                     }
                 }
 
-                if (page && tabButtons.length > 0 && tabPanels.length > 0) {
+                function clampSubjectProgress(value) {
+                    const number = parseInt(value, 10);
+                    if (Number.isNaN(number)) {
+                        return 0;
+                    }
+
+                    return Math.max(0, Math.min(100, number));
+                }
+
+                function getSubjectProgressElements() {
+                    const root = document.querySelector('[data-cbt-subject-progress]');
+                    if (!root) {
+                        return null;
+                    }
+
+                    return {
+                        root,
+                        label: root.querySelector('[data-cbt-subject-progress-label]'),
+                        percent: root.querySelector('[data-cbt-subject-progress-percent]'),
+                        track: root.querySelector('[data-cbt-subject-progress-track]'),
+                        fill: root.querySelector('[data-cbt-subject-progress-fill]'),
+                        step: root.querySelector('[data-cbt-subject-progress-step]'),
+                    };
+                }
+
+                function setSubjectProgress(percent, label, step, tone) {
+                    const elements = getSubjectProgressElements();
+                    const progress = clampSubjectProgress(percent);
+                    if (!elements) {
+                        return;
+                    }
+
+                    elements.root.classList.add('is-active');
+                    elements.root.classList.toggle('is-error', tone === 'error');
+                    elements.root.setAttribute('aria-hidden', 'false');
+                    if (elements.label && label) {
+                        elements.label.textContent = label;
+                    }
+                    if (elements.percent) {
+                        elements.percent.textContent = String(progress) + '%';
+                    }
+                    if (elements.track) {
+                        elements.track.setAttribute('aria-valuenow', String(progress));
+                    }
+                    if (elements.fill) {
+                        elements.fill.style.setProperty('--cbt-subject-progress', String(progress) + '%');
+                    }
+                    if (elements.step && step) {
+                        elements.step.textContent = step;
+                    }
+                }
+
+                function stopSubjectProgress() {
+                    if (subjectProgressTimer) {
+                        window.clearInterval(subjectProgressTimer);
+                    }
+                    subjectProgressTimer = 0;
+                }
+
+                function getSubjectProgressProfile(profile) {
+                    const key = String(profile || 'list');
+                    if (key === 'save') {
+                        return {
+                            label: 'Menyimpan CBT Subject...',
+                            completeLabel: 'Subject berhasil disinkronkan.',
+                            steps: [
+                                'Memvalidasi nama, kode, dan deskripsi subject.',
+                                'Menyimpan perubahan ke tabel CBT Subjects.',
+                                'Mengosongkan cache catalog exam dan bank soal.',
+                                'Memperbarui form dan daftar subject secara lokal.',
+                            ],
+                        };
+                    }
+                    if (key === 'import') {
+                        return {
+                            label: 'Mengimport CBT Subjects...',
+                            completeLabel: 'Import subject diperbarui.',
+                            steps: [
+                                'Mengunggah file CSV/XLSX subject.',
+                                'Membaca baris dan mendeteksi duplikasi.',
+                                'Memproses batch create/update subject.',
+                                'Memperbarui progress import dan daftar subject.',
+                            ],
+                        };
+                    }
+                    if (key === 'delete') {
+                        return {
+                            label: 'Menghapus CBT Subject...',
+                            completeLabel: 'Aksi hapus subject selesai.',
+                            steps: [
+                                'Memeriksa subject yang dipilih.',
+                                'Melewati subject yang masih dipakai exam.',
+                                'Menghapus subject yang aman dihapus.',
+                                'Memperbarui total dan daftar subject.',
+                            ],
+                        };
+                    }
+
+                    return {
+                        label: 'Memuat daftar CBT Subjects...',
+                        completeLabel: 'Daftar subject diperbarui.',
+                        steps: [
+                            'Membaca filter subject aktif.',
+                            'Mengambil halaman daftar subject terbaru.',
+                            'Mengganti area daftar tanpa reload global.',
+                        ],
+                    };
+                }
+
+                function startSubjectProgress(profile) {
+                    const config = getSubjectProgressProfile(profile);
+                    let progress = 7;
+                    const startedAt = Date.now();
+
+                    stopSubjectProgress();
+                    setSubjectProgress(progress, config.label, config.steps[0], '');
+
+                    subjectProgressTimer = window.setInterval(() => {
+                        const elapsed = Date.now() - startedAt;
+                        const stepIndex = Math.min(config.steps.length - 1, Math.floor(elapsed / 850));
+                        const distance = 94 - progress;
+                        const increment = Math.max(1, Math.min(7, Math.ceil(distance * 0.16)));
+                        progress = Math.min(94, progress + increment);
+                        setSubjectProgress(progress, config.label, config.steps[stepIndex], '');
+                    }, 340);
+                }
+
+                function completeSubjectProgress(label, step, tone) {
+                    stopSubjectProgress();
+                    setSubjectProgress(100, label || 'Aksi CBT Subjects selesai.', step || 'Area Subjects sudah diperbarui.', tone || '');
+                }
+
+                function extractSubjectResponseError(text, status) {
+                    const raw = String(text || '').replace(/<script[\s\S]*?<\/script>/gi, ' ');
+                    let plain = raw.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+                    if (plain.length > 180) {
+                        plain = plain.slice(0, 180) + '...';
+                    }
+
+                    return 'HTTP ' + String(status || 0) + (plain ? ': ' + plain : '');
+                }
+
+                function replaceSubjectRefreshAreas(responseHtml, areas) {
+                    const parsed = new DOMParser().parseFromString(String(responseHtml || ''), 'text/html');
+                    const replaced = [];
+
+                    areas.forEach((areaName) => {
+                        const selector = '[data-cbt-subject-refresh-area="' + areaName + '"]';
+                        const current = document.querySelector(selector);
+                        const next = parsed.querySelector(selector);
+                        if (!current || !next) {
+                            return;
+                        }
+
+                        current.replaceWith(document.importNode(next, true));
+                        replaced.push(areaName);
+                    });
+
+                    if (replaced.length === 0) {
+                        throw new Error('Response valid, tetapi area CBT Subjects tidak ditemukan.');
+                    }
+
+                    return replaced;
+                }
+
+                function getSubjectTargetTab(source, replacedAreas) {
+                    const requested = source ? String(source.getAttribute('data-cbt-subject-success-tab') || '') : '';
+                    if (requested !== '') {
+                        return requested;
+                    }
+                    if (replacedAreas.indexOf('import-panel') >= 0) {
+                        return 'import';
+                    }
+                    if (replacedAreas.indexOf('list-panel') >= 0) {
+                        return 'list';
+                    }
+
+                    return 'form';
+                }
+
+                function rebindSubjectLocalUi(replacedAreas, targetTab) {
+                    bindSubjectLocalActions();
+                    bindSubjectListPanel();
+                    bindSubjectImportContinuation();
+                    if (targetTab) {
+                        activateTab(targetTab, true);
+                    } else if (replacedAreas.indexOf('list-panel') >= 0) {
+                        activateTab('list', true);
+                    }
+                }
+
+                if (page && tabButtons.length > 0 && getSubjectTabPanels().length > 0) {
                     let initialTab = defaultTab;
                     if (!forceTab) {
                         const savedTab = readSubjectStoredTab();
-                        if (savedTab && tabPanels.some((panel) => panel.getAttribute('data-cbt-subject-panel') === savedTab)) {
+                        if (savedTab && getSubjectTabPanels().some((panel) => panel.getAttribute('data-cbt-subject-panel') === savedTab)) {
                             initialTab = savedTab;
                         }
                     }
@@ -1088,12 +1391,7 @@
                         });
                     });
 
-                    Array.from(document.querySelectorAll('form[data-cbt-subject-tab-submit]')).forEach((form) => {
-                        form.addEventListener('submit', function () {
-                            const tabId = String(form.getAttribute('data-cbt-subject-tab-submit') || '');
-                            writeSubjectStoredTab(tabId);
-                        });
-                    });
+                    bindSubjectLocalActions();
                 }
 
                 const supportsPartialListRefresh = !!(window.fetch && window.DOMParser);
@@ -1137,7 +1435,53 @@
                 }
 
                 function navigateSubjectList(nextUrl) {
-                    window.location.assign(nextUrl.toString());
+                    completeSubjectProgress('Daftar subject belum bisa dimuat lokal.', 'Browser tidak mendukung partial refresh untuk URL: ' + nextUrl.toString(), 'error');
+                }
+
+                async function fetchSubjectHtml(nextUrl, options) {
+                    const response = await window.fetch(nextUrl.toString(), Object.assign({
+                        credentials: 'same-origin',
+                        cache: 'no-store',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    }, options || {}));
+                    const html = await response.text();
+                    if (!response.ok) {
+                        throw new Error(extractSubjectResponseError(html, response.status));
+                    }
+
+                    return {
+                        html,
+                        url: response.url || nextUrl.toString(),
+                    };
+                }
+
+                function getSubjectAreaList(source, fallback) {
+                    return String(source ? source.getAttribute('data-cbt-subject-refresh-areas') || '' : '')
+                        .split(',')
+                        .map((item) => item.trim())
+                        .filter(Boolean)
+                        .concat([])
+                        .filter((item, index, list) => list.indexOf(item) === index)
+                        .concat(fallback || [])
+                        .filter((item, index, list) => item !== '' && list.indexOf(item) === index);
+                }
+
+                async function runSubjectLocalAction(source, requestUrl, options) {
+                    const profile = String(source ? source.getAttribute('data-cbt-subject-progress-profile') || 'list' : 'list');
+                    const config = getSubjectProgressProfile(profile);
+                    const areas = getSubjectAreaList(source, ['notices', 'overview', 'list-panel']);
+                    const result = await fetchSubjectHtml(requestUrl, options);
+                    const replacedAreas = replaceSubjectRefreshAreas(result.html, areas);
+                    const targetTab = getSubjectTargetTab(source, replacedAreas);
+
+                    if (window.history && typeof window.history.replaceState === 'function' && result.url) {
+                        window.history.replaceState({}, '', result.url);
+                    }
+
+                    rebindSubjectLocalUi(replacedAreas, targetTab);
+                    completeSubjectProgress(config.completeLabel, 'Area ' + targetTab + ' sudah diperbarui secara lokal.', '');
                 }
 
                 async function refreshSubjectListPanel(nextUrl) {
@@ -1150,39 +1494,29 @@
                     subjectListRequestSeq += 1;
                     const requestSeq = subjectListRequestSeq;
                     setSubjectListPanelLoading(currentPanel, true);
+                    startSubjectProgress('list');
 
                     try {
-                        const response = await window.fetch(nextUrl.toString(), {
-                            credentials: 'same-origin',
-                            cache: 'no-store',
-                            headers: {
-                                'X-Requested-With': 'XMLHttpRequest'
-                            }
-                        });
-
-                        if (!response.ok) {
-                            navigateSubjectList(nextUrl);
-                            return;
-                        }
-
-                        const html = await response.text();
+                        const result = await fetchSubjectHtml(nextUrl);
                         if (requestSeq !== subjectListRequestSeq) {
                             return;
                         }
 
-                        const parsed = new DOMParser().parseFromString(html, 'text/html');
+                        const parsed = new DOMParser().parseFromString(result.html, 'text/html');
                         const nextPanel = parsed.querySelector('[data-cbt-subject-panel="list"]');
                         if (!nextPanel) {
-                            navigateSubjectList(nextUrl);
+                            throw new Error('Area daftar subject tidak ditemukan pada response.');
                             return;
                         }
 
                         currentPanel.innerHTML = nextPanel.innerHTML;
                         updateSubjectListHistory(nextUrl);
+                        bindSubjectLocalActions();
                         bindSubjectListPanel();
+                        completeSubjectProgress('Daftar subject diperbarui.', 'Filter, pagination, dan tabel subject sudah sinkron.', '');
                     } catch (error) {
                         if (requestSeq === subjectListRequestSeq) {
-                            navigateSubjectList(nextUrl);
+                            completeSubjectProgress('Gagal memuat daftar subject.', error && error.message ? error.message : 'Coba ulangi filter atau pagination.', 'error');
                         }
                     } finally {
                         if (requestSeq === subjectListRequestSeq) {
@@ -1205,6 +1539,179 @@
                         return;
                     }
                     form.submit();
+                }
+
+                function setSubjectActionButtonLoading(button, isLoading, label) {
+                    if (!button) {
+                        return;
+                    }
+
+                    if (isLoading) {
+                        button.dataset.cbtSubjectOriginalText = button.textContent || '';
+                        if ('value' in button) {
+                            button.dataset.cbtSubjectOriginalValue = button.value || '';
+                        }
+                        button.classList.add('is-loading');
+                        button.setAttribute('aria-disabled', 'true');
+                        if ('disabled' in button) {
+                            button.disabled = true;
+                        }
+                        if (label) {
+                            if ('value' in button) {
+                                button.value = label;
+                            } else {
+                                button.textContent = label;
+                            }
+                        }
+                        return;
+                    }
+
+                    button.classList.remove('is-loading');
+                    button.removeAttribute('aria-disabled');
+                    if ('disabled' in button) {
+                        button.disabled = false;
+                    }
+                    if (button.dataset.cbtSubjectOriginalText) {
+                        button.textContent = button.dataset.cbtSubjectOriginalText;
+                        delete button.dataset.cbtSubjectOriginalText;
+                    }
+                    if (button.dataset.cbtSubjectOriginalValue) {
+                        button.value = button.dataset.cbtSubjectOriginalValue;
+                        delete button.dataset.cbtSubjectOriginalValue;
+                    }
+                }
+
+                function bindSubjectLocalActions() {
+                    if (!supportsPartialListRefresh) {
+                        Array.from(document.querySelectorAll('form[data-cbt-subject-tab-submit]')).forEach((form) => {
+                            if (form.dataset.cbtSubjectStorageBound === '1') {
+                                return;
+                            }
+                            form.dataset.cbtSubjectStorageBound = '1';
+                            form.addEventListener('submit', function () {
+                                writeSubjectStoredTab(String(form.getAttribute('data-cbt-subject-tab-submit') || ''));
+                            });
+                        });
+                        return;
+                    }
+
+                    Array.from(document.querySelectorAll('[data-cbt-subject-async-form]')).forEach((form) => {
+                        if (form.dataset.cbtSubjectAsyncBound === '1') {
+                            return;
+                        }
+
+                        form.dataset.cbtSubjectAsyncBound = '1';
+                        form.addEventListener('submit', function (event) {
+                            const submitter = event.submitter || document.activeElement;
+                            const button = submitter && submitter.tagName === 'BUTTON'
+                                ? submitter
+                                : form.querySelector('button[type="submit"], input[type="submit"]');
+                            const profile = String(form.getAttribute('data-cbt-subject-progress-profile') || 'list');
+                            const formData = new FormData(form);
+                            const requestUrl = new URL(form.getAttribute('action') || window.location.href, window.location.href);
+
+                            if (event.defaultPrevented) {
+                                return;
+                            }
+
+                            event.preventDefault();
+                            writeSubjectStoredTab(String(form.getAttribute('data-cbt-subject-tab-submit') || ''));
+                            if (submitter && submitter.name && !formData.has(submitter.name)) {
+                                formData.append(submitter.name, submitter.value || '1');
+                            }
+                            formData.append('cbt_subject_local_refresh', '1');
+
+                            setSubjectActionButtonLoading(
+                                button,
+                                true,
+                                profile === 'delete' ? 'Menghapus...' : (profile === 'import' ? 'Mengimport...' : 'Menyimpan...')
+                            );
+                            startSubjectProgress(profile);
+
+                            runSubjectLocalAction(form, requestUrl, {
+                                method: 'POST',
+                                body: formData,
+                                cache: 'no-store',
+                            })
+                                .catch((error) => {
+                                    completeSubjectProgress('Gagal memproses CBT Subjects.', error && error.message ? error.message : 'Form masih aman dikirim ulang.', 'error');
+                                })
+                                .finally(() => {
+                                    setSubjectActionButtonLoading(button, false);
+                                });
+                        });
+                    });
+
+                    Array.from(document.querySelectorAll('[data-cbt-subject-async-link]')).forEach((link) => {
+                        if (link.dataset.cbtSubjectAsyncBound === '1') {
+                            return;
+                        }
+
+                        link.dataset.cbtSubjectAsyncBound = '1';
+                        link.addEventListener('click', function (event) {
+                            const confirmMessage = String(link.getAttribute('data-cbt-subject-confirm') || '').trim();
+                            const requestUrl = new URL(link.getAttribute('href') || window.location.href, window.location.href);
+
+                            if (event.defaultPrevented) {
+                                return;
+                            }
+                            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+                                return;
+                            }
+                            if (confirmMessage !== '' && !window.confirm(confirmMessage)) {
+                                event.preventDefault();
+                                return;
+                            }
+
+                            event.preventDefault();
+                            writeSubjectStoredTab(String(link.getAttribute('data-cbt-subject-success-tab') || 'list'));
+                            setSubjectActionButtonLoading(link, true, 'Menghapus...');
+                            startSubjectProgress(String(link.getAttribute('data-cbt-subject-progress-profile') || 'delete'));
+
+                            runSubjectLocalAction(link, requestUrl, {
+                                method: 'GET',
+                            })
+                                .catch((error) => {
+                                    completeSubjectProgress('Gagal memproses CBT Subjects.', error && error.message ? error.message : 'Aksi masih aman dicoba ulang.', 'error');
+                                })
+                                .finally(() => {
+                                    setSubjectActionButtonLoading(link, false);
+                                });
+                        });
+                    });
+                }
+
+                function bindSubjectImportContinuation() {
+                    const progress = document.querySelector('[data-cbt-subject-import-progress]');
+                    if (!progress || progress.getAttribute('data-cbt-subject-import-running') !== '1') {
+                        return;
+                    }
+                    if (!supportsPartialListRefresh || subjectImportInFlight) {
+                        return;
+                    }
+
+                    const continueUrl = String(progress.getAttribute('data-cbt-subject-import-continue-url') || '');
+                    if (continueUrl === '') {
+                        return;
+                    }
+
+                    if (subjectImportTimer) {
+                        window.clearTimeout(subjectImportTimer);
+                    }
+
+                    subjectImportTimer = window.setTimeout(() => {
+                        subjectImportInFlight = true;
+                        startSubjectProgress('import');
+                        runSubjectLocalAction(progress, new URL(continueUrl, window.location.href), {
+                            method: 'GET',
+                        })
+                            .catch((error) => {
+                                completeSubjectProgress('Import subject tertahan.', error && error.message ? error.message : 'Coba lanjutkan import dari halaman Subjects.', 'error');
+                            })
+                            .finally(() => {
+                                subjectImportInFlight = false;
+                            });
+                    }, 420);
                 }
 
                 function bindSubjectListSelection(panel) {
@@ -1316,5 +1823,6 @@
                 }
 
                 bindSubjectListPanel();
+                bindSubjectImportContinuation();
             })();
         </script>

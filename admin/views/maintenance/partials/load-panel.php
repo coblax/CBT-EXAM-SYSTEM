@@ -195,6 +195,8 @@ k6 version</code></pre>
                     action="<?php echo esc_url(admin_url('admin-post.php')); ?>"
                     class="cbt-maintenance-load-form"
                     data-load-test-form
+                    data-maintenance-async-form
+                    data-maintenance-loading-label="Memulai load test..."
                     data-load-profiles="<?php echo esc_attr(wp_json_encode($load_test_profile_presets)); ?>"
                     data-load-scenarios="<?php echo esc_attr(wp_json_encode($load_test_scenarios)); ?>"
                     data-load-shapes="<?php echo esc_attr(wp_json_encode($load_test_shapes)); ?>"

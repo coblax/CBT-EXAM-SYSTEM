@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) {
     data-seed-exam-profile-labels="<?php echo esc_attr(wp_json_encode($seed_exam_profile_labels)); ?>"
 >
     <?php if (is_array($seed_progress_state)): ?>
-        <section class="cbt-maintenance-card cbt-maintenance-card--seed">
+        <section class="cbt-maintenance-card cbt-maintenance-card--seed" <?php echo $seed_progress_is_running ? 'data-maintenance-auto-continue-url="' . esc_url($seed_progress_continue_url) . '"' : ''; ?>>
             <div class="cbt-maintenance-card-header">
                 <div>
                     <h2>Progress Generate Data Uji</h2>
@@ -58,14 +58,6 @@ if (!defined('ABSPATH')) {
                 Akun test khusus: <span class="cbt-maintenance-inline-code"><?php echo esc_html($test_data_seed_special_username); ?></span> / <span class="cbt-maintenance-inline-code"><?php echo esc_html($test_data_seed_special_password); ?></span>.
                 <?php if ($seed_progress_is_running): ?>
                     Batch berikutnya akan dilanjutkan otomatis.
-                    <script>
-                        if (!window.__cbtMaintenanceAutoContinue) {
-                            window.__cbtMaintenanceAutoContinue = true;
-                            window.setTimeout(function () {
-                                window.location.href = <?php echo wp_json_encode($seed_progress_continue_url); ?>;
-                            }, 350);
-                        }
-                    </script>
                 <?php else: ?>
                     Generator data uji selesai diproses.
                 <?php endif; ?>
@@ -96,7 +88,7 @@ if (!defined('ABSPATH')) {
             <span class="cbt-maintenance-chip cbt-maintenance-chip--running">Test Seeder</span>
         </div>
 
-        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" onsubmit="return confirm('Generator akan reset penuh CBT lalu membuat dataset uji baru. Lanjutkan?');" style="margin-top:18px;">
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" data-maintenance-async-form data-maintenance-loading-label="Menyiapkan dataset..." onsubmit="return confirm('Generator akan reset penuh CBT lalu membuat dataset uji baru. Lanjutkan?');" style="margin-top:18px;">
             <?php wp_nonce_field('cbt_generate_test_dataset'); ?>
             <input type="hidden" name="action" value="cbt_generate_test_dataset" />
             <input type="hidden" name="cbt_maintenance_tab" value="seed" data-maintenance-tab-input />

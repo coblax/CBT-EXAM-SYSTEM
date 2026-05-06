@@ -596,12 +596,33 @@ final class MaintenanceModularizationTest extends TestCase
 
         $orderingCounts = [];
         $matchingCounts = [];
+        $matchingValidationFailures = [];
+        $matchingStemFailures = [];
         for ($idx = 0; $idx < 11; $idx++) {
             $orderingCounts[] = $optionCount($rowFor('ordering', $idx));
             $matchingCounts[] = count((array) $rowFor('matching', $idx)['matching_items']);
         }
+        for ($idx = 0; $idx < 60; $idx++) {
+            $row = $rowFor('matching', $idx);
+            $error = \CBT_Admin_Questions_Helper::validate_matching_items(
+                \CBT_Admin_Questions_Helper::normalize_matching_items((array) ($row['matching_items'] ?? []))
+            );
+            if ($error !== '') {
+                $matchingValidationFailures[] = ($idx + 1) . ': ' . $error;
+            }
+            $rawStem = (string) ($row['question_text'] ?? '');
+            $sanitizedStem = trim(\CBT_Admin_Questions_Helper::sanitize_editor_html($rawStem));
+            if ($sanitizedStem === '') {
+                $matchingStemFailures[] = ($idx + 1) . ': empty sanitized stem';
+            }
+            if (str_contains($rawStem, 'data:image')) {
+                $matchingStemFailures[] = ($idx + 1) . ': data URI image fallback';
+            }
+        }
         self::assertSame(range(2, 12), $uniqueInts($orderingCounts));
         self::assertSame(range(2, 12), $uniqueInts($matchingCounts));
+        self::assertSame([], $matchingValidationFailures);
+        self::assertSame([], $matchingStemFailures);
 
         $clozeBlankCounts = [];
         $clozeOptionCounts = [];
@@ -964,6 +985,42 @@ final class MaintenanceModularizationTest extends TestCase
         self::assertArrayHasKey('load_test_exam_catalog', $context['active_tab_context']);
         self::assertArrayHasKey('load_test_runtime', $context['active_tab_context']);
         self::assertArrayNotHasKey('load_test_exam_catalog', $context);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_maintenance_page_renders_local_loading_hooks_without_global_reload(): void
+    {
+        require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-maintenance-page.php';
+
+        ob_start();
+        try {
+            \CBT_Admin_Maintenance_Page::render_for_query([
+                'cbt_maintenance_tab' => 'seed',
+                'cbt_seed_preset' => 'small',
+            ]);
+            $html = (string) ob_get_clean();
+        } catch (\Throwable $throwable) {
+            if (ob_get_level() > 0) {
+                ob_end_clean();
+            }
+
+            throw $throwable;
+        }
+
+        self::assertStringContainsString('data-maintenance-root', $html);
+        self::assertStringContainsString('data-maintenance-refresh-url=', $html);
+        self::assertStringContainsString('data-maintenance-async-url=', $html);
+        self::assertStringContainsString('data-maintenance-area="live"', $html);
+        self::assertStringContainsString('data-maintenance-area="banners"', $html);
+        self::assertStringContainsString('data-maintenance-area="tabs"', $html);
+        self::assertStringContainsString('data-maintenance-area="panel"', $html);
+        self::assertStringContainsString('data-maintenance-tab-link="seed"', $html);
+        self::assertStringContainsString('data-maintenance-async-form', $html);
+        self::assertStringContainsString("formData.set('cbt_maintenance_async', '1');", $html);
+        self::assertStringContainsString('replaceMaintenanceAreas(html)', $html);
+        self::assertStringNotContainsString('window.location.reload', $html);
+        self::assertStringNotContainsString('window.location.href =', $html);
+        self::assertStringNotContainsString('__cbtMaintenanceAutoContinue', $html);
     }
 
     #[RunInSeparateProcess]

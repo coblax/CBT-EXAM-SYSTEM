@@ -143,14 +143,16 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
     $quality_next_step_text = 'Fokus utamanya adalah merapikan butir yang masih lemah atau sering dikosongkan agar konsistensi paket naik dari batas tengah ke kondisi yang lebih stabil.';
 }
 ?>
-<div class="wrap cbt-analytics-page">
-    <?php if (!empty($notice)): ?>
-        <div class="notice notice-success is-dismissible"><p><?php echo esc_html((string) $notice); ?></p></div>
-    <?php endif; ?>
+<div class="wrap cbt-analytics-page" data-cbt-analytics-root>
+    <div data-cbt-analytics-refresh-area="notices">
+        <?php if (!empty($notice)): ?>
+            <div class="notice notice-success is-dismissible"><p><?php echo esc_html((string) $notice); ?></p></div>
+        <?php endif; ?>
 
-    <?php if (!empty($error)): ?>
-        <div class="notice notice-error"><p><?php echo esc_html((string) $error); ?></p></div>
-    <?php endif; ?>
+        <?php if (!empty($error)): ?>
+            <div class="notice notice-error"><p><?php echo esc_html((string) $error); ?></p></div>
+        <?php endif; ?>
+    </div>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
@@ -471,6 +473,87 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
             display: flex;
             flex-wrap: wrap;
             gap: 10px;
+        }
+        .cbt-analytics-local-progress {
+            display: none;
+            margin-top: 16px;
+            padding: 16px 18px;
+            border: 1px solid #bfdbfe;
+            border-radius: 18px;
+            background: linear-gradient(180deg, rgba(239, 246, 255, 0.92) 0%, rgba(255, 255, 255, 0.92) 100%);
+            box-shadow: 0 12px 24px rgba(37, 99, 235, 0.1);
+        }
+        .cbt-analytics-local-progress.is-active,
+        .cbt-analytics-local-progress.is-complete,
+        .cbt-analytics-local-progress.is-error {
+            display: block;
+        }
+        .cbt-analytics-local-progress.is-error {
+            border-color: #fecaca;
+            background: linear-gradient(180deg, #fff1f2 0%, #ffffff 100%);
+        }
+        .cbt-analytics-progress-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 14px;
+            margin-bottom: 12px;
+        }
+        .cbt-analytics-progress-title {
+            display: grid;
+            gap: 3px;
+            color: #1e3a5f;
+            line-height: 1.35;
+        }
+        .cbt-analytics-progress-title strong {
+            font-size: 14px;
+        }
+        .cbt-analytics-progress-title span,
+        .cbt-analytics-progress-step {
+            color: #64748b;
+            font-size: 12px;
+        }
+        .cbt-analytics-progress-percent {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 54px;
+            min-height: 30px;
+            padding: 0 10px;
+            border-radius: 999px;
+            background: #dbeafe;
+            color: #1d4ed8;
+            font-size: 12px;
+            font-weight: 800;
+        }
+        .cbt-analytics-local-progress.is-error .cbt-analytics-progress-percent {
+            background: #fee2e2;
+            color: #b91c1c;
+        }
+        .cbt-analytics-progress-track {
+            position: relative;
+            overflow: hidden;
+            height: 10px;
+            border-radius: 999px;
+            background: #dbeafe;
+        }
+        .cbt-analytics-progress-fill {
+            display: block;
+            width: 0%;
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, #2563eb 0%, #0ea5e9 58%, #22c55e 100%);
+            transition: width 220ms ease;
+        }
+        .cbt-analytics-local-progress.is-error .cbt-analytics-progress-fill {
+            background: linear-gradient(90deg, #ef4444 0%, #f97316 100%);
+        }
+        .cbt-analytics-progress-step {
+            margin: 10px 0 0;
+            line-height: 1.55;
+        }
+        .cbt-analytics-page.is-local-busy .cbt-analytics-panel {
+            box-shadow: 0 18px 34px rgba(37, 99, 235, 0.12);
         }
         .cbt-analytics-summary {
             display: flex;
@@ -1442,7 +1525,7 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
                 </div>
             </div>
 
-            <form method="get" class="cbt-analytics-filter-form" id="cbt-analytics-filter-form">
+            <form method="get" class="cbt-analytics-filter-form" id="cbt-analytics-filter-form" data-cbt-analytics-local-form data-cbt-analytics-progress-profile="filter">
                 <input type="hidden" name="page" value="cbt-analytics">
                 <input type="hidden" name="cbt_analytics_tab" id="cbt-analytics-active-tab" value="<?php echo esc_attr($current_tab); ?>">
 
@@ -1460,9 +1543,23 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
 
                 <div class="cbt-analytics-filter-actions">
                     <noscript><button type="submit" class="button" data-submit-tab="overview">Terapkan Filter</button></noscript>
-                    <a href="<?php echo esc_url($analytics_reset_url); ?>" class="button">Reset</a>
+                    <a href="<?php echo esc_url($analytics_reset_url); ?>" class="button" data-cbt-analytics-local-link data-cbt-analytics-progress-profile="reset">Reset</a>
                 </div>
             </form>
+
+            <div class="cbt-analytics-local-progress" data-cbt-analytics-progress role="status" aria-live="polite" aria-hidden="true">
+                <div class="cbt-analytics-progress-head">
+                    <div class="cbt-analytics-progress-title">
+                        <strong data-cbt-analytics-progress-title>Siap memproses Analytics</strong>
+                        <span>Progress berjalan di area ini tanpa reload halaman global.</span>
+                    </div>
+                    <span class="cbt-analytics-progress-percent" data-cbt-analytics-progress-percent>0%</span>
+                </div>
+                <div class="cbt-analytics-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-cbt-analytics-progress-track>
+                    <span class="cbt-analytics-progress-fill" data-cbt-analytics-progress-fill></span>
+                </div>
+                <p class="cbt-analytics-progress-step" data-cbt-analytics-progress-step>Pilih exam atau jalankan analytics dari daftar exam.</p>
+            </div>
         </section>
 
         <div class="cbt-analytics-tabs" role="tablist" aria-label="CBT Analytics Tabs">
@@ -1502,7 +1599,7 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
                         <span class="cbt-analytics-chip"><?php echo esc_html(number_format_i18n((int) ($overview_pagination['total_rows'] ?? 0))); ?> exam</span>
                         <span class="cbt-analytics-chip">Halaman <?php echo esc_html(number_format_i18n((int) ($overview_pagination['current_page'] ?? 1))); ?> / <?php echo esc_html(number_format_i18n((int) ($overview_pagination['total_pages'] ?? 1))); ?></span>
                         <?php if (!empty($overview_exam_rows)): ?>
-                            <a href="<?php echo esc_url($overview_analytic_all_url); ?>" class="button button-primary">ANALYTIC ALL</a>
+                            <a href="<?php echo esc_url($overview_analytic_all_url); ?>" class="button button-primary" data-cbt-analytics-local-link data-cbt-analytics-progress-profile="all">ANALYTIC ALL</a>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -1534,7 +1631,7 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
                                         <td><?php echo esc_html((string) ($row['average_percentage_display'] ?? '0.00%')); ?></td>
                                         <td><?php echo esc_html((string) ($row['pass_rate_display'] ?? '0.00%')); ?></td>
                                         <td><?php echo esc_html(number_format_i18n((int) ($row['manual_review_count'] ?? 0))); ?></td>
-                                        <td><a href="<?php echo esc_url((string) ($row['analytic_url'] ?? $analytics_reset_url)); ?>" class="button button-small">Analytic</a></td>
+                                        <td><a href="<?php echo esc_url((string) ($row['analytic_url'] ?? $analytics_reset_url)); ?>" class="button button-small" data-cbt-analytics-local-link data-cbt-analytics-progress-profile="exam">Analytic</a></td>
                                     </tr>
                                 <?php endforeach; ?>
                             </tbody>
@@ -1556,15 +1653,15 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
                             </span>
                             <div style="display:flex; gap:8px; flex-wrap:wrap;">
                                 <?php if (!empty($overview_pagination['prev_url'])): ?>
-                                    <a href="<?php echo esc_url((string) $overview_pagination['prev_url']); ?>" class="button">Previous</a>
+                                    <a href="<?php echo esc_url((string) $overview_pagination['prev_url']); ?>" class="button" data-cbt-analytics-local-link data-cbt-analytics-progress-profile="page">Previous</a>
                                 <?php endif; ?>
                                 <?php foreach ($overview_page_links as $page_link): ?>
-                                    <a href="<?php echo esc_url((string) ($page_link['url'] ?? $analytics_reset_url)); ?>" class="button<?php echo !empty($page_link['is_current']) ? ' button-primary' : ''; ?>">
+                                    <a href="<?php echo esc_url((string) ($page_link['url'] ?? $analytics_reset_url)); ?>" class="button<?php echo !empty($page_link['is_current']) ? ' button-primary' : ''; ?>" data-cbt-analytics-local-link data-cbt-analytics-progress-profile="page">
                                         <?php echo esc_html(number_format_i18n((int) ($page_link['page'] ?? 1))); ?>
                                     </a>
                                 <?php endforeach; ?>
                                 <?php if (!empty($overview_pagination['next_url'])): ?>
-                                    <a href="<?php echo esc_url((string) $overview_pagination['next_url']); ?>" class="button">Next</a>
+                                    <a href="<?php echo esc_url((string) $overview_pagination['next_url']); ?>" class="button" data-cbt-analytics-local-link data-cbt-analytics-progress-profile="page">Next</a>
                                 <?php endif; ?>
                             </div>
                         </div>
@@ -1830,14 +1927,14 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
                                 <p class="cbt-analytics-muted" style="margin:0;">Overlay distribusi kelas terhadap seluruh peserta pada exam yang sama.</p>
                             </div>
                             <?php if (($exam_benchmark_overlay['status'] ?? '') === 'ok'): ?>
-                                <form method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>" class="cbt-analytics-toolbar" style="margin-bottom:0;">
+                                <form method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>" class="cbt-analytics-toolbar" style="margin-bottom:0;" data-cbt-analytics-local-form data-cbt-analytics-progress-profile="benchmark">
                                     <input type="hidden" name="page" value="cbt-analytics" />
                                     <input type="hidden" name="cbt_analytics_tab" value="exam" />
                                     <input type="hidden" name="cbt_exam_id" value="<?php echo esc_attr((string) $selected_exam_id); ?>" />
                                     <input type="hidden" name="cbt_run_analytics" value="1" />
                                     <div class="cbt-analytics-field">
                                         <label for="cbt-benchmark-kelas">Benchmark Kelas</label>
-                                        <select id="cbt-benchmark-kelas" name="cbt_benchmark_kelas" onchange="this.form.submit()">
+                                        <select id="cbt-benchmark-kelas" name="cbt_benchmark_kelas" data-auto-submit="1">
                                             <?php foreach ((array) ($exam_benchmark_overlay['class_options'] ?? []) as $class_option): ?>
                                                 <?php $class_value = (string) ($class_option['kelas'] ?? ''); ?>
                                                 <option value="<?php echo esc_attr($class_value); ?>" <?php selected($class_value, (string) ($exam_benchmark_overlay['selected_kelas'] ?? '')); ?>>
@@ -2078,12 +2175,269 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
     <script type="application/json" id="cbt-analytics-chart-data"><?php echo $analytics_chart_payload_json ?: '{}'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></script>
     <script>
         (function () {
-            const activeTabInput = document.getElementById('cbt-analytics-active-tab');
-            const tabButtons = Array.from(document.querySelectorAll('.cbt-analytics-tab'));
-            const tabPanels = Array.from(document.querySelectorAll('.cbt-analytics-tab-panel'));
-            const filterForm = document.getElementById('cbt-analytics-filter-form');
+            const progressProfiles = {
+                filter: {
+                    title: 'Menerapkan filter Analytics',
+                    steps: [
+                        'Membaca pilihan exam dan tab aktif.',
+                        'Mengambil ringkasan Analytics terbaru dari server.',
+                        'Memperbarui panel, tabel, dan data chart di area ini.'
+                    ],
+                    wait: 'Menunggu respons filter Analytics.'
+                },
+                reset: {
+                    title: 'Mereset Analytics',
+                    steps: [
+                        'Menghapus filter aktif.',
+                        'Memuat ulang ringkasan semua exam.',
+                        'Menyambungkan ulang tabel interaktif tanpa reload global.'
+                    ],
+                    wait: 'Menunggu respons reset Analytics.'
+                },
+                exam: {
+                    title: 'Menghitung Analytics exam',
+                    steps: [
+                        'Memilih exam dan menyiapkan cache analitik.',
+                        'Menghitung summary, distribusi, item analysis, dan drilldown siswa.',
+                        'Merender hasil detail exam di area Analytics.'
+                    ],
+                    wait: 'Analytics exam sedang disiapkan.'
+                },
+                all: {
+                    title: 'Menghitung Analytics semua exam',
+                    steps: [
+                        'Menyiapkan daftar exam di halaman ini.',
+                        'Menghangatkan cache Analytics untuk setiap exam.',
+                        'Memperbarui overview setelah semua exam diproses.'
+                    ],
+                    wait: 'Analytics semua exam sedang diproses.'
+                },
+                page: {
+                    title: 'Memuat halaman daftar exam',
+                    steps: [
+                        'Mengambil halaman daftar exam berikutnya.',
+                        'Memperbarui pagination dan action analytic.',
+                        'Menyegarkan ringkasan tanpa reload global.'
+                    ],
+                    wait: 'Menunggu halaman daftar exam.'
+                },
+                benchmark: {
+                    title: 'Memuat benchmark kelas',
+                    steps: [
+                        'Membaca kelas benchmark yang dipilih.',
+                        'Mengambil overlay kelas vs global terbaru.',
+                        'Memperbarui chart benchmark di area Analytics.'
+                    ],
+                    wait: 'Menunggu data benchmark kelas.'
+                }
+            };
+            let progressTimer = null;
+            let progressValue = 0;
+
+            function getAnalyticsRoot() {
+                return document.querySelector('[data-cbt-analytics-root]');
+            }
+
+            function getProgressParts() {
+                const root = getAnalyticsRoot();
+                const progress = root ? root.querySelector('[data-cbt-analytics-progress]') : null;
+
+                return {
+                    root: root,
+                    progress: progress,
+                    title: progress ? progress.querySelector('[data-cbt-analytics-progress-title]') : null,
+                    step: progress ? progress.querySelector('[data-cbt-analytics-progress-step]') : null,
+                    percent: progress ? progress.querySelector('[data-cbt-analytics-progress-percent]') : null,
+                    fill: progress ? progress.querySelector('[data-cbt-analytics-progress-fill]') : null,
+                    track: progress ? progress.querySelector('[data-cbt-analytics-progress-track]') : null
+                };
+            }
+
+            function setAnalyticsProgress(percent, stepText, state) {
+                const parts = getProgressParts();
+                const safePercent = Math.max(0, Math.min(100, Math.round(percent)));
+                progressValue = safePercent;
+
+                if (!parts.progress) {
+                    return;
+                }
+
+                parts.progress.classList.toggle('is-active', state === 'active');
+                parts.progress.classList.toggle('is-complete', state === 'complete');
+                parts.progress.classList.toggle('is-error', state === 'error');
+                parts.progress.setAttribute('aria-hidden', 'false');
+                if (parts.root) {
+                    parts.root.classList.toggle('is-local-busy', state === 'active');
+                }
+                if (parts.percent) {
+                    parts.percent.textContent = safePercent + '%';
+                }
+                if (parts.fill) {
+                    parts.fill.style.width = safePercent + '%';
+                }
+                if (parts.track) {
+                    parts.track.setAttribute('aria-valuenow', String(safePercent));
+                }
+                if (parts.step && stepText) {
+                    parts.step.textContent = stepText;
+                }
+            }
+
+            function startAnalyticsProgress(profileKey) {
+                const profile = progressProfiles[profileKey] || progressProfiles.filter;
+                const parts = getProgressParts();
+                const steps = profile.steps || [];
+                let stepIndex = 0;
+
+                window.clearInterval(progressTimer);
+                progressValue = 7;
+                if (parts.title) {
+                    parts.title.textContent = profile.title || 'Memproses Analytics';
+                }
+                setAnalyticsProgress(progressValue, steps[0] || profile.wait || 'Memproses area Analytics.', 'active');
+
+                progressTimer = window.setInterval(function () {
+                    if (progressValue >= 92) {
+                        setAnalyticsProgress(progressValue, profile.wait || steps[steps.length - 1] || 'Menunggu server selesai.', 'active');
+                        return;
+                    }
+
+                    progressValue += progressValue < 45 ? 8 : 4;
+                    stepIndex = Math.min(steps.length - 1, Math.floor((progressValue / 100) * Math.max(1, steps.length)));
+                    setAnalyticsProgress(Math.min(progressValue, 92), steps[stepIndex] || profile.wait || 'Memproses area Analytics.', 'active');
+                }, 520);
+            }
+
+            function completeAnalyticsProgress(titleText, stepText, state) {
+                const parts = getProgressParts();
+                window.clearInterval(progressTimer);
+                progressTimer = null;
+                if (parts.title && titleText) {
+                    parts.title.textContent = titleText;
+                }
+                setAnalyticsProgress(state === 'error' ? Math.max(progressValue, 100) : 100, stepText, state || 'complete');
+                if (parts.root) {
+                    parts.root.classList.remove('is-local-busy');
+                }
+            }
+
+            function showAnalyticsLocalError(titleText, detailText) {
+                completeAnalyticsProgress(titleText, detailText, 'error');
+            }
+
+            function executeAnalyticsScripts(root) {
+                if (!root) {
+                    return;
+                }
+
+                Array.from(root.querySelectorAll('script')).forEach(function (script) {
+                    const type = String(script.getAttribute('type') || '').toLowerCase();
+                    if (type && type !== 'text/javascript' && type !== 'application/javascript' && type !== 'module') {
+                        return;
+                    }
+
+                    const replacement = document.createElement('script');
+                    Array.from(script.attributes).forEach(function (attribute) {
+                        replacement.setAttribute(attribute.name, attribute.value);
+                    });
+                    replacement.textContent = script.textContent || '';
+                    script.replaceWith(replacement);
+                });
+            }
+
+            function replaceAnalyticsRoot(responseHtml) {
+                const parser = new DOMParser();
+                const parsed = parser.parseFromString(responseHtml, 'text/html');
+                const currentRoot = getAnalyticsRoot();
+                const nextRoot = parsed.querySelector('[data-cbt-analytics-root]');
+
+                if (!currentRoot || !nextRoot) {
+                    return false;
+                }
+
+                currentRoot.replaceWith(nextRoot);
+                executeAnalyticsScripts(nextRoot);
+                window.dispatchEvent(new CustomEvent('cbt:analytics:local-refresh', { detail: { root: nextRoot } }));
+                return true;
+            }
+
+            async function runAnalyticsLocalAction(source, requestUrl, profileKey) {
+                startAnalyticsProgress(profileKey || 'filter');
+                source.setAttribute('aria-busy', 'true');
+                source.classList.add('is-loading');
+
+                try {
+                    const response = await window.fetch(requestUrl.toString(), {
+                        credentials: 'same-origin',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    });
+                    const responseText = await response.text();
+
+                    if (!response.ok) {
+                        throw new Error('HTTP ' + response.status + ': ' + responseText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 180));
+                    }
+
+                    if (!replaceAnalyticsRoot(responseText)) {
+                        throw new Error('Respons server tidak berisi area Analytics yang bisa diganti.');
+                    }
+
+                    if (window.history && typeof window.history.pushState === 'function') {
+                        window.history.pushState({}, '', requestUrl.toString());
+                    }
+                    completeAnalyticsProgress('Area Analytics sudah diperbarui', 'Konten, filter, chart, dan tabel Analytics berhasil disegarkan tanpa reload halaman global.', 'complete');
+                } catch (error) {
+                    const message = error && error.message ? error.message : 'Koneksi gagal saat memperbarui area Analytics.';
+                    showAnalyticsLocalError('Gagal memperbarui area Analytics', message);
+                } finally {
+                    source.removeAttribute('aria-busy');
+                    source.classList.remove('is-loading');
+                }
+            }
+
+            function getFormUrl(form) {
+                const action = form.getAttribute('action') || window.location.href;
+                const requestUrl = new URL(action, document.baseURI);
+                const formData = new FormData(form);
+
+                requestUrl.search = '';
+                formData.forEach(function (value, key) {
+                    requestUrl.searchParams.append(key, String(value));
+                });
+
+                return requestUrl;
+            }
+
+            function shouldHandleAnalyticsLink(link) {
+                const href = link.getAttribute('href');
+                if (!href) {
+                    return false;
+                }
+
+                const requestUrl = new URL(href, document.baseURI);
+                return requestUrl.searchParams.get('page') === 'cbt-analytics';
+            }
+
+            function inferAnalyticsProfileFromUrl(requestUrl) {
+                const runMode = requestUrl.searchParams.get('cbt_run_analytics');
+                if (runMode === 'all') {
+                    return 'all';
+                }
+                if (runMode) {
+                    return 'exam';
+                }
+                if (requestUrl.searchParams.has('cbt_overview_page')) {
+                    return 'page';
+                }
+                return 'filter';
+            }
 
             function setActiveTab(tabName) {
+                const root = getAnalyticsRoot() || document;
+                const activeTabInput = root.querySelector('#cbt-analytics-active-tab');
+                const tabButtons = Array.from(root.querySelectorAll('.cbt-analytics-tab'));
+                const tabPanels = Array.from(root.querySelectorAll('.cbt-analytics-tab-panel'));
                 const nextTab = String(tabName || 'overview');
                 tabButtons.forEach((button) => {
                     const isActive = button.getAttribute('data-analytics-tab') === nextTab;
@@ -2098,30 +2452,88 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
                 }
             }
 
-            tabButtons.forEach((button) => {
-                button.addEventListener('click', () => {
-                    setActiveTab(button.getAttribute('data-analytics-tab') || 'overview');
-                });
-            });
-            if (filterForm) {
-                Array.from(filterForm.querySelectorAll('[data-submit-tab]')).forEach((button) => {
+            function bindAnalyticsLocalUi() {
+                const root = getAnalyticsRoot();
+                if (!root) {
+                    return;
+                }
+
+                const filterForm = root.querySelector('#cbt-analytics-filter-form');
+                const tabButtons = Array.from(root.querySelectorAll('.cbt-analytics-tab'));
+
+                tabButtons.forEach((button) => {
+                    if (button.dataset.cbtAnalyticsTabBound === '1') {
+                        return;
+                    }
+                    button.dataset.cbtAnalyticsTabBound = '1';
                     button.addEventListener('click', () => {
-                        setActiveTab(button.getAttribute('data-submit-tab') || 'overview');
+                        setActiveTab(button.getAttribute('data-analytics-tab') || 'overview');
                     });
                 });
 
-                Array.from(filterForm.querySelectorAll('[data-auto-submit]')).forEach((field) => {
-                    field.addEventListener('change', () => {
-                        setActiveTab('overview');
-                        if (typeof filterForm.requestSubmit === 'function') {
-                            filterForm.requestSubmit();
+                root.querySelectorAll('[data-cbt-analytics-local-form]').forEach((form) => {
+                    if (form.dataset.cbtAnalyticsLocalBound === '1') {
+                        return;
+                    }
+                    form.dataset.cbtAnalyticsLocalBound = '1';
+                    form.addEventListener('submit', function (event) {
+                        event.preventDefault();
+                        const requestUrl = getFormUrl(form);
+                        const profile = form.getAttribute('data-cbt-analytics-progress-profile') || inferAnalyticsProfileFromUrl(requestUrl);
+                        runAnalyticsLocalAction(form, requestUrl, profile);
+                    });
+                });
+
+                if (filterForm) {
+                    Array.from(filterForm.querySelectorAll('[data-submit-tab]')).forEach((button) => {
+                        if (button.dataset.cbtAnalyticsSubmitTabBound === '1') {
                             return;
                         }
-                        filterForm.submit();
+                        button.dataset.cbtAnalyticsSubmitTabBound = '1';
+                        button.addEventListener('click', () => {
+                            setActiveTab(button.getAttribute('data-submit-tab') || 'overview');
+                        });
+                    });
+                }
+
+                Array.from(root.querySelectorAll('[data-auto-submit]')).forEach((field) => {
+                    if (field.dataset.cbtAnalyticsAutoSubmitBound === '1') {
+                        return;
+                    }
+                    field.dataset.cbtAnalyticsAutoSubmitBound = '1';
+                    field.addEventListener('change', () => {
+                        const form = field.form;
+                        if (!form) {
+                            return;
+                        }
+                        if (form.id === 'cbt-analytics-filter-form') {
+                            setActiveTab('overview');
+                        }
+                        const requestUrl = getFormUrl(form);
+                        const profile = form.getAttribute('data-cbt-analytics-progress-profile') || inferAnalyticsProfileFromUrl(requestUrl);
+                        runAnalyticsLocalAction(form, requestUrl, profile);
+                    });
+                });
+
+                root.querySelectorAll('a[data-cbt-analytics-local-link], a[href]').forEach((link) => {
+                    if (link.dataset.cbtAnalyticsLocalLinkBound === '1' || !shouldHandleAnalyticsLink(link)) {
+                        return;
+                    }
+                    link.dataset.cbtAnalyticsLocalLinkBound = '1';
+                    link.addEventListener('click', function (event) {
+                        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+                            return;
+                        }
+
+                        event.preventDefault();
+                        const requestUrl = new URL(link.getAttribute('href') || window.location.href, document.baseURI);
+                        const profile = link.getAttribute('data-cbt-analytics-progress-profile') || inferAnalyticsProfileFromUrl(requestUrl);
+                        runAnalyticsLocalAction(link, requestUrl, profile);
                     });
                 });
             }
 
+            bindAnalyticsLocalUi();
             setActiveTab(<?php echo wp_json_encode($current_tab); ?>);
 
             function escapeHtml(value) {

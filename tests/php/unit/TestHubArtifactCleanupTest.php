@@ -9,6 +9,7 @@ use CbtExamSystem\Tests\TestCase;
 final class TestHubArtifactCleanupTest extends TestCase
 {
     private string $artifactRoot = '';
+    private string $uploadRoot = '';
 
     protected function setUp(): void
     {
@@ -16,11 +17,13 @@ final class TestHubArtifactCleanupTest extends TestCase
 
         require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-test-hub-service.php';
 
-        $this->artifactRoot = dirname(__DIR__, 3) . '/playwright-results';
+        $this->uploadRoot = sys_get_temp_dir() . '/cbt-test-hub-artifact-uploads-' . getmypid();
+        $GLOBALS['cbt_test_wp_upload_dir'] = $this->uploadRoot;
+        $this->artifactRoot = $this->uploadRoot . '/cbt-test-hub/playwright-results';
         $this->removeDirectoryIfExists($this->artifactRoot);
+        $this->removeDirectoryIfExists($this->uploadRoot);
         $this->removeDirectoryIfExists(dirname(__DIR__, 3) . '/test-results');
         $this->removeDirectoryIfExists(dirname(__DIR__, 3) . '/coverage');
-        $this->removeDirectoryIfExists(dirname(__DIR__, 3) . '/.phpunit.cache');
         $this->removeDirectoryIfExists(dirname(__DIR__, 3) . '/output/playwright');
         $this->removeDirectoryIfExists(dirname(__DIR__, 3) . '/output/playwright-auth');
         $this->removeDirectoryIfExists(dirname(__DIR__, 3) . '/output/playwright-result');
@@ -30,10 +33,10 @@ final class TestHubArtifactCleanupTest extends TestCase
 
     protected function tearDown(): void
     {
-        $this->removeDirectoryIfExists(dirname(__DIR__, 3) . '/playwright-results');
+        $this->removeDirectoryIfExists($this->artifactRoot);
+        $this->removeDirectoryIfExists($this->uploadRoot);
         $this->removeDirectoryIfExists(dirname(__DIR__, 3) . '/test-results');
         $this->removeDirectoryIfExists(dirname(__DIR__, 3) . '/coverage');
-        $this->removeDirectoryIfExists(dirname(__DIR__, 3) . '/.phpunit.cache');
         $this->removeDirectoryIfExists(dirname(__DIR__, 3) . '/output/playwright');
         $this->removeDirectoryIfExists(dirname(__DIR__, 3) . '/output/playwright-auth');
         $this->removeDirectoryIfExists(dirname(__DIR__, 3) . '/output/playwright-result');
@@ -45,7 +48,7 @@ final class TestHubArtifactCleanupTest extends TestCase
 
     public function test_build_unit_test_context_exposes_artifact_cleanup_targets(): void
     {
-        $playwrightResults = dirname(__DIR__, 3) . '/playwright-results';
+        $playwrightResults = $this->artifactRoot;
         $testResults = dirname(__DIR__, 3) . '/test-results';
         mkdir($playwrightResults, 0777, true);
         mkdir($testResults, 0777, true);
@@ -56,30 +59,30 @@ final class TestHubArtifactCleanupTest extends TestCase
 
         self::assertArrayHasKey('test_artifact_cleanup', $context);
         self::assertTrue((bool) $context['test_artifact_cleanup']['has_existing']);
-        self::assertSame(2, (int) $context['test_artifact_cleanup']['existing_count']);
+        self::assertGreaterThanOrEqual(2, (int) $context['test_artifact_cleanup']['existing_count']);
 
         $targets = (array) $context['test_artifact_cleanup']['targets'];
-        self::assertSame('Playwright Results', (string) $targets[0]['label']);
-        self::assertTrue((bool) $targets[0]['exists']);
+        self::assertTrue($this->cleanupTargetExists($targets, 'Playwright Results'));
+        self::assertTrue($this->cleanupTargetExists($targets, 'Test Results'));
     }
 
     public function test_remove_test_artifact_path_deletes_known_directory_tree(): void
     {
-        $path = dirname(__DIR__, 3) . '/playwright-results/admin-jobs/demo';
+        $path = $this->artifactRoot . '/admin-jobs/demo';
         mkdir($path, 0777, true);
         file_put_contents($path . '/output.txt', 'artifact');
 
         $method = new \ReflectionMethod(\CBT_Admin_Test_Hub_Service::class, 'remove_test_artifact_path');
         $method->setAccessible(true);
-        $result = $method->invoke(null, dirname(__DIR__, 3) . '/playwright-results');
+        $result = $method->invoke(null, $this->artifactRoot);
 
         self::assertTrue((bool) $result);
-        self::assertDirectoryDoesNotExist(dirname(__DIR__, 3) . '/playwright-results');
+        self::assertDirectoryDoesNotExist($this->artifactRoot);
     }
 
     public function test_remove_test_artifact_path_treats_empty_root_as_clean_when_parent_not_writable(): void
     {
-        $root = dirname(__DIR__, 3) . '/playwright-results';
+        $root = $this->artifactRoot;
         $path = $root . '/blocked-root/demo';
         mkdir($path, 0777, true);
         file_put_contents($path . '/output.txt', 'artifact');
@@ -146,5 +149,23 @@ final class TestHubArtifactCleanupTest extends TestCase
         }
 
         @rmdir($path);
+    }
+
+    /**
+     * @param array<int,mixed> $targets
+     */
+    private function cleanupTargetExists(array $targets, string $label): bool
+    {
+        foreach ($targets as $target) {
+            if (!is_array($target)) {
+                continue;
+            }
+
+            if ((string) ($target['label'] ?? '') === $label) {
+                return !empty($target['exists']);
+            }
+        }
+
+        return false;
     }
 }

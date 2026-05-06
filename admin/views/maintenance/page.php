@@ -139,6 +139,47 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
             min-width: 0;
         }
 
+    [data-maintenance-area] {
+        position: relative;
+    }
+    [data-maintenance-area].is-loading {
+        pointer-events: none;
+    }
+    [data-maintenance-area].is-loading::after {
+        content: attr(data-maintenance-loading-label);
+        position: absolute;
+        inset: 0;
+        z-index: 20;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 56px;
+        padding: 14px;
+        border-radius: inherit;
+        background: rgba(248, 250, 252, 0.72);
+        color: #1d4ed8;
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+        backdrop-filter: blur(4px);
+    }
+    .cbt-maintenance-tab.is-loading,
+    .cbt-maintenance-async-button.is-loading {
+        opacity: 0.72;
+        cursor: wait !important;
+    }
+    .cbt-maintenance-async-feedback {
+        margin: 0 0 12px;
+        padding: 12px 14px;
+        border: 1px solid #fecaca;
+        border-radius: 14px;
+        background: #fff1f2;
+        color: #991b1b;
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 1.45;
+    }
+
     .cbt-maintenance-banner {
         position: relative;
         padding: 20px 22px;
@@ -1510,7 +1551,7 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
             gap: 20px;
         }
 </style>
-<div class="wrap cbt-maintenance-page">
+<div class="wrap cbt-maintenance-page" data-maintenance-root data-maintenance-refresh-url="<?php echo esc_url(add_query_arg(['page' => 'cbt-maintenance'], admin_url('admin.php'))); ?>" data-maintenance-async-url="<?php echo esc_url(admin_url('admin-ajax.php')); ?>">
     <div class="cbt-maintenance-shell">
         <section class="cbt-maintenance-hero">
             <div class="cbt-maintenance-hero-copy">
@@ -1518,7 +1559,7 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
                 <h1>CBT Maintenance</h1>
                 <p>Kelola aksi maintenance tingkat sistem untuk reset database CBT dan proses administratif penting lainnya. Semua aksi di halaman ini bersifat administratif dan perlu dijalankan dengan hati-hati.</p>
             </div>
-            <aside class="cbt-maintenance-live-panel">
+            <aside class="cbt-maintenance-live-panel" data-maintenance-area="live" aria-busy="false">
                 <span class="cbt-maintenance-live-label">Live Status</span>
                 <span class="cbt-maintenance-live-value"><?php echo esc_html($hero_live_value); ?></span>
                 <div class="cbt-maintenance-live-meta">
@@ -1546,6 +1587,7 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
             </aside>
         </section>
 
+        <div data-maintenance-area="banners" aria-busy="false">
         <?php if (is_array($seed_success_notice_summary)): ?>
             <section class="cbt-maintenance-banner cbt-maintenance-banner--success" data-maintenance-banner>
                 <div class="cbt-maintenance-banner-top">
@@ -1617,9 +1659,10 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
                 </div>
             </section>
         <?php endif; ?>
+        </div>
 
         <?php if ($active_tab_markup !== ''): ?>
-            <nav class="cbt-maintenance-tabs" role="tablist" aria-label="Maintenance sections">
+            <nav class="cbt-maintenance-tabs" role="tablist" aria-label="Maintenance sections" data-maintenance-area="tabs" aria-busy="false">
                 <a
                     href="<?php echo esc_url((string) ($maintenance_tab_urls['reset'] ?? add_query_arg(['page' => 'cbt-maintenance', 'cbt_maintenance_tab' => 'reset'], admin_url('admin.php')))); ?>"
                     class="cbt-maintenance-tab<?php echo $active_maintenance_tab === 'reset' ? ' is-active' : ''; ?>"
@@ -1655,7 +1698,7 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
                 </a>
             </nav>
 
-            <div class="cbt-maintenance-panel is-active" data-maintenance-panel="<?php echo esc_attr($active_maintenance_tab); ?>" role="tabpanel">
+            <div class="cbt-maintenance-panel is-active" data-maintenance-panel="<?php echo esc_attr($active_maintenance_tab); ?>" data-maintenance-area="panel" role="tabpanel" aria-busy="false">
                 <?php echo $active_tab_markup; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
             </div>
 
@@ -1663,15 +1706,9 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
     </div>
     <script>
         (function () {
-            document.querySelectorAll('[data-maintenance-banner-close]').forEach(function (button) {
-                button.addEventListener('click', function () {
-                    const banner = button.closest('[data-maintenance-banner]');
-                    if (banner) {
-                        banner.remove();
-                    }
-                });
-            });
-
+            const root = document.querySelector('[data-maintenance-root]');
+            const asyncUrl = root ? String(root.getAttribute('data-maintenance-async-url') || '') : '';
+            const refreshUrl = root ? String(root.getAttribute('data-maintenance-refresh-url') || '') : '';
             const numberFormatter = window.Intl ? new Intl.NumberFormat('id-ID') : null;
             const parseJson = function (value, fallbackValue) {
                 try {
@@ -1679,6 +1716,248 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
                 } catch (error) {
                     return fallbackValue;
                 }
+            };
+            let autoContinueTimer = null;
+
+            const buildMaintenanceUrl = function (rawUrl) {
+                try {
+                    return new URL(rawUrl || refreshUrl || window.location.href, window.location.href);
+                } catch (error) {
+                    return new URL(window.location.href);
+                }
+            };
+
+            const getActivePanel = function () {
+                return document.querySelector('[data-maintenance-area="panel"]');
+            };
+
+            const getActiveTab = function () {
+                const panel = getActivePanel();
+                return panel ? String(panel.getAttribute('data-maintenance-panel') || 'reset') : 'reset';
+            };
+
+            const getArea = function (areaName) {
+                if (!/^[a-z0-9_-]+$/.test(String(areaName || ''))) {
+                    return null;
+                }
+
+                return document.querySelector('[data-maintenance-area="' + areaName + '"]');
+            };
+
+            const setAreaLoading = function (areaName, isLoading, label) {
+                const area = getArea(areaName);
+                if (!(area instanceof HTMLElement)) {
+                    return;
+                }
+
+                area.classList.toggle('is-loading', isLoading);
+                area.setAttribute('aria-busy', isLoading ? 'true' : 'false');
+                if (label) {
+                    area.setAttribute('data-maintenance-loading-label', label);
+                }
+            };
+
+            const setLoading = function (isLoading, label) {
+                ['live', 'banners', 'tabs', 'panel'].forEach(function (areaName) {
+                    setAreaLoading(areaName, isLoading, label || 'Memuat...');
+                });
+            };
+
+            const setButtonLoading = function (button, isLoading, label) {
+                if (!(button instanceof HTMLButtonElement)) {
+                    return;
+                }
+                if (isLoading) {
+                    if (!button.dataset.originalLabel) {
+                        button.dataset.originalLabel = button.textContent || '';
+                    }
+                    button.textContent = label || 'Memproses...';
+                    button.classList.add('is-loading', 'cbt-maintenance-async-button');
+                    button.disabled = true;
+                    return;
+                }
+
+                if (button.dataset.originalLabel) {
+                    button.textContent = button.dataset.originalLabel;
+                    delete button.dataset.originalLabel;
+                }
+                button.classList.remove('is-loading');
+                button.disabled = false;
+            };
+
+            const buildErrorMessage = function (error) {
+                const rawMessage = error && error.message ? String(error.message) : '';
+                return rawMessage !== '' ? ' Detail: ' + rawMessage.replace(/\s+/g, ' ').slice(0, 220) : '';
+            };
+
+            const showFeedback = function (message) {
+                const targetArea = getArea('banners') || getArea('panel');
+                if (!targetArea) {
+                    return;
+                }
+                const existing = targetArea.querySelector('[data-maintenance-async-feedback]');
+                if (existing) {
+                    existing.remove();
+                }
+
+                const feedback = document.createElement('p');
+                feedback.className = 'cbt-maintenance-async-feedback';
+                feedback.setAttribute('data-maintenance-async-feedback', '1');
+                feedback.textContent = message;
+                targetArea.prepend(feedback);
+            };
+
+            const extractResponseError = function (response, body) {
+                const text = String(body || '')
+                    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+                    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+                    .replace(/<[^>]+>/g, ' ')
+                    .replace(/\s+/g, ' ')
+                    .trim()
+                    .slice(0, 160);
+                return 'HTTP ' + response.status + (text !== '' ? ': ' + text : '');
+            };
+
+            const requestPageHtml = function (url, options) {
+                return window.fetch(url, Object.assign({
+                    credentials: 'same-origin',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                }, options || {})).then(function (response) {
+                    return response.text().then(function (body) {
+                        if (!response.ok) {
+                            throw new Error(extractResponseError(response, body));
+                        }
+                        return body;
+                    });
+                });
+            };
+
+            const replaceMaintenanceAreas = function (html) {
+                const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
+                if (!doc.querySelector('[data-maintenance-root]')) {
+                    throw new Error('Response bukan halaman CBT Maintenance.');
+                }
+
+                ['live', 'banners', 'tabs', 'panel'].forEach(function (areaName) {
+                    const currentArea = getArea(areaName);
+                    const nextArea = doc.querySelector('[data-maintenance-area="' + areaName + '"]');
+                    if (currentArea && nextArea) {
+                        currentArea.replaceWith(document.importNode(nextArea, true));
+                    }
+                });
+
+                bindAll();
+            };
+
+            const loadMaintenanceUrl = function (rawUrl, label) {
+                if (!window.fetch || !window.DOMParser) {
+                    return;
+                }
+
+                const url = buildMaintenanceUrl(rawUrl);
+                url.searchParams.set('page', 'cbt-maintenance');
+                url.searchParams.set('cbt_maintenance_async', '1');
+                setLoading(true, label || 'Memuat area...');
+                requestPageHtml(url.toString()).then(function (html) {
+                    replaceMaintenanceAreas(html);
+                }).catch(function (error) {
+                    showFeedback('Gagal memperbarui area maintenance tanpa reload global.' + buildErrorMessage(error));
+                }).finally(function () {
+                    setLoading(false);
+                });
+            };
+
+            const bindBannerClose = function () {
+                document.querySelectorAll('[data-maintenance-banner-close]').forEach(function (button) {
+                    if (button.dataset.maintenanceBound === '1') {
+                        return;
+                    }
+                    button.dataset.maintenanceBound = '1';
+                    button.addEventListener('click', function () {
+                        const banner = button.closest('[data-maintenance-banner]');
+                        if (banner) {
+                            banner.remove();
+                        }
+                    });
+                });
+            };
+
+            const bindTabLinks = function () {
+                document.querySelectorAll('[data-maintenance-tab-link]').forEach(function (link) {
+                    if (link.dataset.maintenanceTabBound === '1') {
+                        return;
+                    }
+                    link.dataset.maintenanceTabBound = '1';
+                    link.addEventListener('click', function (event) {
+                        if (!window.fetch || !window.DOMParser) {
+                            return;
+                        }
+                        event.preventDefault();
+                        loadMaintenanceUrl(link.href, 'Membuka tab...');
+                        if (window.history && window.history.replaceState) {
+                            window.history.replaceState({}, '', link.href);
+                        }
+                    });
+                });
+            };
+
+            const bindAsyncForms = function () {
+                document.querySelectorAll('[data-maintenance-async-form]').forEach(function (form) {
+                    if (form.dataset.maintenanceAsyncBound === '1') {
+                        return;
+                    }
+                    form.dataset.maintenanceAsyncBound = '1';
+                    form.addEventListener('submit', function (event) {
+                        if (event.defaultPrevented || !window.fetch || !window.FormData || !window.DOMParser) {
+                            return;
+                        }
+
+                        event.preventDefault();
+                        const submitter = event.submitter instanceof HTMLButtonElement
+                            ? event.submitter
+                            : form.querySelector('button[type="submit"]');
+                        const label = form.getAttribute('data-maintenance-loading-label') || 'Memproses...';
+                        const formData = new FormData(form);
+                        formData.set('cbt_maintenance_async', '1');
+                        if (!formData.has('cbt_maintenance_tab')) {
+                            formData.set('cbt_maintenance_tab', getActiveTab());
+                        }
+
+                        setLoading(true, label);
+                        setButtonLoading(submitter, true, label);
+                        requestPageHtml(asyncUrl || form.action, {
+                            method: 'POST',
+                            body: formData
+                        }).then(function (html) {
+                            replaceMaintenanceAreas(html);
+                        }).catch(function (error) {
+                            showFeedback('Gagal memperbarui area maintenance tanpa reload global.' + buildErrorMessage(error));
+                        }).finally(function () {
+                            setButtonLoading(submitter, false);
+                            setLoading(false);
+                        });
+                    });
+                });
+            };
+
+            const scheduleAutoContinue = function () {
+                if (autoContinueTimer) {
+                    window.clearTimeout(autoContinueTimer);
+                    autoContinueTimer = null;
+                }
+
+                const activePanel = getActivePanel();
+                const marker = activePanel ? activePanel.querySelector('[data-maintenance-auto-continue-url]') : null;
+                const continueUrl = marker ? String(marker.getAttribute('data-maintenance-auto-continue-url') || '') : '';
+                if (continueUrl === '') {
+                    return;
+                }
+
+                autoContinueTimer = window.setTimeout(function () {
+                    loadMaintenanceUrl(continueUrl, 'Memproses batch...');
+                }, 350);
             };
 
             const initSeedPresetSummary = function (panel) {
@@ -2477,7 +2756,7 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
                     const ajaxUrl = String(jobsWrap.getAttribute('data-load-jobs-ajax-url') || '');
                     const ajaxNonce = String(jobsWrap.getAttribute('data-load-jobs-ajax-nonce') || '');
                     if (ajaxUrl === '' || ajaxNonce === '' || typeof window.fetch !== 'function') {
-                        window.location.reload();
+                        showFeedback('Refresh status job tidak bisa memakai reload lokal karena endpoint AJAX belum tersedia.');
                         return;
                     }
 
@@ -2551,11 +2830,19 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
                 schedulePolling(Number(jobsWrap && jobsWrap.getAttribute('data-load-running-count') ? jobsWrap.getAttribute('data-load-running-count') : 0));
             };
 
-            const activePanel = document.querySelector('[data-maintenance-panel].is-active');
-            if (activePanel) {
-                initSeedPresetSummary(activePanel);
-                initLoadTestPanel(activePanel);
+            function bindAll() {
+                bindBannerClose();
+                bindTabLinks();
+                bindAsyncForms();
+                const activePanel = document.querySelector('[data-maintenance-panel].is-active');
+                if (activePanel) {
+                    initSeedPresetSummary(activePanel);
+                    initLoadTestPanel(activePanel);
+                }
+                scheduleAutoContinue();
             }
+
+            bindAll();
         }());
     </script>
 <?php else: ?>
@@ -2629,14 +2916,6 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
                         Tahap saat ini: <strong><?php echo esc_html($reset_progress_phase_label); ?></strong>.
                         <?php if ($reset_progress_is_running): ?>
                             Memproses batch berikutnya secara otomatis.
-                            <script>
-                                if (!window.__cbtMaintenanceAutoContinue) {
-                                    window.__cbtMaintenanceAutoContinue = true;
-                                    window.setTimeout(function () {
-                                        window.location.href = <?php echo wp_json_encode($reset_progress_continue_url); ?>;
-                                    }, 350);
-                                }
-                            </script>
                         <?php else: ?>
                             Reset database selesai diproses.
                         <?php endif; ?>
@@ -2738,14 +3017,6 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
                         Akun test khusus: <span class="cbt-maintenance-inline-code"><?php echo esc_html($test_data_seed_special_username); ?></span> / <span class="cbt-maintenance-inline-code"><?php echo esc_html($test_data_seed_special_password); ?></span>.
                         <?php if ($seed_progress_is_running): ?>
                             Batch berikutnya akan dilanjutkan otomatis.
-                            <script>
-                                if (!window.__cbtMaintenanceAutoContinue) {
-                                    window.__cbtMaintenanceAutoContinue = true;
-                                    window.setTimeout(function () {
-                                        window.location.href = <?php echo wp_json_encode($seed_progress_continue_url); ?>;
-                                    }, 350);
-                                }
-                            </script>
                         <?php else: ?>
                             Generator data uji selesai diproses.
                         <?php endif; ?>
@@ -3752,7 +4023,6 @@ k6 version</code></pre>
                 const ajaxUrl = String(jobsWrap.getAttribute('data-load-jobs-ajax-url') || '');
                 const ajaxNonce = String(jobsWrap.getAttribute('data-load-jobs-ajax-nonce') || '');
                 if (ajaxUrl === '' || ajaxNonce === '' || typeof window.fetch !== 'function') {
-                    window.location.reload();
                     return;
                 }
 

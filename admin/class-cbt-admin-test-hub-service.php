@@ -8,11 +8,21 @@ final class CBT_Admin_Test_Hub_Service
 {
     private const UNIT_TEST_RUN_RESULT_TRANSIENT_PREFIX = 'cbt_unit_test_run_result_';
     private const GLOBAL_UNIT_TEST_RUN_RESULT_TRANSIENT_PREFIX = 'cbt_global_unit_test_run_result_';
+    private const GLOBAL_UNIT_TEST_RUN_STATE_TRANSIENT_PREFIX = 'cbt_global_unit_test_run_state_';
     private const UNIT_TEST_RUN_RESULT_TTL = 15 * MINUTE_IN_SECONDS;
+    private const GLOBAL_UNIT_TEST_RUN_STATE_TTL = 60 * MINUTE_IN_SECONDS;
     private const SETTINGS_OPTION = 'cbt_test_hub_settings_v1';
+    private const RUNNER_HEALTH_OPTION = 'cbt_test_hub_runner_health_v1';
+    private const E2E_READINESS_OPTION = 'cbt_test_hub_e2e_readiness_v1';
     private const FLOW_JOB_DIRECTORY_RELATIVE = 'playwright-results/admin-jobs';
     private const FLOW_JOB_HEARTBEAT_TIMEOUT = 90;
     private const FLOW_JOB_MAX_RUNTIME = 20 * MINUTE_IN_SECONDS;
+    private const FLOW_JOB_WORKER_PID_GRACE_SECONDS = 30;
+    private const FLOW_JOB_LOG_PREVIEW_MAX_BYTES = 65536;
+    private const FLOW_JOB_LOG_PREVIEW_MAX_LINES = 400;
+    private const FLOW_JOB_ARTIFACT_LIST_LIMIT = 50;
+    private const E2E_READINESS_TIMEOUT = 8;
+    private const UNIT_TEST_ACTION_TIME_LIMIT = 180;
 
     public static function can_manage_test_hub(): bool
     {
@@ -20,7 +30,7 @@ final class CBT_Admin_Test_Hub_Service
     }
 
     /**
-     * @return array{e2e_base_url:string}
+     * @return array{e2e_base_url:string,e2e_frontend_url:string}
      */
     public static function get_settings(): array
     {
@@ -30,23 +40,176 @@ final class CBT_Admin_Test_Hub_Service
 
     /**
      * @param array<string,mixed> $raw
-     * @return array{e2e_base_url:string}
+     * @return array{e2e_base_url:string,e2e_frontend_url:string}
      */
     public static function sanitize_settings_input(array $raw): array
     {
-        $base_url = isset($raw['e2e_base_url']) ? esc_url_raw((string) $raw['e2e_base_url']) : '';
+        $raw_base_url = isset($raw['e2e_base_url']) && is_scalar($raw['e2e_base_url']) ? (string) $raw['e2e_base_url'] : '';
+        $raw_frontend_url = isset($raw['e2e_frontend_url']) && is_scalar($raw['e2e_frontend_url']) ? (string) $raw['e2e_frontend_url'] : '';
+        $base_url = esc_url_raw($raw_base_url);
+        $frontend_url = esc_url_raw($raw_frontend_url);
 
         return [
             'e2e_base_url' => is_string($base_url) ? trim($base_url) : '',
+            'e2e_frontend_url' => is_string($frontend_url) ? trim($frontend_url) : '',
         ];
     }
 
     /**
-     * @param array{e2e_base_url:string} $settings
+     * @param array{e2e_base_url:string,e2e_frontend_url?:string} $settings
      */
     public static function save_settings(array $settings): void
     {
         update_option(self::SETTINGS_OPTION, $settings, false);
+    }
+
+    /**
+     * @return array{checked_at:int,overall_status:string,checks:array<int,array<string,string>>}
+     */
+    public static function get_runner_health_snapshot(): array
+    {
+        $raw = get_option(self::RUNNER_HEALTH_OPTION, []);
+        return self::normalize_runner_health_snapshot(is_array($raw) ? $raw : []);
+    }
+
+    /**
+     * @return array{checked_at:int,overall_status:string,checks:array<int,array<string,string>>,suggestions:array<int,string>}
+     */
+    public static function get_e2e_readiness_snapshot(): array
+    {
+        $raw = get_option(self::E2E_READINESS_OPTION, []);
+        return self::normalize_e2e_readiness_snapshot(is_array($raw) ? $raw : []);
+    }
+
+    /**
+     * @param array<string,mixed> $snapshot
+     */
+    private static function save_runner_health_snapshot(array $snapshot): void
+    {
+        update_option(self::RUNNER_HEALTH_OPTION, self::normalize_runner_health_snapshot($snapshot), false);
+    }
+
+    /**
+     * @param array<string,mixed> $snapshot
+     */
+    private static function save_e2e_readiness_snapshot(array $snapshot): void
+    {
+        update_option(self::E2E_READINESS_OPTION, self::normalize_e2e_readiness_snapshot($snapshot), false);
+    }
+
+    /**
+     * @param array<string,mixed> $snapshot
+     * @return array{checked_at:int,overall_status:string,checks:array<int,array<string,string>>}
+     */
+    private static function normalize_runner_health_snapshot(array $snapshot): array
+    {
+        $checks = [];
+        foreach ((array) ($snapshot['checks'] ?? []) as $check) {
+            if (!is_array($check)) {
+                continue;
+            }
+
+            $status = sanitize_key((string) ($check['status'] ?? 'warning'));
+            if (!in_array($status, ['ready', 'warning', 'blocked'], true)) {
+                $status = 'warning';
+            }
+
+            $checks[] = [
+                'key' => sanitize_key((string) ($check['key'] ?? 'check')),
+                'label' => sanitize_text_field((string) ($check['label'] ?? 'Check')),
+                'status' => $status,
+                'message' => sanitize_text_field((string) ($check['message'] ?? '')),
+                'detail' => sanitize_text_field((string) ($check['detail'] ?? '')),
+            ];
+        }
+
+        $overall = sanitize_key((string) ($snapshot['overall_status'] ?? 'unknown'));
+        if (!in_array($overall, ['ready', 'warning', 'blocked', 'unknown'], true)) {
+            $overall = 'unknown';
+        }
+
+        if (!empty($checks)) {
+            $overall = self::resolve_runner_health_overall_status($checks);
+        }
+
+        return [
+            'checked_at' => max(0, (int) ($snapshot['checked_at'] ?? 0)),
+            'overall_status' => $overall,
+            'checks' => $checks,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $snapshot
+     * @return array{checked_at:int,overall_status:string,checks:array<int,array<string,string>>,suggestions:array<int,string>}
+     */
+    private static function normalize_e2e_readiness_snapshot(array $snapshot): array
+    {
+        $checks = [];
+        foreach ((array) ($snapshot['checks'] ?? []) as $check) {
+            if (!is_array($check)) {
+                continue;
+            }
+
+            $status = sanitize_key((string) ($check['status'] ?? 'warning'));
+            if (!in_array($status, ['ready', 'warning', 'blocked'], true)) {
+                $status = 'warning';
+            }
+
+            $checks[] = [
+                'key' => sanitize_key((string) ($check['key'] ?? 'check')),
+                'label' => sanitize_text_field((string) ($check['label'] ?? 'Check')),
+                'status' => $status,
+                'message' => sanitize_text_field((string) ($check['message'] ?? '')),
+                'detail' => sanitize_text_field((string) ($check['detail'] ?? '')),
+                'url' => esc_url_raw((string) ($check['url'] ?? '')),
+            ];
+        }
+
+        $suggestions = [];
+        foreach ((array) ($snapshot['suggestions'] ?? []) as $suggestion) {
+            if (!is_scalar($suggestion)) {
+                continue;
+            }
+            $suggestion = sanitize_text_field((string) $suggestion);
+            if ($suggestion !== '') {
+                $suggestions[] = $suggestion;
+            }
+        }
+
+        $overall = sanitize_key((string) ($snapshot['overall_status'] ?? 'unknown'));
+        if (!in_array($overall, ['ready', 'warning', 'blocked', 'unknown'], true)) {
+            $overall = 'unknown';
+        }
+        if (!empty($checks)) {
+            $overall = self::resolve_runner_health_overall_status($checks);
+        }
+
+        return [
+            'checked_at' => max(0, (int) ($snapshot['checked_at'] ?? 0)),
+            'overall_status' => $overall,
+            'checks' => $checks,
+            'suggestions' => array_values(array_unique($suggestions)),
+        ];
+    }
+
+    /**
+     * @param array<int,array<string,string>> $checks
+     */
+    private static function resolve_runner_health_overall_status(array $checks): string
+    {
+        $has_warning = false;
+        foreach ($checks as $check) {
+            $status = sanitize_key((string) ($check['status'] ?? 'warning'));
+            if ($status === 'blocked') {
+                return 'blocked';
+            }
+            if ($status === 'warning') {
+                $has_warning = true;
+            }
+        }
+
+        return $has_warning ? 'warning' : 'ready';
     }
 
     public static function test_hub_page_url(array $extra_args = []): string
@@ -63,6 +226,8 @@ final class CBT_Admin_Test_Hub_Service
         $notice = isset($query['cbt_msg']) ? sanitize_text_field(wp_unslash((string) $query['cbt_msg'])) : '';
         $error = isset($query['cbt_err']) ? sanitize_text_field(wp_unslash((string) $query['cbt_err'])) : '';
         $test_hub_settings = self::get_settings();
+        $runner_health = self::get_runner_health_snapshot();
+        $e2e_readiness = self::get_e2e_readiness_snapshot();
         $unit_test_tabs = self::get_unit_test_tab_definitions();
         $unit_test_runners = self::get_unit_test_runner_definitions();
         $active_unit_test_tab = self::normalize_unit_test_tab(isset($query['cbt_unit_test_tab']) ? $query['cbt_unit_test_tab'] : '');
@@ -72,10 +237,12 @@ final class CBT_Admin_Test_Hub_Service
         $global_unit_run_token = isset($query['cbt_global_unit_run_token']) ? sanitize_key(wp_unslash((string) $query['cbt_global_unit_run_token'])) : '';
         $unit_test_run_result = null;
         $global_unit_run_result = null;
+        $global_unit_run_state = null;
         self::maybe_start_next_flow_job();
         $flow_jobs = self::read_flow_check_jobs();
         $latest_flow_jobs = self::build_latest_flow_job_lookup($flow_jobs);
         $test_artifact_cleanup = self::build_test_artifact_cleanup_context($latest_flow_jobs);
+        $flow_job_repair = self::build_flow_job_repair_context($flow_jobs);
         if ($unit_test_run_token !== '') {
             $unit_test_run_result = get_transient(self::UNIT_TEST_RUN_RESULT_TRANSIENT_PREFIX . $unit_test_run_token);
             if (!is_array($unit_test_run_result)) {
@@ -86,6 +253,12 @@ final class CBT_Admin_Test_Hub_Service
             $global_unit_run_result = get_transient(self::GLOBAL_UNIT_TEST_RUN_RESULT_TRANSIENT_PREFIX . $global_unit_run_token);
             if (!is_array($global_unit_run_result) || (string) ($global_unit_run_result['type'] ?? '') !== 'global_unit_tests') {
                 $global_unit_run_result = null;
+            }
+            if ($global_unit_run_result === null) {
+                $global_unit_run_state = self::get_global_unit_run_state($global_unit_run_token);
+                if (is_array($global_unit_run_state)) {
+                    $global_unit_run_result = self::build_global_unit_run_result_from_state($global_unit_run_state);
+                }
             }
         }
         $global_unit_run_summary = self::build_global_unit_run_summary($global_unit_run_result);
@@ -135,19 +308,24 @@ final class CBT_Admin_Test_Hub_Service
             'notice' => $notice,
             'error' => $error,
             'test_hub_settings' => $test_hub_settings,
+            'runner_health' => $runner_health,
+            'e2e_readiness' => $e2e_readiness,
             'unit_test_tabs' => $unit_test_tabs,
             'active_unit_test_tab' => $active_unit_test_tab,
             'active_checklist_scope' => $active_checklist_scope,
             'active_unit_test_panel' => $active_unit_test_panel,
             'unit_test_run_result' => $unit_test_run_result,
             'global_unit_run_result' => $global_unit_run_result,
+            'global_unit_run_state' => $global_unit_run_state,
             'global_unit_run_summary' => $global_unit_run_summary,
             'global_unit_run_available' => !empty($global_unit_run_result),
+            'global_unit_run_active' => is_array($global_unit_run_state) && self::is_active_global_unit_run_state($global_unit_run_state),
             'global_unit_run_token' => $global_unit_run_token,
             'unit_test_area_count' => $unit_test_area_count,
             'unit_test_total_checklist_items' => $unit_test_total_checklist_items,
             'has_active_flow_jobs' => self::has_active_flow_jobs($latest_flow_jobs),
             'test_artifact_cleanup' => $test_artifact_cleanup,
+            'flow_job_repair' => $flow_job_repair,
         ];
     }
 
@@ -164,6 +342,11 @@ final class CBT_Admin_Test_Hub_Service
             'executed_at' => 0,
             'success' => false,
             'label' => 'Run All Unit Tests',
+            'status' => 'idle',
+            'processed_commands' => 0,
+            'total_commands' => 0,
+            'progress_percent' => 0,
+            'current_label' => '',
         ];
 
         if (empty($result) || !is_array($result)) {
@@ -177,8 +360,280 @@ final class CBT_Admin_Test_Hub_Service
         $summary['executed_at'] = max(0, (int) ($result['executed_at'] ?? 0));
         $summary['success'] = !empty($result['success']);
         $summary['label'] = trim((string) ($result['label'] ?? 'Run All Unit Tests'));
+        $summary['status'] = sanitize_key((string) ($result['status'] ?? 'completed'));
+        if (!in_array($summary['status'], ['queued', 'running', 'completed', 'failed', 'idle'], true)) {
+            $summary['status'] = 'completed';
+        }
+        $summary['processed_commands'] = max(0, (int) ($result['processed_commands'] ?? 0));
+        $summary['total_commands'] = max(0, (int) ($result['total_commands'] ?? 0));
+        $summary['current_label'] = sanitize_text_field((string) ($result['current_label'] ?? ''));
+        $summary['progress_percent'] = $summary['total_commands'] > 0
+            ? max(0, min(100, (int) round(($summary['processed_commands'] / $summary['total_commands']) * 100)))
+            : ($summary['status'] === 'completed' ? 100 : 0);
 
         return $summary;
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private static function get_global_unit_run_state(string $token): ?array
+    {
+        $token = sanitize_key($token);
+        if ($token === '') {
+            return null;
+        }
+
+        $state = get_transient(self::GLOBAL_UNIT_TEST_RUN_STATE_TRANSIENT_PREFIX . $token);
+        if (!is_array($state) || (string) ($state['type'] ?? '') !== 'global_unit_tests_state') {
+            return null;
+        }
+
+        return $state;
+    }
+
+    /**
+     * @param array<string,mixed> $state
+     */
+    private static function is_active_global_unit_run_state(array $state): bool
+    {
+        $status = sanitize_key((string) ($state['status'] ?? 'queued'));
+        return in_array($status, ['queued', 'running'], true)
+            && (int) ($state['processed_commands'] ?? 0) < (int) ($state['total_commands'] ?? 0);
+    }
+
+    /**
+     * @param array<string,mixed> $state
+     */
+    private static function save_global_unit_run_state(array $state): void
+    {
+        $token = sanitize_key((string) ($state['token'] ?? ''));
+        if ($token === '') {
+            return;
+        }
+
+        set_transient(self::GLOBAL_UNIT_TEST_RUN_STATE_TRANSIENT_PREFIX . $token, $state, self::GLOBAL_UNIT_TEST_RUN_STATE_TTL);
+    }
+
+    /**
+     * @return array<int,array<string,string>>
+     */
+    private static function build_global_unit_run_command_queue(): array
+    {
+        $runner_definitions = self::get_unit_test_runner_definitions();
+        $tab_definitions = self::get_unit_test_tab_definitions();
+        $queue = [];
+
+        foreach (array_keys($tab_definitions) as $tab_key) {
+            $tab_key = self::normalize_unit_test_tab((string) $tab_key);
+            $runner = isset($runner_definitions[$tab_key]['unit_tests']) && is_array($runner_definitions[$tab_key]['unit_tests'])
+                ? (array) $runner_definitions[$tab_key]['unit_tests']
+                : [];
+            $commands = isset($runner['commands']) && is_array($runner['commands']) ? array_values((array) $runner['commands']) : [];
+
+            foreach ($commands as $command_definition) {
+                if (!is_array($command_definition)) {
+                    continue;
+                }
+
+                $command = trim((string) ($command_definition['command'] ?? ''));
+                if ($command === '') {
+                    continue;
+                }
+
+                $queue[] = [
+                    'tab' => $tab_key,
+                    'runner_label' => (string) ($runner['label'] ?? 'Run Tests'),
+                    'runner_description' => (string) ($runner['description'] ?? ''),
+                    'label' => (string) ($command_definition['label'] ?? 'Test Command'),
+                    'command' => $command,
+                ];
+            }
+        }
+
+        return $queue;
+    }
+
+    /**
+     * @param array<string,mixed> $state
+     * @return array<string,mixed>
+     */
+    private static function build_global_unit_run_result_from_state(array $state): array
+    {
+        return [
+            'type' => 'global_unit_tests',
+            'status' => sanitize_key((string) ($state['status'] ?? 'queued')),
+            'success' => !empty($state['success']),
+            'executed_at' => max(0, (int) ($state['finished_at'] ?? ($state['updated_at'] ?? 0))),
+            'label' => 'Run All Unit Tests',
+            'processed_commands' => max(0, (int) ($state['processed_commands'] ?? 0)),
+            'total_commands' => max(0, (int) ($state['total_commands'] ?? 0)),
+            'current_label' => sanitize_text_field((string) ($state['current_label'] ?? '')),
+            'summary' => [
+                'passed_count' => max(0, (int) ($state['passed_count'] ?? 0)),
+                'failed_count' => max(0, (int) ($state['failed_count'] ?? 0)),
+                'total_count' => max(0, (int) ($state['passed_count'] ?? 0)) + max(0, (int) ($state['failed_count'] ?? 0)),
+            ],
+            'tabs' => isset($state['tabs']) && is_array($state['tabs']) ? (array) $state['tabs'] : [],
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $post
+     * @return array<string,mixed>
+     */
+    private static function build_start_global_unit_run_action_result(array $post): array
+    {
+        $tab = self::normalize_unit_test_tab(self::read_action_scalar($post, 'cbt_unit_test_tab'));
+        $scope = self::normalize_unit_test_scope(self::read_action_scalar($post, 'cbt_checklist_scope'));
+
+        if (!function_exists('proc_open')) {
+            return self::build_test_hub_action_result($tab, $scope, '', 'Runner test membutuhkan fungsi proc_open yang aktif di PHP.');
+        }
+
+        $queue = self::build_global_unit_run_command_queue();
+        if (empty($queue)) {
+            return self::build_test_hub_action_result($tab, $scope, '', 'Runner global unit test belum memiliki command yang bisa dijalankan.');
+        }
+
+        $token = strtolower((string) wp_generate_password(12, false, false));
+        $now = time();
+        $state = [
+            'type' => 'global_unit_tests_state',
+            'token' => $token,
+            'status' => 'queued',
+            'tab' => $tab,
+            'scope' => $scope,
+            'queue' => $queue,
+            'tabs' => [],
+            'success' => true,
+            'passed_count' => 0,
+            'failed_count' => 0,
+            'processed_commands' => 0,
+            'total_commands' => count($queue),
+            'current_label' => '',
+            'started_at' => $now,
+            'updated_at' => $now,
+        ];
+        self::save_global_unit_run_state($state);
+
+        return self::build_test_hub_action_result(
+            $tab,
+            $scope,
+            'Run All Unit Tests dimulai bertahap. Test Hub akan memproses satu command per request agar tidak kena timeout Cloudflare.',
+            '',
+            ['cbt_global_unit_run_token' => $token]
+        );
+    }
+
+    /**
+     * @param array<string,mixed> $post
+     * @return array<string,mixed>
+     */
+    private static function build_continue_global_unit_run_action_result(array $post): array
+    {
+        $tab = self::normalize_unit_test_tab(self::read_action_scalar($post, 'cbt_unit_test_tab'));
+        $scope = self::normalize_unit_test_scope(self::read_action_scalar($post, 'cbt_checklist_scope'));
+        $token = sanitize_key(self::read_action_scalar($post, 'cbt_global_unit_run_token'));
+
+        if ($token === '') {
+            return self::build_start_global_unit_run_action_result($post);
+        }
+
+        $state = self::get_global_unit_run_state($token);
+        if (!is_array($state)) {
+            $existing_result = get_transient(self::GLOBAL_UNIT_TEST_RUN_RESULT_TRANSIENT_PREFIX . $token);
+            if (is_array($existing_result) && (string) ($existing_result['type'] ?? '') === 'global_unit_tests') {
+                return self::build_test_hub_action_result($tab, $scope, 'Run All Unit Tests sudah selesai.', '', ['cbt_global_unit_run_token' => $token]);
+            }
+
+            return self::build_test_hub_action_result($tab, $scope, '', 'Token Run All Unit Tests sudah kedaluwarsa atau tidak ditemukan.');
+        }
+
+        $queue = isset($state['queue']) && is_array($state['queue']) ? array_values((array) $state['queue']) : [];
+        $processed = max(0, (int) ($state['processed_commands'] ?? 0));
+        $total = count($queue);
+        if ($total <= 0 || $processed >= $total) {
+            return self::finalize_global_unit_run_state($state, $tab, $scope, $token);
+        }
+
+        $command_definition = isset($queue[$processed]) && is_array($queue[$processed]) ? (array) $queue[$processed] : [];
+        $command = (string) ($command_definition['command'] ?? '');
+        $label = (string) ($command_definition['label'] ?? 'Test Command');
+        $tab_key = self::normalize_unit_test_tab((string) ($command_definition['tab'] ?? $tab));
+        $state['status'] = 'running';
+        $state['current_label'] = $label;
+        $state['updated_at'] = time();
+        self::save_global_unit_run_state($state);
+
+        $result = self::run_unit_test_command($label, $command, self::build_runner_environment());
+        $tabs = isset($state['tabs']) && is_array($state['tabs']) ? (array) $state['tabs'] : [];
+        if (!isset($tabs[$tab_key]) || !is_array($tabs[$tab_key])) {
+            $tabs[$tab_key] = [
+                'tab' => $tab_key,
+                'scope' => 'unit_tests',
+                'label' => (string) ($command_definition['runner_label'] ?? 'Run Tests'),
+                'description' => (string) ($command_definition['runner_description'] ?? ''),
+                'success' => true,
+                'commands' => [],
+            ];
+        }
+        $tabs[$tab_key]['commands'][] = $result;
+        if (empty($result['success'])) {
+            $tabs[$tab_key]['success'] = false;
+            $state['success'] = false;
+        }
+
+        $case_counts = isset($result['test_case_counts']) && is_array($result['test_case_counts'])
+            ? (array) $result['test_case_counts']
+            : [];
+        $state['passed_count'] = max(0, (int) ($state['passed_count'] ?? 0)) + max(0, (int) ($case_counts['passed'] ?? 0));
+        $state['failed_count'] = max(0, (int) ($state['failed_count'] ?? 0)) + max(0, (int) ($case_counts['failed'] ?? 0));
+        $state['processed_commands'] = $processed + 1;
+        $state['total_commands'] = $total;
+        $state['tabs'] = $tabs;
+        $state['updated_at'] = time();
+        $state['current_label'] = $state['processed_commands'] >= $total ? '' : $label;
+
+        if ((int) $state['processed_commands'] >= $total) {
+            return self::finalize_global_unit_run_state($state, $tab, $scope, $token);
+        }
+
+        self::save_global_unit_run_state($state);
+        return self::build_test_hub_action_result(
+            $tab,
+            $scope,
+            sprintf('Run All Unit Tests berjalan: %d/%d command selesai.', (int) $state['processed_commands'], $total),
+            '',
+            ['cbt_global_unit_run_token' => $token]
+        );
+    }
+
+    /**
+     * @param array<string,mixed> $state
+     * @return array<string,mixed>
+     */
+    private static function finalize_global_unit_run_state(array $state, string $tab, string $scope, string $token): array
+    {
+        $state['status'] = 'completed';
+        $state['finished_at'] = time();
+        $state['updated_at'] = time();
+        $state['current_label'] = '';
+
+        $result_payload = self::build_global_unit_run_result_from_state($state);
+        $result_payload['status'] = 'completed';
+        $result_payload['executed_at'] = (int) ($state['finished_at'] ?? time());
+        set_transient(self::GLOBAL_UNIT_TEST_RUN_RESULT_TRANSIENT_PREFIX . $token, $result_payload, self::UNIT_TEST_RUN_RESULT_TTL);
+        delete_transient(self::GLOBAL_UNIT_TEST_RUN_STATE_TRANSIENT_PREFIX . $token);
+
+        $message = !empty($result_payload['success'])
+            ? 'Semua runner unit test global berhasil dijalankan.'
+            : '';
+        $error = !empty($result_payload['success'])
+            ? ''
+            : 'Ada runner unit test yang gagal pada run global. Periksa ringkasan pass/fail dan output per area.';
+
+        return self::build_test_hub_action_result($tab, $scope, $message, $error, ['cbt_global_unit_run_token' => $token]);
     }
 
     /**
@@ -254,6 +709,10 @@ final class CBT_Admin_Test_Hub_Service
                             'label' => 'Playwright Recovery Conflict Resolver',
                             'command' => 'node tests/e2e/run-recovery-flow.mjs --grep "Recovery Flow: remote snapshot wins when local snapshot becomes stale conflict"',
                         ],
+                        [
+                            'label' => 'Playwright Recovery Object Map Restore',
+                            'command' => 'node tests/e2e/run-new-question-types-flow.mjs --grep "Student runtime restores object-map answers for new question types"',
+                        ],
                     ],
                 ],
             ],
@@ -267,12 +726,16 @@ final class CBT_Admin_Test_Hub_Service
                             'command' => './node_modules/.bin/vitest run tests/js/unit/sync-rest.test.js --reporter=verbose',
                         ],
                         [
+                            'label' => 'Vitest Answer Sync',
+                            'command' => './node_modules/.bin/vitest run tests/js/unit/answer-sync.test.js --reporter=verbose',
+                        ],
+                        [
                             'label' => 'Vitest UI Sync',
                             'command' => './node_modules/.bin/vitest run tests/js/unit/attempt-ui-sync.test.js --reporter=verbose',
                         ],
                         [
                             'label' => 'PHPUnit REST Sync',
-                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/RestSyncValidationTest.php',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/RestSyncValidationTest.php tests/php/unit/RestQuestionSubmissionContextSnapshotTest.php tests/php/unit/ExamQuestionDeliverySnapshotTest.php',
                         ],
                     ],
                 ],
@@ -324,6 +787,14 @@ final class CBT_Admin_Test_Hub_Service
                             'label' => 'PHPUnit Auth Session',
                             'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/AuthTokenNormalizationTest.php tests/php/unit/AuthSessionLifecycleTest.php tests/php/unit/AuthSessionRestGuardTest.php',
                         ],
+                        [
+                            'label' => 'PHPUnit Login Input Guard',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/RestLoginInputValidationTest.php',
+                        ],
+                        [
+                            'label' => 'PHPUnit Login Snapshot Freshness',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/LoginSnapshotFreshnessServiceTest.php',
+                        ],
                     ],
                 ],
                 'smoke_tests' => [
@@ -364,7 +835,7 @@ final class CBT_Admin_Test_Hub_Service
                     'commands' => [
                         [
                             'label' => 'Vitest Timer & Lifecycle',
-                            'command' => './node_modules/.bin/vitest run tests/js/unit/session-lifecycle.test.js tests/js/unit/session-heartbeat.test.js --reporter=verbose',
+                            'command' => './node_modules/.bin/vitest run tests/js/unit/session-lifecycle.test.js tests/js/unit/session-heartbeat.test.js tests/js/unit/lifecycle.test.js --reporter=verbose',
                         ],
                     ],
                 ],
@@ -402,7 +873,7 @@ final class CBT_Admin_Test_Hub_Service
                     'commands' => [
                         [
                             'label' => 'Vitest Question Runtime',
-                            'command' => './node_modules/.bin/vitest run tests/js/unit/question-inputs.test.js tests/js/unit/question-state-manager.test.js tests/js/unit/question-navigation.test.js tests/js/unit/question-runtime-manager.test.js --reporter=verbose',
+                            'command' => './node_modules/.bin/vitest run tests/js/unit/question-render.test.js tests/js/unit/question-inputs.test.js tests/js/unit/question-state-manager.test.js tests/js/unit/question-navigation.test.js tests/js/unit/question-runtime-manager.test.js --reporter=verbose',
                         ],
                     ],
                 ],
@@ -434,27 +905,39 @@ final class CBT_Admin_Test_Hub_Service
                             'label' => 'Playwright Runtime Rapid Navigation',
                             'command' => 'node tests/e2e/run-question-runtime-flow.mjs --grep "Runtime Flow: rapid navigation does not swap adjacent payloads"',
                         ],
+                        [
+                            'label' => 'Playwright New Types Runtime Restore',
+                            'command' => 'node tests/e2e/run-new-question-types-flow.mjs --grep "Student runtime restores object-map answers for new question types"',
+                        ],
                     ],
                 ],
             ],
             'result_scoring' => [
                 'unit_tests' => [
-                    'label' => 'Run Checklist Unit Result & Scoring',
-                    'description' => 'Menjalankan suite JS dan PHP yang saat ini dipetakan ke Checklist Unit Test untuk Result & Scoring.',
+                    'label' => 'Run Checklist Unit Result & Export',
+                    'description' => 'Menjalankan suite JS dan PHP yang saat ini dipetakan ke Checklist Unit Test untuk Result & Export.',
                     'commands' => [
                         [
-                            'label' => 'Vitest Result & Scoring',
+                            'label' => 'Vitest Result & Export',
                             'command' => './node_modules/.bin/vitest run tests/js/unit/result-stage.test.js tests/js/unit/finish-flow.test.js --reporter=verbose',
+                        ],
+                        [
+                            'label' => 'Vitest Result Review',
+                            'command' => './node_modules/.bin/vitest run tests/js/unit/review-stage.test.js --reporter=verbose',
                         ],
                         [
                             'label' => 'PHPUnit Result Payload',
                             'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/ResultPayloadHelpersTest.php',
                         ],
+                        [
+                            'label' => 'PHPUnit Result & Export',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/ResultPayloadHelpersTest.php tests/php/unit/RestQuestionSubmissionContextSnapshotTest.php tests/php/unit/AdminResultsHelperObjectMapProgressTest.php tests/php/unit/AdminReportExamRowsTest.php',
+                        ],
                     ],
                 ],
                 'smoke_tests' => [
-                    'label' => 'Queue Checklist Flow Check Result & Scoring',
-                    'description' => 'Mengantrekan skenario Playwright Result & Scoring ke background job secara granular per item checklist.',
+                    'label' => 'Queue Checklist Flow Check Result & Export',
+                    'description' => 'Mengantrekan skenario Playwright Result & Export ke background job secara granular per item checklist.',
                     'commands' => [
                         [
                             'label' => 'Playwright Result Objective Pass',
@@ -491,6 +974,10 @@ final class CBT_Admin_Test_Hub_Service
                         [
                             'label' => 'PHPUnit Import & Preview',
                             'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/QuestionsImportPreviewTest.php tests/php/unit/QuestionsHelperPreviewRenderingTest.php tests/php/unit/QuestionsHelperShortAnswerTest.php',
+                        ],
+                        [
+                            'label' => 'PHPUnit Manual Compact Authoring',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/AdminQuestionManualCompactAuthoringTest.php',
                         ],
                         [
                             'label' => 'Vitest Import & Preview',
@@ -562,6 +1049,18 @@ final class CBT_Admin_Test_Hub_Service
                             'label' => 'Playwright Authoring Equation TFM',
                             'command' => 'node tests/e2e/run-import-preview-flow.mjs --grep "Import Flow: manual TF matrix equation and quick template stay consistent in preview and review"',
                         ],
+                        [
+                            'label' => 'Playwright New Types Manual Authoring',
+                            'command' => 'node tests/e2e/run-new-question-types-flow.mjs --grep "Admin manual authoring saves and reopens compact structured forms"',
+                        ],
+                        [
+                            'label' => 'Playwright New Types DOCX Import',
+                            'command' => 'node tests/e2e/run-new-question-types-flow.mjs --grep "DOCX import accepts all new structured question types"',
+                        ],
+                        [
+                            'label' => 'Playwright New Types Template Controls',
+                            'command' => 'node tests/e2e/run-new-question-types-flow.mjs --grep "Import template controls expose structured parameters for new types"',
+                        ],
                     ],
                 ],
             ],
@@ -609,6 +1108,10 @@ final class CBT_Admin_Test_Hub_Service
                             'command' => 'node tests/e2e/run-security-log-flow.mjs --grep "Security Flow: multiple events on one attempt stay aggregated with stable indicators"',
                         ],
                         [
+                            'label' => 'Playwright Security Live Roster',
+                            'command' => 'node tests/e2e/run-security-log-flow.mjs --grep "Security Flow: live roster shows active attempt grouped by exam kelas dan ruang"',
+                        ],
+                        [
                             'label' => 'Playwright Security Refresh Persistence',
                             'command' => 'node tests/e2e/run-security-log-flow.mjs --grep "Security Flow: frontend event remains visible after admin refresh"',
                         ],
@@ -632,10 +1135,11 @@ final class CBT_Admin_Test_Hub_Service
             wp_die('Unauthorized');
         }
 
-        $tab = self::normalize_unit_test_tab(isset($_POST['cbt_unit_test_tab']) ? wp_unslash((string) $_POST['cbt_unit_test_tab']) : '');
-        $scope = self::normalize_unit_test_scope(isset($_POST['cbt_checklist_scope']) ? wp_unslash((string) $_POST['cbt_checklist_scope']) : '');
+        $tab = self::normalize_unit_test_tab(self::read_action_scalar($_POST, 'cbt_unit_test_tab'));
+        $scope = self::normalize_unit_test_scope(self::read_action_scalar($_POST, 'cbt_checklist_scope'));
         $item_index_requested = array_key_exists('cbt_checklist_item_index', $_POST);
         check_admin_referer('cbt_test_hub_runner_' . $tab);
+        self::extend_test_hub_action_time_limit();
 
         if ($scope === 'smoke_tests') {
             self::redirect_test_hub_after_run($tab, null, '', 'Checklist Flow Check sekarang dijalankan di background. Gunakan action flow check untuk mengantrekan job.', $scope);
@@ -740,98 +1244,14 @@ final class CBT_Admin_Test_Hub_Service
         }
 
         check_admin_referer('cbt_run_all_unit_tests');
-        $tab = self::normalize_unit_test_tab(isset($_POST['cbt_unit_test_tab']) ? wp_unslash((string) $_POST['cbt_unit_test_tab']) : '');
-        $scope = self::normalize_unit_test_scope(isset($_POST['cbt_checklist_scope']) ? wp_unslash((string) $_POST['cbt_checklist_scope']) : '');
+        self::extend_test_hub_action_time_limit();
 
-        if (!function_exists('proc_open')) {
-            self::redirect_test_hub_after_global_run($tab, $scope, null, '', 'Runner test membutuhkan fungsi proc_open yang aktif di PHP.');
-        }
+        $token = sanitize_key(self::read_action_scalar($_POST, 'cbt_global_unit_run_token'));
+        $result = $token === ''
+            ? self::build_start_global_unit_run_action_result($_POST)
+            : self::build_continue_global_unit_run_action_result($_POST);
 
-        $runner_definitions = self::get_unit_test_runner_definitions();
-        $tab_definitions = self::get_unit_test_tab_definitions();
-        $environment = self::build_runner_environment();
-        $tab_results = [];
-        $success = true;
-        $passed_count = 0;
-        $failed_count = 0;
-
-        foreach (array_keys($tab_definitions) as $tab_key) {
-            $tab_key = self::normalize_unit_test_tab((string) $tab_key);
-            $runner = isset($runner_definitions[$tab_key]['unit_tests']) && is_array($runner_definitions[$tab_key]['unit_tests'])
-                ? (array) $runner_definitions[$tab_key]['unit_tests']
-                : [];
-            $commands = isset($runner['commands']) && is_array($runner['commands']) ? array_values((array) $runner['commands']) : [];
-
-            if (empty($commands)) {
-                continue;
-            }
-
-            $results = [];
-            $tab_success = true;
-            foreach ($commands as $command_definition) {
-                $command = is_array($command_definition) ? (string) ($command_definition['command'] ?? '') : '';
-                if ($command === '') {
-                    continue;
-                }
-
-                $result = self::run_unit_test_command(
-                    (string) ($command_definition['label'] ?? 'Test Command'),
-                    $command,
-                    $environment
-                );
-                $results[] = $result;
-                $case_counts = isset($result['test_case_counts']) && is_array($result['test_case_counts'])
-                    ? (array) $result['test_case_counts']
-                    : [];
-                $passed_count += max(0, (int) ($case_counts['passed'] ?? 0));
-                $failed_count += max(0, (int) ($case_counts['failed'] ?? 0));
-                if (empty($result['success'])) {
-                    $tab_success = false;
-                    $success = false;
-                }
-            }
-
-            if (empty($results)) {
-                continue;
-            }
-
-            $tab_results[$tab_key] = [
-                'tab' => $tab_key,
-                'scope' => 'unit_tests',
-                'label' => (string) ($runner['label'] ?? 'Run Tests'),
-                'description' => (string) ($runner['description'] ?? ''),
-                'success' => $tab_success,
-                'commands' => $results,
-            ];
-        }
-
-        if (empty($tab_results)) {
-            self::redirect_test_hub_after_global_run($tab, $scope, null, '', 'Runner global unit test belum memiliki command yang bisa dijalankan.');
-        }
-
-        $token = strtolower((string) wp_generate_password(12, false, false));
-        $result_payload = [
-            'type' => 'global_unit_tests',
-            'success' => $success,
-            'executed_at' => time(),
-            'label' => 'Run All Unit Tests',
-            'summary' => [
-                'passed_count' => $passed_count,
-                'failed_count' => $failed_count,
-                'total_count' => $passed_count + $failed_count,
-            ],
-            'tabs' => $tab_results,
-        ];
-        set_transient(self::GLOBAL_UNIT_TEST_RUN_RESULT_TRANSIENT_PREFIX . $token, $result_payload, self::UNIT_TEST_RUN_RESULT_TTL);
-
-        $message = $success
-            ? 'Semua runner unit test global berhasil dijalankan.'
-            : '';
-        $error = $success
-            ? ''
-            : 'Ada runner unit test yang gagal pada run global. Periksa ringkasan pass/fail dan output per area.';
-
-        self::redirect_test_hub_after_global_run($tab, $scope, $token, $message, $error);
+        self::redirect_test_hub_action_result($result);
     }
 
     public static function handle_queue_flow_check_job(): void
@@ -840,130 +1260,98 @@ final class CBT_Admin_Test_Hub_Service
             wp_die('Unauthorized');
         }
 
-        $tab = self::normalize_unit_test_tab(isset($_POST['cbt_unit_test_tab']) ? wp_unslash((string) $_POST['cbt_unit_test_tab']) : '');
-        $scope = self::normalize_unit_test_scope(isset($_POST['cbt_checklist_scope']) ? wp_unslash((string) $_POST['cbt_checklist_scope']) : '');
-        $item_index_requested = array_key_exists('cbt_checklist_item_index', $_POST);
+        $tab = self::normalize_unit_test_tab(self::read_action_scalar($_POST, 'cbt_unit_test_tab'));
         check_admin_referer('cbt_test_hub_runner_' . $tab);
 
-        if (!function_exists('proc_open')) {
-            self::redirect_test_hub_after_run($tab, null, '', 'Flow check membutuhkan fungsi proc_open yang aktif di PHP.', $scope);
+        self::redirect_test_hub_action_result(self::build_queue_flow_check_action_result($_POST));
+    }
+
+    public static function handle_refresh_runner_health(): void
+    {
+        if (!self::can_manage_test_hub()) {
+            wp_die('Unauthorized');
         }
 
-        if ($scope !== 'smoke_tests') {
-            self::redirect_test_hub_after_run($tab, null, '', 'Queue async hanya tersedia untuk Checklist Flow Check.', $scope);
+        check_admin_referer('cbt_refresh_test_hub_health');
+        self::redirect_test_hub_action_result(self::build_refresh_runner_health_action_result($_POST));
+    }
+
+    public static function handle_check_e2e_readiness(): void
+    {
+        if (!self::can_manage_test_hub()) {
+            wp_die('Unauthorized');
         }
 
-        $runners = self::get_unit_test_runner_definitions();
-        $runner = isset($runners[$tab][$scope]) && is_array($runners[$tab][$scope]) ? (array) $runners[$tab][$scope] : [];
-        $commands = isset($runner['commands']) && is_array($runner['commands']) ? (array) $runner['commands'] : [];
-        if (empty($runner) || empty($commands)) {
-            self::redirect_test_hub_after_run($tab, null, '', 'Runner flow check untuk checklist ini belum tersedia.', $scope);
+        check_admin_referer('cbt_check_test_hub_e2e_readiness');
+        self::redirect_test_hub_action_result(self::build_check_e2e_readiness_action_result($_POST));
+    }
+
+    public static function handle_retry_flow_check_job(): void
+    {
+        if (!self::can_manage_test_hub()) {
+            wp_die('Unauthorized');
         }
 
-        $checklist_items = self::get_unit_test_checklist_items($tab, $scope);
-        $latest_jobs = self::build_latest_flow_job_lookup(self::read_flow_check_jobs());
-        $has_running_jobs = self::has_running_flow_jobs_only($latest_jobs);
-        $requested_item_index = null;
-        if ($item_index_requested) {
-            $requested_item_index = self::normalize_unit_test_item_index(
-                isset($_POST['cbt_checklist_item_index']) ? wp_unslash((string) $_POST['cbt_checklist_item_index']) : '',
-                $tab,
-                $scope
-            );
-            if ($requested_item_index === null) {
-                self::redirect_test_hub_after_run($tab, null, '', 'Task flow check yang dipilih tidak valid atau sudah tidak tersedia.', $scope);
-            }
-        }
-        $queued_count = 0;
-        $skipped_labels = [];
-        $storage_failed_labels = [];
-        $queued_job_ids = [];
+        check_admin_referer('cbt_test_hub_flow_job_action');
+        self::redirect_test_hub_action_result(self::build_retry_flow_check_job_action_result($_POST));
+    }
 
-        foreach ($checklist_items as $index => $item_definition) {
-            if ($requested_item_index !== null && (int) $index !== $requested_item_index) {
-                continue;
-            }
-
-            if (!is_array($item_definition)) {
-                continue;
-            }
-
-            $item_label = trim((string) ($item_definition['label'] ?? ''));
-            $item_commands = self::filter_runner_commands_for_item($commands, $item_definition);
-            if (empty($item_commands)) {
-                if ($item_label !== '') {
-                    $skipped_labels[] = $item_label;
-                }
-                continue;
-            }
-
-            $latest_job = self::resolve_latest_flow_job_for_item($latest_jobs, $tab, $scope, (int) $index);
-            if (!empty($latest_job) && in_array((string) ($latest_job['status'] ?? ''), ['queued', 'running'], true)) {
-                if ($item_label !== '') {
-                    $skipped_labels[] = $item_label;
-                }
-                continue;
-            }
-
-            $job = self::create_flow_check_job($tab, $scope, (int) $index, $item_definition, $item_commands);
-            if (!self::write_flow_check_job($job)) {
-                if ($item_label !== '') {
-                    $storage_failed_labels[] = $item_label;
-                }
-                continue;
-            }
-            $queued_job_ids[] = (string) ($job['job_id'] ?? '');
-            $queued_count += 1;
-            $latest_jobs[self::flow_job_lookup_key($tab, $scope, (int) $index)] = $job;
+    public static function handle_cancel_flow_check_job(): void
+    {
+        if (!self::can_manage_test_hub()) {
+            wp_die('Unauthorized');
         }
 
-        if ($queued_count <= 0) {
-            if (!empty($storage_failed_labels)) {
-                self::redirect_test_hub_after_run(
-                    $tab,
-                    null,
-                    '',
-                    'Task flow check gagal disimpan ke storage background. Periksa permission direktori write untuk runner web: ' . implode(', ', $storage_failed_labels),
-                    $scope
-                );
-            }
+        check_admin_referer('cbt_test_hub_flow_job_action');
+        self::redirect_test_hub_action_result(self::build_cancel_flow_check_job_action_result($_POST));
+    }
 
-            $error = !empty($skipped_labels)
-                ? 'Task flow check sudah sedang berjalan atau belum punya runner: ' . implode(', ', $skipped_labels)
-                : 'Tidak ada task flow check yang bisa diantrikan.';
-            self::redirect_test_hub_after_run($tab, null, '', $error, $scope);
+    public static function handle_clear_flow_check_job(): void
+    {
+        if (!self::can_manage_test_hub()) {
+            wp_die('Unauthorized');
         }
 
-        $worker_start_failed = false;
-        if (!$has_running_jobs) {
-            $worker_start_failed = !self::start_flow_check_job_process((string) $queued_job_ids[0]);
+        check_admin_referer('cbt_test_hub_flow_job_action');
+        self::redirect_test_hub_action_result(self::build_clear_flow_check_job_action_result($_POST));
+    }
+
+    public static function handle_repair_stuck_flow_check_jobs(): void
+    {
+        if (!self::can_manage_test_hub()) {
+            wp_die('Unauthorized');
         }
 
-        $message = $queued_count === 1
-            ? 'Flow check berhasil diantrikan di background.'
-            : $queued_count . ' task flow check berhasil diantrikan di background.';
-        if (!empty($skipped_labels)) {
-            $message .= ' Beberapa task dilewati karena masih queued/running: ' . implode(', ', $skipped_labels) . '.';
-        }
-        if (!empty($storage_failed_labels)) {
-            $message .= ' Beberapa task gagal disimpan ke storage background: ' . implode(', ', $storage_failed_labels) . '.';
+        check_admin_referer('cbt_repair_stuck_flow_check_jobs');
+        self::redirect_test_hub_action_result(self::build_repair_stuck_flow_check_jobs_action_result($_POST));
+    }
+
+    public static function handle_download_test_hub_artifact(): void
+    {
+        if (!self::can_manage_test_hub()) {
+            wp_die('Unauthorized');
         }
 
-        if ($worker_start_failed) {
-            self::redirect_test_hub_after_run(
-                $tab,
-                null,
-                '',
-                'Flow check tersimpan, tetapi worker background gagal dimulai. Periksa PATH Node.js dan permission direktori runner web.',
-                $scope
-            );
+        $request = $_REQUEST;
+        $job_id = sanitize_file_name(self::read_action_scalar($request, 'cbt_flow_job_id'));
+        check_admin_referer('cbt_test_hub_artifact_' . $job_id);
+
+        $result = self::build_download_test_hub_artifact_result($request);
+        if (empty($result['success']) || empty($result['file_path']) || !is_string($result['file_path'])) {
+            wp_die((string) ($result['error'] ?? 'Artifact Test Hub tidak ditemukan.'));
         }
 
-        wp_safe_redirect(self::test_hub_page_url([
-            'cbt_unit_test_tab' => $tab,
-            'cbt_checklist_scope' => $scope,
-            'cbt_msg' => $message,
-        ]));
+        $file_path = (string) $result['file_path'];
+        $download_name = (string) ($result['download_name'] ?? basename($file_path));
+        $content_type = (string) ($result['content_type'] ?? 'application/octet-stream');
+
+        if (function_exists('nocache_headers')) {
+            nocache_headers();
+        }
+        header('Content-Type: ' . $content_type);
+        header('Content-Disposition: attachment; filename="' . str_replace('"', '', $download_name) . '"');
+        header('Content-Length: ' . (string) filesize($file_path));
+        readfile($file_path);
         exit;
     }
 
@@ -974,21 +1362,7 @@ final class CBT_Admin_Test_Hub_Service
         }
 
         check_admin_referer('cbt_save_test_hub_settings');
-        $tab = self::normalize_unit_test_tab(isset($_POST['cbt_unit_test_tab']) ? wp_unslash((string) $_POST['cbt_unit_test_tab']) : '');
-        $scope = self::normalize_unit_test_scope(isset($_POST['cbt_checklist_scope']) ? wp_unslash((string) $_POST['cbt_checklist_scope']) : '');
-
-        $settings = self::sanitize_settings_input([
-            'e2e_base_url' => isset($_POST['e2e_base_url']) ? wp_unslash((string) $_POST['e2e_base_url']) : '',
-        ]);
-
-        self::save_settings($settings);
-
-        wp_safe_redirect(self::test_hub_page_url([
-            'cbt_unit_test_tab' => $tab,
-            'cbt_checklist_scope' => $scope,
-            'cbt_msg' => 'Pengaturan Playwright E2E berhasil disimpan.',
-        ]));
-        exit;
+        self::redirect_test_hub_action_result(self::build_save_settings_action_result($_POST));
     }
 
     public static function handle_clear_test_artifacts(): void
@@ -998,16 +1372,47 @@ final class CBT_Admin_Test_Hub_Service
         }
 
         check_admin_referer('cbt_clear_test_artifacts');
-        $tab = self::normalize_unit_test_tab(isset($_POST['cbt_unit_test_tab']) ? wp_unslash((string) $_POST['cbt_unit_test_tab']) : '');
-        $scope = self::normalize_unit_test_scope(isset($_POST['cbt_checklist_scope']) ? wp_unslash((string) $_POST['cbt_checklist_scope']) : '');
+        self::redirect_test_hub_action_result(self::build_clear_test_artifacts_action_result($_POST));
+    }
+
+    /**
+     * @param array<string,mixed> $post
+     * @return array<string,mixed>
+     */
+    private static function build_save_settings_action_result(array $post): array
+    {
+        $tab = self::normalize_unit_test_tab(self::read_action_scalar($post, 'cbt_unit_test_tab'));
+        $scope = self::normalize_unit_test_scope(self::read_action_scalar($post, 'cbt_checklist_scope'));
+
+        $settings = self::sanitize_settings_input([
+            'e2e_base_url' => self::read_action_scalar($post, 'e2e_base_url'),
+            'e2e_frontend_url' => self::read_action_scalar($post, 'e2e_frontend_url'),
+        ]);
+
+        self::save_settings($settings);
+
+        $result = self::build_test_hub_action_result($tab, $scope, 'Pengaturan Playwright E2E berhasil disimpan.', '');
+        $result['settings'] = $settings;
+
+        return $result;
+    }
+
+    /**
+     * @param array<string,mixed> $post
+     * @return array<string,mixed>
+     */
+    private static function build_clear_test_artifacts_action_result(array $post): array
+    {
+        $tab = self::normalize_unit_test_tab(self::read_action_scalar($post, 'cbt_unit_test_tab'));
+        $scope = self::normalize_unit_test_scope(self::read_action_scalar($post, 'cbt_checklist_scope'));
         $latest_flow_jobs = self::build_latest_flow_job_lookup(self::read_flow_check_jobs());
 
         if (self::has_active_flow_jobs($latest_flow_jobs)) {
-            self::redirect_test_hub_with_notice(
+            return self::build_test_hub_action_result(
                 $tab,
                 $scope,
                 '',
-                'Bersihkan artefak test diblokir sementara karena masih ada flow check background yang queued atau running.'
+                'Bersihkan artefak test diblokir sementara karena masih ada flow check background yang queued, running, atau cancelling.'
             );
         }
 
@@ -1047,7 +1452,7 @@ final class CBT_Admin_Test_Hub_Service
         }
 
         if (empty($deleted_labels) && empty($failed_labels)) {
-            self::redirect_test_hub_with_notice(
+            return self::build_test_hub_action_result(
                 $tab,
                 $scope,
                 'Belum ada artefak test yang perlu dibersihkan.',
@@ -1064,7 +1469,1371 @@ final class CBT_Admin_Test_Hub_Service
             $error = 'Sebagian artefak test belum bisa dihapus: ' . implode(', ', $failed_labels) . '. Periksa permission folder atau file yang sedang dipakai proses lain.';
         }
 
-        self::redirect_test_hub_with_notice($tab, $scope, $message, $error);
+        $result = self::build_test_hub_action_result($tab, $scope, $message, $error);
+        $result['deleted_labels'] = $deleted_labels;
+        $result['failed_labels'] = $failed_labels;
+
+        return $result;
+    }
+
+    /**
+     * @param array<string,mixed> $post
+     * @return array<string,mixed>
+     */
+    private static function build_refresh_runner_health_action_result(array $post, array $probe_overrides = []): array
+    {
+        $tab = self::normalize_unit_test_tab(self::read_action_scalar($post, 'cbt_unit_test_tab'));
+        $scope = self::normalize_unit_test_scope(self::read_action_scalar($post, 'cbt_checklist_scope'));
+        $snapshot = self::build_runner_health_snapshot(self::get_settings(), $probe_overrides);
+        self::save_runner_health_snapshot($snapshot);
+
+        $status = (string) ($snapshot['overall_status'] ?? 'unknown');
+        $message = $status === 'ready'
+            ? 'Runner Health siap. Semua check penting lolos.'
+            : 'Runner Health diperbarui dengan status ' . strtoupper($status) . '.';
+
+        $result = self::build_test_hub_action_result($tab, $scope, $message, '');
+        $result['runner_health'] = $snapshot;
+
+        return $result;
+    }
+
+    /**
+     * @param array<string,mixed> $post
+     * @return array<string,mixed>
+     */
+    private static function build_check_e2e_readiness_action_result(array $post, array $probe_overrides = []): array
+    {
+        $tab = self::normalize_unit_test_tab(self::read_action_scalar($post, 'cbt_unit_test_tab'));
+        $scope = self::normalize_unit_test_scope(self::read_action_scalar($post, 'cbt_checklist_scope'));
+        $snapshot = self::build_e2e_readiness_snapshot(self::get_settings(), $probe_overrides);
+        self::save_e2e_readiness_snapshot($snapshot);
+
+        $status = (string) ($snapshot['overall_status'] ?? 'unknown');
+        $message = $status === 'ready'
+            ? 'E2E Readiness siap. URL, seed user, dan fixture utama lolos.'
+            : 'E2E Readiness diperbarui dengan status ' . strtoupper($status) . '.';
+
+        $result = self::build_test_hub_action_result($tab, $scope, $message, '');
+        $result['e2e_readiness'] = $snapshot;
+
+        return $result;
+    }
+
+    /**
+     * @param array<string,mixed> $settings
+     * @param array<string,mixed> $probe_overrides
+     * @return array{checked_at:int,overall_status:string,checks:array<int,array<string,string>>,suggestions:array<int,string>}
+     */
+    private static function build_e2e_readiness_snapshot(array $settings, array $probe_overrides = []): array
+    {
+        $base_url = self::normalize_e2e_absolute_url((string) ($settings['e2e_base_url'] ?? ''));
+        $frontend_url = self::normalize_e2e_absolute_url((string) ($settings['e2e_frontend_url'] ?? ''));
+        $effective_frontend_url = $frontend_url !== '' ? $frontend_url : $base_url;
+        $checks = [];
+
+        $settings_status = 'ready';
+        $settings_message = 'E2E Base URL dan Frontend URL sudah diset.';
+        $settings_detail = 'Base: ' . ($base_url !== '' ? $base_url : '-') . ' | Frontend: ' . ($frontend_url !== '' ? $frontend_url : 'fallback ke Base URL');
+        if ($base_url === '') {
+            $settings_status = 'blocked';
+            $settings_message = 'E2E Base URL belum diisi.';
+            $settings_detail = 'Simpan E2E Base URL sebelum menjalankan Playwright E2E.';
+        } elseif ($frontend_url === '') {
+            $settings_status = 'warning';
+            $settings_message = 'E2E Frontend URL kosong; frontend akan dicek memakai Base URL.';
+        }
+        $checks[] = self::e2e_readiness_check('test_hub_settings', 'Test Hub Settings', $settings_status, $settings_message, $settings_detail, $base_url);
+
+        if ($base_url !== '') {
+            $checks[] = self::build_e2e_marker_http_check(
+                'wordpress_login',
+                'WordPress Login',
+                self::join_e2e_url($base_url, 'wp-login.php'),
+                ['id="user_login"'],
+                'WordPress login siap untuk Playwright.',
+                'WordPress login belum siap. Pastikan E2E Base URL mengarah ke root WordPress.',
+                $probe_overrides
+            );
+        } else {
+            $checks[] = self::e2e_readiness_check('wordpress_login', 'WordPress Login', 'blocked', 'WordPress login belum bisa dicek karena Base URL kosong.', '', '');
+        }
+
+        if ($effective_frontend_url !== '') {
+            $checks[] = self::build_e2e_marker_http_check(
+                'cbt_frontend',
+                'CBT Frontend',
+                $effective_frontend_url,
+                ['id="cbt-login-form"', 'id="cbt-exam-app"', 'CBTExamFrontendConfig'],
+                'Frontend CBT siap untuk Playwright.',
+                'Frontend CBT belum siap. Pastikan URL memuat shortcode/frontend CBT.',
+                $probe_overrides
+            );
+        } else {
+            $checks[] = self::e2e_readiness_check('cbt_frontend', 'CBT Frontend', 'blocked', 'Frontend CBT belum bisa dicek karena URL kosong.', '', '');
+        }
+
+        $checks[] = self::build_e2e_admin_seed_user_check($probe_overrides);
+        $checks[] = self::build_e2e_fixture_catalog_check($probe_overrides);
+
+        $suggestions = self::build_e2e_url_suggestions($base_url);
+
+        return self::normalize_e2e_readiness_snapshot([
+            'checked_at' => time(),
+            'overall_status' => self::resolve_runner_health_overall_status($checks),
+            'checks' => $checks,
+            'suggestions' => $suggestions,
+        ]);
+    }
+
+    /**
+     * @param array<string,mixed> $settings
+     * @param array<string,mixed> $probe_overrides
+     * @return array{checked_at:int,overall_status:string,checks:array<int,array<string,string>>}
+     */
+    private static function build_runner_health_snapshot(array $settings, array $probe_overrides = []): array
+    {
+        $checks = [];
+        $proc_open_available = array_key_exists('proc_open_available', $probe_overrides)
+            ? (bool) $probe_overrides['proc_open_available']
+            : function_exists('proc_open');
+        $checks[] = self::runner_health_check(
+            'proc_open',
+            'PHP proc_open',
+            $proc_open_available ? 'ready' : 'blocked',
+            $proc_open_available ? 'proc_open tersedia.' : 'proc_open tidak tersedia di PHP.',
+            $proc_open_available ? '' : 'Runner command tidak bisa dimulai dari admin tanpa proc_open.'
+        );
+
+        $shell_result = self::runner_health_probe_shell_command('shell', 'command -v bash || command -v sh', $probe_overrides, $proc_open_available);
+        $checks[] = self::runner_health_check(
+            'shell',
+            'Shell Runner',
+            !empty($shell_result['success']) ? 'ready' : 'blocked',
+            !empty($shell_result['success']) ? 'Shell tersedia.' : 'Shell runner tidak ditemukan.',
+            trim((string) ($shell_result['stdout'] ?? $shell_result['stderr'] ?? ''))
+        );
+
+        $node_result = self::runner_health_probe_shell_command('node_version', 'node --version', $probe_overrides, $proc_open_available);
+        $node_version = self::extract_semver_major((string) ($node_result['stdout'] ?? ''));
+        $node_ready = !empty($node_result['success']) && $node_version >= 20;
+        $checks[] = self::runner_health_check(
+            'node',
+            'Node.js >= 20',
+            $node_ready ? 'ready' : 'blocked',
+            $node_ready ? 'Node.js memenuhi minimum versi.' : 'Node.js tidak tersedia atau versinya di bawah 20.',
+            trim((string) ($node_result['stdout'] ?? $node_result['stderr'] ?? ''))
+        );
+
+        $npm_result = self::runner_health_probe_shell_command('npm_version', 'npm --version', $probe_overrides, $proc_open_available);
+        $checks[] = self::runner_health_check(
+            'npm',
+            'npm',
+            !empty($npm_result['success']) ? 'ready' : 'warning',
+            !empty($npm_result['success']) ? 'npm tersedia.' : 'npm tidak terdeteksi.',
+            trim((string) ($npm_result['stdout'] ?? $npm_result['stderr'] ?? ''))
+        );
+
+        $playwright_installed = array_key_exists('playwright_installed', $probe_overrides)
+            ? (bool) $probe_overrides['playwright_installed']
+            : (is_dir(rtrim(CBT_EXAM_SYSTEM_PATH, '/\\') . '/node_modules/@playwright/test') || is_dir(rtrim(CBT_EXAM_SYSTEM_PATH, '/\\') . '/node_modules/playwright'));
+        $checks[] = self::runner_health_check(
+            'playwright_package',
+            'Playwright Package',
+            $playwright_installed ? 'ready' : 'blocked',
+            $playwright_installed ? 'Package Playwright terpasang.' : 'Package Playwright belum ditemukan di node_modules.',
+            $playwright_installed ? '' : 'Jalankan npm install sebelum flow-check.'
+        );
+
+        $browsers_path = rtrim(CBT_EXAM_SYSTEM_PATH, '/\\') . '/.playwright-browsers';
+        $chromium_installed = array_key_exists('chromium_installed', $probe_overrides)
+            ? (bool) $probe_overrides['chromium_installed']
+            : self::directory_has_contents($browsers_path);
+        $checks[] = self::runner_health_check(
+            'playwright_chromium',
+            'Playwright Chromium',
+            $chromium_installed ? 'ready' : 'warning',
+            $chromium_installed ? 'Browser Playwright tersedia.' : 'Folder browser Playwright belum berisi Chromium.',
+            $chromium_installed ? $browsers_path : 'Jalankan npm run playwright:install:chromium bila flow-check butuh browser lokal.'
+        );
+
+        $job_directory_ready = array_key_exists('job_directory_ready', $probe_overrides)
+            ? (bool) $probe_overrides['job_directory_ready']
+            : self::ensure_flow_job_directory();
+        $checks[] = self::runner_health_check(
+            'job_directory',
+            'Job Directory',
+            $job_directory_ready ? 'ready' : 'blocked',
+            $job_directory_ready ? 'Direktori job writable.' : 'Direktori job tidak writable.',
+            self::flow_job_directory_path()
+        );
+
+        $base_url = trim((string) ($settings['e2e_base_url'] ?? ''));
+        $checks[] = self::build_runner_health_url_check('e2e_base_url', 'E2E Base URL', $base_url, true, $probe_overrides);
+        $frontend_url = trim((string) ($settings['e2e_frontend_url'] ?? ''));
+        if ($frontend_url !== '') {
+            $checks[] = self::build_runner_health_url_check('e2e_frontend_url', 'E2E Frontend URL', $frontend_url, false, $probe_overrides);
+        }
+
+        return self::normalize_runner_health_snapshot([
+            'checked_at' => time(),
+            'overall_status' => self::resolve_runner_health_overall_status($checks),
+            'checks' => $checks,
+        ]);
+    }
+
+    /**
+     * @return array<string,string>
+     */
+    private static function runner_health_check(string $key, string $label, string $status, string $message, string $detail = ''): array
+    {
+        $status = sanitize_key($status);
+        if (!in_array($status, ['ready', 'warning', 'blocked'], true)) {
+            $status = 'warning';
+        }
+
+        return [
+            'key' => sanitize_key($key),
+            'label' => $label,
+            'status' => $status,
+            'message' => $message,
+            'detail' => $detail,
+        ];
+    }
+
+    /**
+     * @return array<string,string>
+     */
+    private static function e2e_readiness_check(string $key, string $label, string $status, string $message, string $detail = '', string $url = ''): array
+    {
+        $status = sanitize_key($status);
+        if (!in_array($status, ['ready', 'warning', 'blocked'], true)) {
+            $status = 'warning';
+        }
+
+        return [
+            'key' => sanitize_key($key),
+            'label' => $label,
+            'status' => $status,
+            'message' => $message,
+            'detail' => $detail,
+            'url' => $url,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $probe_overrides
+     * @return array<string,string>
+     */
+    private static function build_e2e_marker_http_check(string $key, string $label, string $url, array $markers, string $ready_message, string $failed_message, array $probe_overrides): array
+    {
+        $marker_labels = [];
+        foreach ($markers as $marker) {
+            $marker = trim((string) $marker);
+            if ($marker !== '') {
+                $marker_labels[] = $marker;
+            }
+        }
+        $marker_detail = implode(' / ', $marker_labels);
+        $response = self::fetch_e2e_readiness_url($key, $url, $probe_overrides);
+        if (!empty($response['error'])) {
+            if ($key === 'cbt_frontend') {
+                $fallback_check = self::build_e2e_frontend_local_fallback_check($url, (string) $response['error'], $probe_overrides);
+                if ($fallback_check !== null) {
+                    return $fallback_check;
+                }
+            }
+            return self::e2e_readiness_check(
+                $key,
+                $label,
+                'blocked',
+                $label . ' tidak bisa diakses dari server.',
+                (string) $response['error'],
+                $url
+            );
+        }
+
+        $code = (int) ($response['code'] ?? 0);
+        $body = (string) ($response['body'] ?? '');
+        $final_url = (string) ($response['final_url'] ?? $url);
+        $has_marker = false;
+        foreach ($marker_labels as $marker) {
+            if (strpos($body, $marker) !== false) {
+                $has_marker = true;
+                break;
+            }
+        }
+        $detail = 'Target: ' . $url . ' | Final: ' . ($final_url !== '' ? $final_url : '-') . ' | HTTP ' . (string) $code . ' | Marker: ' . $marker_detail;
+
+        if ($code >= 200 && $code < 300 && $has_marker) {
+            return self::e2e_readiness_check($key, $label, 'ready', $ready_message, $detail, $url);
+        }
+
+        $excerpt = self::excerpt_e2e_readiness_body($body);
+        if ($excerpt !== '') {
+            $detail .= ' | Body: ' . $excerpt;
+        }
+
+        if ($key === 'cbt_frontend') {
+            $fallback_check = self::build_e2e_frontend_local_fallback_check($url, $detail, $probe_overrides);
+            if ($fallback_check !== null) {
+                return $fallback_check;
+            }
+        }
+
+        return self::e2e_readiness_check(
+            $key,
+            $label,
+            'blocked',
+            $failed_message,
+            $detail,
+            $url
+        );
+    }
+
+    /**
+     * @param array<string,mixed> $probe_overrides
+     * @return array<string,string>|null
+     */
+    private static function build_e2e_frontend_local_fallback_check(string $url, string $failed_detail, array $probe_overrides): ?array
+    {
+        if (array_key_exists('frontend_local_shortcode_detected', $probe_overrides)) {
+            if (empty($probe_overrides['frontend_local_shortcode_detected'])) {
+                return null;
+            }
+
+            $detail = trim($failed_detail);
+            $detail .= ($detail !== '' ? ' | ' : '') . 'Local fallback: frontend CBT terdeteksi dari override test.';
+            return self::e2e_readiness_check(
+                'cbt_frontend',
+                'CBT Frontend',
+                'warning',
+                'Frontend CBT terdeteksi dari konfigurasi WordPress, tetapi HTTP check public dari server belum stabil.',
+                $detail,
+                $url
+            );
+        }
+
+        $fallback_detail = self::detect_local_e2e_frontend_page_detail($url);
+        if ($fallback_detail === '') {
+            return null;
+        }
+
+        $detail = trim($failed_detail);
+        $detail .= ($detail !== '' ? ' | ' : '') . 'Local fallback: ' . $fallback_detail;
+
+        return self::e2e_readiness_check(
+            'cbt_frontend',
+            'CBT Frontend',
+            'warning',
+            'Frontend CBT terdeteksi dari konfigurasi WordPress, tetapi HTTP check public dari server belum stabil.',
+            $detail,
+            $url
+        );
+    }
+
+    private static function detect_local_e2e_frontend_page_detail(string $url): string
+    {
+        if (!self::is_same_site_e2e_url($url)) {
+            return '';
+        }
+
+        $page_id = 0;
+        if (function_exists('url_to_postid')) {
+            $page_id = (int) url_to_postid($url);
+        }
+        if ($page_id <= 0 && self::is_home_e2e_url($url)) {
+            $page_id = (int) get_option('page_on_front', 0);
+        }
+
+        $student_page_id = (int) get_option('cbt_exam_system_frontend_page_id', 0);
+        $supervisor_page_id = (int) get_option('cbt_exam_system_supervisor_page_id', 0);
+        if ($page_id <= 0) {
+            if ($student_page_id > 0) {
+                $page_id = $student_page_id;
+            } elseif ($supervisor_page_id > 0) {
+                $page_id = $supervisor_page_id;
+            }
+        }
+        if ($page_id <= 0 || !function_exists('get_post_field')) {
+            return '';
+        }
+
+        $content = (string) get_post_field('post_content', $page_id);
+        $has_student_shortcode = function_exists('has_shortcode')
+            ? has_shortcode($content, 'cbt_exam_frontend')
+            : strpos($content, '[cbt_exam_frontend') !== false;
+        $has_supervisor_shortcode = function_exists('has_shortcode')
+            ? has_shortcode($content, 'cbt_exam_supervisor_frontend')
+            : strpos($content, '[cbt_exam_supervisor_frontend') !== false;
+        $is_configured_page = ($student_page_id > 0 && $page_id === $student_page_id)
+            || ($supervisor_page_id > 0 && $page_id === $supervisor_page_id);
+
+        if (!$has_student_shortcode && !$has_supervisor_shortcode && !$is_configured_page) {
+            return '';
+        }
+
+        $reason = $has_supervisor_shortcode ? '[cbt_exam_supervisor_frontend]' : '[cbt_exam_frontend]';
+        if (!$has_student_shortcode && !$has_supervisor_shortcode && $is_configured_page) {
+            $reason = 'canonical frontend page option';
+        }
+
+        return 'page #' . (string) $page_id . ' memuat ' . $reason . '.';
+    }
+
+    private static function is_same_site_e2e_url(string $url): bool
+    {
+        $target_host = strtolower((string) parse_url($url, PHP_URL_HOST));
+        if ($target_host === '') {
+            return false;
+        }
+
+        foreach ([home_url('/'), site_url('/')] as $site_url) {
+            $site_host = strtolower((string) parse_url((string) $site_url, PHP_URL_HOST));
+            if ($site_host !== '' && $site_host === $target_host) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static function is_home_e2e_url(string $url): bool
+    {
+        $target_path = rtrim((string) parse_url($url, PHP_URL_PATH), '/');
+        $home_path = rtrim((string) parse_url(home_url('/'), PHP_URL_PATH), '/');
+        return $target_path === $home_path || ($target_path === '' && $home_path === '');
+    }
+
+    /**
+     * @param array<string,mixed> $probe_overrides
+     * @return array{code:int,body:string,final_url:string,error:string}
+     */
+    private static function fetch_e2e_readiness_url(string $key, string $url, array $probe_overrides): array
+    {
+        $override_key = $key . '_response';
+        if (isset($probe_overrides[$override_key]) && is_array($probe_overrides[$override_key])) {
+            $override = (array) $probe_overrides[$override_key];
+            $body = $override['body'] ?? '';
+            $final_url = $override['final_url'] ?? '';
+            $error = $override['error'] ?? '';
+            return [
+                'code' => (int) ($override['code'] ?? 0),
+                'body' => is_scalar($body) ? (string) $body : '',
+                'final_url' => is_scalar($final_url) && (string) $final_url !== '' ? (string) $final_url : $url,
+                'error' => is_scalar($error) ? (string) $error : '',
+            ];
+        }
+
+        $remote = wp_remote_get($url, [
+            'timeout' => self::E2E_READINESS_TIMEOUT,
+            'redirection' => 3,
+        ]);
+        if (is_wp_error($remote)) {
+            return [
+                'code' => 0,
+                'body' => '',
+                'final_url' => $url,
+                'error' => $remote->get_error_message(),
+            ];
+        }
+
+        return [
+            'code' => function_exists('wp_remote_retrieve_response_code') ? (int) wp_remote_retrieve_response_code($remote) : 0,
+            'body' => function_exists('wp_remote_retrieve_body') ? (string) wp_remote_retrieve_body($remote) : '',
+            'final_url' => self::extract_e2e_readiness_final_url(is_array($remote) ? $remote : [], $url),
+            'error' => '',
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $remote
+     */
+    private static function extract_e2e_readiness_final_url(array $remote, string $fallback): string
+    {
+        if (isset($remote['url']) && is_scalar($remote['url']) && (string) $remote['url'] !== '') {
+            return (string) $remote['url'];
+        }
+
+        if (isset($remote['filename']) && is_scalar($remote['filename']) && (string) $remote['filename'] !== '') {
+            return $fallback;
+        }
+
+        return $fallback;
+    }
+
+    private static function excerpt_e2e_readiness_body(string $body): string
+    {
+        $text = trim(preg_replace('/\s+/', ' ', wp_strip_all_tags($body)) ?? '');
+        if ($text === '') {
+            return '';
+        }
+
+        if (strlen($text) <= 260) {
+            return $text;
+        }
+
+        return substr($text, 0, 257) . '...';
+    }
+
+    /**
+     * @param array<string,mixed> $probe_overrides
+     * @return array<string,string>
+     */
+    private static function build_e2e_admin_seed_user_check(array $probe_overrides): array
+    {
+        if (array_key_exists('admin_seed_user_exists', $probe_overrides)) {
+            $exists = (bool) $probe_overrides['admin_seed_user_exists'];
+            $username = is_scalar($probe_overrides['admin_seed_username'] ?? '') ? (string) $probe_overrides['admin_seed_username'] : 'admin_seed';
+            return self::e2e_readiness_check(
+                'admin_seed_user',
+                'Admin Seed User',
+                $exists ? 'ready' : 'blocked',
+                $exists ? 'Admin seed user tersedia.' : 'Admin seed user belum ditemukan.',
+                'Username: ' . $username,
+                ''
+            );
+        }
+
+        $username = '';
+        if (class_exists('CBT_Admin_Maintenance_Service') && method_exists('CBT_Admin_Maintenance_Service', 'get_seed_special_admin_username')) {
+            $username = (string) CBT_Admin_Maintenance_Service::get_seed_special_admin_username();
+        } elseif (class_exists('CBT_Admin_Maintenance_Seed_Service') && method_exists('CBT_Admin_Maintenance_Seed_Service', 'get_seed_special_admin_username')) {
+            $username = (string) CBT_Admin_Maintenance_Seed_Service::get_seed_special_admin_username();
+        }
+
+        $user = $username !== '' && function_exists('get_user_by') ? get_user_by('login', $username) : false;
+
+        return self::e2e_readiness_check(
+            'admin_seed_user',
+            'Admin Seed User',
+            $user ? 'ready' : 'blocked',
+            $user ? 'Admin seed user tersedia.' : 'Admin seed user belum ditemukan.',
+            $username !== '' ? 'Username: ' . $username : 'Maintenance seed service belum tersedia.',
+            ''
+        );
+    }
+
+    /**
+     * @param array<string,mixed> $probe_overrides
+     * @return array<string,string>
+     */
+    private static function build_e2e_fixture_catalog_check(array $probe_overrides): array
+    {
+        $required_users = ['primary_student', 'admin_seed'];
+        $required_fixtures = ['import_preview', 'question_runtime', 'result_full', 'result_essay', 'result_restricted'];
+        if (isset($probe_overrides['fixture_catalog']) && is_array($probe_overrides['fixture_catalog'])) {
+            $catalog = (array) $probe_overrides['fixture_catalog'];
+            $users = isset($catalog['users']) && is_array($catalog['users']) ? (array) $catalog['users'] : [];
+            $fixtures = isset($catalog['fixtures']) && is_array($catalog['fixtures']) ? (array) $catalog['fixtures'] : [];
+            $missing_users = array_values(array_filter($required_users, static fn(string $key): bool => empty($users[$key])));
+            $missing_fixtures = array_values(array_filter($required_fixtures, static fn(string $key): bool => empty($fixtures[$key])));
+        } else {
+            $missing_users = self::missing_e2e_fixture_users($required_users);
+            $missing_fixtures = self::missing_e2e_fixture_exams($required_fixtures);
+        }
+
+        if (empty($missing_users) && empty($missing_fixtures)) {
+            return self::e2e_readiness_check(
+                'fixture_catalog',
+                'Fixture Catalog',
+                'ready',
+                'Fixture catalog utama tersedia.',
+                'Required users: ' . implode(', ', $required_users) . ' | Required fixtures: ' . implode(', ', $required_fixtures),
+                ''
+            );
+        }
+
+        return self::e2e_readiness_check(
+            'fixture_catalog',
+            'Fixture Catalog',
+            'blocked',
+            'Fixture catalog belum lengkap. Jalankan CBT Maintenance > Generate Data Uji.',
+            'Missing users: ' . (empty($missing_users) ? '-' : implode(', ', $missing_users)) . ' | Missing fixtures: ' . (empty($missing_fixtures) ? '-' : implode(', ', $missing_fixtures)),
+            ''
+        );
+    }
+
+    /**
+     * @param array<int,string> $required_users
+     * @return array<int,string>
+     */
+    private static function missing_e2e_fixture_users(array $required_users): array
+    {
+        $missing = [];
+        foreach ($required_users as $user_key) {
+            $username = '';
+            if ($user_key === 'admin_seed') {
+                if (class_exists('CBT_Admin_Maintenance_Service') && method_exists('CBT_Admin_Maintenance_Service', 'get_seed_special_admin_username')) {
+                    $username = (string) CBT_Admin_Maintenance_Service::get_seed_special_admin_username();
+                }
+            } elseif ($user_key === 'primary_student') {
+                if (class_exists('CBT_Admin_Maintenance_Service') && method_exists('CBT_Admin_Maintenance_Service', 'get_seed_special_student_username')) {
+                    $username = (string) CBT_Admin_Maintenance_Service::get_seed_special_student_username();
+                }
+            }
+
+            if ($username === '' || !function_exists('get_user_by') || !get_user_by('login', $username)) {
+                $missing[] = $user_key;
+            }
+        }
+
+        return $missing;
+    }
+
+    /**
+     * @param array<int,string> $fixture_keys
+     * @return array<int,string>
+     */
+    private static function missing_e2e_fixture_exams(array $fixture_keys): array
+    {
+        global $wpdb;
+        if (!isset($wpdb) || !is_object($wpdb)) {
+            return $fixture_keys;
+        }
+
+        $missing = [];
+        foreach ($fixture_keys as $fixture_key) {
+            $title = '';
+            if (class_exists('CBT_Admin_Maintenance_Service') && method_exists('CBT_Admin_Maintenance_Service', 'get_seed_fixture_exam_title')) {
+                $title = (string) CBT_Admin_Maintenance_Service::get_seed_fixture_exam_title($fixture_key);
+            }
+            if ($title === '') {
+                $missing[] = $fixture_key;
+                continue;
+            }
+
+            $table = $wpdb->prefix . 'cbt_exams';
+            $count = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$table} WHERE title = %s", $title));
+            if ($count <= 0) {
+                $missing[] = $fixture_key;
+            }
+        }
+
+        return $missing;
+    }
+
+    /**
+     * @return array<int,string>
+     */
+    private static function build_e2e_url_suggestions(string $base_url): array
+    {
+        $suggestions = [];
+        foreach ([home_url('/'), site_url('/'), 'http://localhost', 'http://127.0.0.1'] as $candidate) {
+            $candidate = self::normalize_e2e_absolute_url((string) $candidate);
+            if ($candidate !== '') {
+                $suggestions[] = 'Coba E2E Base URL: ' . $candidate;
+            }
+        }
+
+        $parent = self::parent_e2e_base_url($base_url);
+        if ($parent !== '') {
+            $suggestions[] = 'Jika URL sekarang 404, coba parent path: ' . $parent;
+        }
+
+        return array_values(array_unique($suggestions));
+    }
+
+    private static function normalize_e2e_absolute_url(string $url): string
+    {
+        $url = trim($url);
+        if ($url === '') {
+            return '';
+        }
+
+        $url = esc_url_raw($url);
+        if (!is_string($url) || $url === '') {
+            return '';
+        }
+
+        return rtrim($url, '/');
+    }
+
+    private static function join_e2e_url(string $base_url, string $path): string
+    {
+        return rtrim($base_url, '/') . '/' . ltrim($path, '/');
+    }
+
+    private static function parent_e2e_base_url(string $base_url): string
+    {
+        $base_url = self::normalize_e2e_absolute_url($base_url);
+        if ($base_url === '') {
+            return '';
+        }
+
+        $parts = wp_parse_url($base_url);
+        if (!is_array($parts) || empty($parts['scheme']) || empty($parts['host'])) {
+            return '';
+        }
+
+        $path = trim((string) ($parts['path'] ?? ''), '/');
+        if ($path === '') {
+            return '';
+        }
+
+        $segments = explode('/', $path);
+        array_pop($segments);
+        $parent_path = implode('/', $segments);
+        $port = isset($parts['port']) ? ':' . (string) $parts['port'] : '';
+        $parent = (string) $parts['scheme'] . '://' . (string) $parts['host'] . $port;
+        if ($parent_path !== '') {
+            $parent .= '/' . $parent_path;
+        }
+
+        return self::normalize_e2e_absolute_url($parent);
+    }
+
+    /**
+     * @param array<string,mixed> $probe_overrides
+     * @return array{success:bool,stdout:string,stderr:string,exit_code:int}
+     */
+    private static function runner_health_probe_shell_command(string $key, string $command, array $probe_overrides, bool $proc_open_available): array
+    {
+        if (isset($probe_overrides[$key]) && is_array($probe_overrides[$key])) {
+            $override = (array) $probe_overrides[$key];
+            return [
+                'success' => !empty($override['success']),
+                'stdout' => is_scalar($override['stdout'] ?? '') ? (string) $override['stdout'] : '',
+                'stderr' => is_scalar($override['stderr'] ?? '') ? (string) $override['stderr'] : '',
+                'exit_code' => (int) ($override['exit_code'] ?? (!empty($override['success']) ? 0 : 1)),
+            ];
+        }
+
+        if (!$proc_open_available) {
+            return [
+                'success' => false,
+                'stdout' => '',
+                'stderr' => 'proc_open tidak tersedia.',
+                'exit_code' => 1,
+            ];
+        }
+
+        return self::run_test_hub_shell_command($command);
+    }
+
+    /**
+     * @return array{success:bool,stdout:string,stderr:string,exit_code:int}
+     */
+    private static function run_test_hub_shell_command(string $command): array
+    {
+        $wrapped_command = '/bin/bash -lc ' . escapeshellarg($command);
+        $descriptorspec = [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ];
+
+        $process = proc_open($wrapped_command, $descriptorspec, $pipes, CBT_EXAM_SYSTEM_PATH, self::build_runner_environment());
+        if (!is_resource($process)) {
+            return [
+                'success' => false,
+                'stdout' => '',
+                'stderr' => 'Gagal memulai shell command.',
+                'exit_code' => 1,
+            ];
+        }
+
+        fclose($pipes[0]);
+        $stdout = trim((string) stream_get_contents($pipes[1]));
+        $stderr = trim((string) stream_get_contents($pipes[2]));
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        $exit_code = (int) proc_close($process);
+
+        return [
+            'success' => $exit_code === 0,
+            'stdout' => $stdout,
+            'stderr' => $stderr,
+            'exit_code' => $exit_code,
+        ];
+    }
+
+    private static function extract_semver_major(string $version): int
+    {
+        if (preg_match('/(\d+)/', $version, $matches)) {
+            return max(0, (int) $matches[1]);
+        }
+
+        return 0;
+    }
+
+    private static function directory_has_contents(string $path): bool
+    {
+        if (!is_dir($path)) {
+            return false;
+        }
+
+        $iterator = new FilesystemIterator($path, FilesystemIterator::SKIP_DOTS);
+        return $iterator->valid();
+    }
+
+    /**
+     * @param array<string,mixed> $probe_overrides
+     * @return array<string,string>
+     */
+    private static function build_runner_health_url_check(string $key, string $label, string $url, bool $required, array $probe_overrides): array
+    {
+        if ($url === '') {
+            return self::runner_health_check(
+                $key,
+                $label,
+                $required ? 'blocked' : 'warning',
+                $required ? $label . ' belum diisi.' : $label . ' kosong dan akan dilewati.',
+                ''
+            );
+        }
+
+        $override_key = $key . '_response';
+        if (isset($probe_overrides[$override_key]) && is_array($probe_overrides[$override_key])) {
+            $response = (array) $probe_overrides[$override_key];
+            $code = (int) ($response['code'] ?? 0);
+            $error = is_scalar($response['error'] ?? '') ? (string) $response['error'] : '';
+        } else {
+            $remote = wp_remote_get($url, [
+                'timeout' => self::E2E_READINESS_TIMEOUT,
+                'redirection' => 2,
+            ]);
+            if (is_wp_error($remote)) {
+                $code = 0;
+                $error = $remote->get_error_message();
+            } else {
+                $code = function_exists('wp_remote_retrieve_response_code') ? (int) wp_remote_retrieve_response_code($remote) : 0;
+                $error = '';
+            }
+        }
+
+        if ($error !== '') {
+            return self::runner_health_check($key, $label, 'warning', $label . ' belum bisa diakses dari server.', $error);
+        }
+
+        if ($code >= 200 && $code < 500) {
+            return self::runner_health_check($key, $label, 'ready', $label . ' merespons HTTP ' . $code . '.', $url);
+        }
+
+        return self::runner_health_check($key, $label, 'warning', $label . ' merespons tidak ideal.', $url . ' HTTP ' . $code);
+    }
+
+    /**
+     * @param array<string,mixed> $post
+     * @return array<string,mixed>
+     */
+    private static function build_queue_flow_check_action_result(array $post, bool $start_worker = true): array
+    {
+        $tab = self::normalize_unit_test_tab(self::read_action_scalar($post, 'cbt_unit_test_tab'));
+        $scope = self::normalize_unit_test_scope(self::read_action_scalar($post, 'cbt_checklist_scope'));
+        $item_index_requested = array_key_exists('cbt_checklist_item_index', $post);
+
+        if (!function_exists('proc_open')) {
+            return self::build_test_hub_action_result($tab, $scope, '', 'Flow check membutuhkan fungsi proc_open yang aktif di PHP.');
+        }
+
+        if ($scope !== 'smoke_tests') {
+            return self::build_test_hub_action_result($tab, $scope, '', 'Queue async hanya tersedia untuk Checklist Flow Check.');
+        }
+
+        $runners = self::get_unit_test_runner_definitions();
+        $runner = isset($runners[$tab][$scope]) && is_array($runners[$tab][$scope]) ? (array) $runners[$tab][$scope] : [];
+        $commands = isset($runner['commands']) && is_array($runner['commands']) ? (array) $runner['commands'] : [];
+        if (empty($runner) || empty($commands)) {
+            return self::build_test_hub_action_result($tab, $scope, '', 'Runner flow check untuk checklist ini belum tersedia.');
+        }
+
+        $checklist_items = self::get_unit_test_checklist_items($tab, $scope);
+        $latest_jobs = self::build_latest_flow_job_lookup(self::read_flow_check_jobs());
+        $has_running_jobs = self::has_running_flow_jobs_only($latest_jobs);
+        $requested_item_index = null;
+        if ($item_index_requested) {
+            $requested_item_index = self::normalize_unit_test_item_index(
+                self::read_action_scalar($post, 'cbt_checklist_item_index'),
+                $tab,
+                $scope
+            );
+            if ($requested_item_index === null) {
+                return self::build_test_hub_action_result($tab, $scope, '', 'Task flow check yang dipilih tidak valid atau sudah tidak tersedia.');
+            }
+        }
+
+        $queued_count = 0;
+        $skipped_labels = [];
+        $storage_failed_labels = [];
+        $queued_job_ids = [];
+
+        foreach ($checklist_items as $index => $item_definition) {
+            if ($requested_item_index !== null && (int) $index !== $requested_item_index) {
+                continue;
+            }
+
+            if (!is_array($item_definition)) {
+                continue;
+            }
+
+            $item_label = trim((string) ($item_definition['label'] ?? ''));
+            $item_commands = self::filter_runner_commands_for_item($commands, $item_definition);
+            if (empty($item_commands)) {
+                if ($item_label !== '') {
+                    $skipped_labels[] = $item_label;
+                }
+                continue;
+            }
+
+            $latest_job = self::resolve_latest_flow_job_for_item($latest_jobs, $tab, $scope, (int) $index);
+            if (!empty($latest_job) && self::is_active_flow_job_status((string) ($latest_job['status'] ?? ''))) {
+                if ($item_label !== '') {
+                    $skipped_labels[] = $item_label;
+                }
+                continue;
+            }
+
+            $job = self::create_flow_check_job($tab, $scope, (int) $index, $item_definition, $item_commands);
+            if (!self::write_flow_check_job($job)) {
+                if ($item_label !== '') {
+                    $storage_failed_labels[] = $item_label;
+                }
+                continue;
+            }
+            $queued_job_ids[] = (string) ($job['job_id'] ?? '');
+            $queued_count += 1;
+            $latest_jobs[self::flow_job_lookup_key($tab, $scope, (int) $index)] = $job;
+        }
+
+        if ($queued_count <= 0) {
+            if (!empty($storage_failed_labels)) {
+                $result = self::build_test_hub_action_result(
+                    $tab,
+                    $scope,
+                    '',
+                    'Task flow check gagal disimpan ke storage background. Periksa permission direktori write untuk runner web: ' . implode(', ', $storage_failed_labels)
+                );
+                $result['storage_failed_labels'] = $storage_failed_labels;
+                return $result;
+            }
+
+            $error = !empty($skipped_labels)
+                ? 'Task flow check sudah sedang berjalan atau belum punya runner: ' . implode(', ', $skipped_labels)
+                : 'Tidak ada task flow check yang bisa diantrikan.';
+            $result = self::build_test_hub_action_result($tab, $scope, '', $error);
+            $result['skipped_labels'] = $skipped_labels;
+            return $result;
+        }
+
+        $worker_start_failed = false;
+        if ($start_worker && !$has_running_jobs) {
+            $next_job_id = self::resolve_next_queued_flow_job_id(self::read_flow_check_jobs());
+            $worker_start_failed = $next_job_id === '' || !self::start_flow_check_job_process($next_job_id);
+        }
+
+        if ($worker_start_failed) {
+            $result = self::build_test_hub_action_result(
+                $tab,
+                $scope,
+                '',
+                'Flow check tersimpan, tetapi worker background gagal dimulai. Periksa PATH Node.js dan permission direktori runner web.'
+            );
+            $result['queued_count'] = $queued_count;
+            $result['queued_job_ids'] = $queued_job_ids;
+            $result['skipped_labels'] = $skipped_labels;
+            $result['storage_failed_labels'] = $storage_failed_labels;
+            $result['worker_start_failed'] = true;
+            return $result;
+        }
+
+        $message = $queued_count === 1
+            ? 'Flow check berhasil diantrikan di background.'
+            : $queued_count . ' task flow check berhasil diantrikan di background.';
+        if (!empty($skipped_labels)) {
+            $message .= ' Beberapa task dilewati karena masih queued/running/cancelling: ' . implode(', ', $skipped_labels) . '.';
+        }
+        if (!empty($storage_failed_labels)) {
+            $message .= ' Beberapa task gagal disimpan ke storage background: ' . implode(', ', $storage_failed_labels) . '.';
+        }
+
+        $result = self::build_test_hub_action_result($tab, $scope, $message, '');
+        $result['queued_count'] = $queued_count;
+        $result['queued_job_ids'] = $queued_job_ids;
+        $result['skipped_labels'] = $skipped_labels;
+        $result['storage_failed_labels'] = $storage_failed_labels;
+        $result['worker_start_failed'] = false;
+
+        return $result;
+    }
+
+    /**
+     * @param array<string,mixed> $post
+     * @return array<string,mixed>
+     */
+    private static function build_retry_flow_check_job_action_result(array $post, bool $start_worker = true): array
+    {
+        $tab = self::normalize_unit_test_tab(self::read_action_scalar($post, 'cbt_unit_test_tab'));
+        $scope = self::normalize_unit_test_scope(self::read_action_scalar($post, 'cbt_checklist_scope'));
+        $job_id = sanitize_text_field(self::read_action_scalar($post, 'cbt_flow_job_id'));
+        $job = self::find_flow_check_job_by_id($job_id);
+        if (empty($job)) {
+            return self::build_test_hub_action_result($tab, $scope, '', 'Job flow check tidak ditemukan.');
+        }
+
+        $tab = self::normalize_unit_test_tab((string) ($job['tab'] ?? $tab));
+        $scope = self::normalize_unit_test_scope((string) ($job['scope'] ?? $scope));
+        $item_index = (int) ($job['item_index'] ?? -1);
+        $status = self::normalize_flow_job_status((string) ($job['status'] ?? 'queued'));
+        if (!self::is_terminal_flow_job_status($status)) {
+            return self::build_test_hub_action_result($tab, $scope, '', 'Job flow check masih aktif dan belum bisa di-retry.');
+        }
+
+        $latest_jobs = self::build_latest_flow_job_lookup(self::read_flow_check_jobs());
+        $latest_job = self::resolve_latest_flow_job_for_item($latest_jobs, $tab, $scope, $item_index);
+        if (!empty($latest_job) && self::is_active_flow_job_status((string) ($latest_job['status'] ?? ''))) {
+            return self::build_test_hub_action_result($tab, $scope, '', 'Task flow check ini masih punya job aktif.');
+        }
+
+        $checklist_items = self::get_unit_test_checklist_items($tab, $scope);
+        $item_definition = isset($checklist_items[$item_index]) && is_array($checklist_items[$item_index])
+            ? (array) $checklist_items[$item_index]
+            : [];
+        if (empty($item_definition)) {
+            return self::build_test_hub_action_result($tab, $scope, '', 'Definisi task flow check tidak ditemukan untuk retry.');
+        }
+
+        $runners = self::get_unit_test_runner_definitions();
+        $runner = isset($runners[$tab][$scope]) && is_array($runners[$tab][$scope]) ? (array) $runners[$tab][$scope] : [];
+        $commands = isset($runner['commands']) && is_array($runner['commands']) ? (array) $runner['commands'] : [];
+        $item_commands = self::filter_runner_commands_for_item($commands, $item_definition);
+        if (empty($item_commands)) {
+            return self::build_test_hub_action_result($tab, $scope, '', 'Task flow check ini belum memiliki runner khusus untuk retry.');
+        }
+
+        $new_job = self::create_flow_check_job($tab, $scope, $item_index, $item_definition, $item_commands);
+        $new_job['retry_of_job_id'] = $job_id;
+        if (!self::write_flow_check_job($new_job)) {
+            return self::build_test_hub_action_result($tab, $scope, '', 'Job retry gagal disimpan ke storage background.');
+        }
+
+        $running_jobs = self::build_latest_flow_job_lookup(self::read_flow_check_jobs());
+        if ($start_worker && !self::has_running_flow_jobs_only($running_jobs)) {
+            $next_job_id = self::resolve_next_queued_flow_job_id(self::read_flow_check_jobs());
+            if ($next_job_id !== '') {
+                self::start_flow_check_job_process($next_job_id);
+            }
+        }
+
+        $result = self::build_test_hub_action_result($tab, $scope, 'Retry flow check berhasil diantrikan di background.', '');
+        $result['job'] = $new_job;
+
+        return $result;
+    }
+
+    /**
+     * @param array<string,mixed> $post
+     * @return array<string,mixed>
+     */
+    private static function build_cancel_flow_check_job_action_result(array $post, bool $terminate_processes = true): array
+    {
+        $tab = self::normalize_unit_test_tab(self::read_action_scalar($post, 'cbt_unit_test_tab'));
+        $scope = self::normalize_unit_test_scope(self::read_action_scalar($post, 'cbt_checklist_scope'));
+        $job_id = sanitize_text_field(self::read_action_scalar($post, 'cbt_flow_job_id'));
+        $job = self::find_flow_check_job_by_id($job_id);
+        if (empty($job)) {
+            return self::build_test_hub_action_result($tab, $scope, '', 'Job flow check tidak ditemukan.');
+        }
+
+        $tab = self::normalize_unit_test_tab((string) ($job['tab'] ?? $tab));
+        $scope = self::normalize_unit_test_scope((string) ($job['scope'] ?? $scope));
+        $status = self::normalize_flow_job_status((string) ($job['status'] ?? 'queued'));
+        if (!in_array($status, ['queued', 'running', 'cancelling'], true)) {
+            return self::build_test_hub_action_result($tab, $scope, '', 'Job flow check sudah selesai dan tidak perlu dibatalkan.');
+        }
+
+        $now = time();
+        $job['cancel_requested_at'] = max($now, (int) ($job['cancel_requested_at'] ?? 0));
+        $job['failure_kind'] = 'cancelled';
+        $job['failure_summary'] = 'Job flow check dibatalkan dari CBT Test Hub.';
+
+        if ($status === 'queued') {
+            $job['status'] = 'cancelled';
+            $job['finished_at'] = $now;
+            $job['exit_code'] = 1;
+            self::write_flow_check_job($job);
+
+            $result = self::build_test_hub_action_result($tab, $scope, 'Job flow check queued berhasil dibatalkan.', '');
+            $result['job'] = $job;
+
+            return $result;
+        }
+
+        $pids = array_values(array_unique(array_filter([
+            (int) ($job['active_child_pid'] ?? 0),
+            (int) ($job['worker_pid'] ?? 0),
+        ], static function (int $pid): bool {
+            return $pid > 0;
+        })));
+        $has_running_process = false;
+        $sent_signal = false;
+
+        foreach ($pids as $pid) {
+            $is_running = self::is_flow_job_process_running((int) $pid);
+            $has_running_process = $has_running_process || $is_running;
+            if ($terminate_processes && $is_running) {
+                $sent_signal = self::terminate_flow_job_process((int) $pid) || $sent_signal;
+            }
+        }
+
+        if (!$terminate_processes || $has_running_process || $sent_signal) {
+            $job['status'] = 'cancelling';
+            $job['exit_code'] = 1;
+            self::write_flow_check_job($job);
+
+            $result = self::build_test_hub_action_result($tab, $scope, 'Permintaan cancel flow check sudah dicatat.', '');
+            $result['job'] = $job;
+
+            return $result;
+        }
+
+        $job['status'] = 'cancelled';
+        $job['finished_at'] = $now;
+        $job['exit_code'] = 1;
+        self::write_flow_check_job($job);
+
+        $result = self::build_test_hub_action_result($tab, $scope, 'Job flow check berhasil dibatalkan.', '');
+        $result['job'] = $job;
+
+        return $result;
+    }
+
+    /**
+     * @param array<string,mixed> $post
+     * @return array<string,mixed>
+     */
+    private static function build_clear_flow_check_job_action_result(array $post): array
+    {
+        $tab = self::normalize_unit_test_tab(self::read_action_scalar($post, 'cbt_unit_test_tab'));
+        $scope = self::normalize_unit_test_scope(self::read_action_scalar($post, 'cbt_checklist_scope'));
+        $job_id = sanitize_text_field(self::read_action_scalar($post, 'cbt_flow_job_id'));
+        $job = self::find_flow_check_job_by_id($job_id);
+        if (empty($job)) {
+            return self::build_test_hub_action_result($tab, $scope, '', 'Job flow check tidak ditemukan.');
+        }
+
+        $tab = self::normalize_unit_test_tab((string) ($job['tab'] ?? $tab));
+        $scope = self::normalize_unit_test_scope((string) ($job['scope'] ?? $scope));
+        $item_index = (int) ($job['item_index'] ?? -1);
+        $jobs = self::read_flow_check_jobs();
+        $deleted_count = 0;
+
+        foreach ($jobs as $candidate) {
+            if (!is_array($candidate)) {
+                continue;
+            }
+
+            $candidate_matches = self::normalize_unit_test_tab((string) ($candidate['tab'] ?? '')) === $tab
+                && self::normalize_unit_test_scope((string) ($candidate['scope'] ?? '')) === $scope
+                && (int) ($candidate['item_index'] ?? -1) === $item_index;
+            if (!$candidate_matches) {
+                continue;
+            }
+
+            $candidate_status = self::normalize_flow_job_status((string) ($candidate['status'] ?? 'queued'));
+            if (self::is_active_flow_job_status($candidate_status)) {
+                return self::build_test_hub_action_result($tab, $scope, '', 'Job flow check masih aktif dan belum bisa dibersihkan.');
+            }
+        }
+
+        foreach ($jobs as $candidate) {
+            if (!is_array($candidate)) {
+                continue;
+            }
+
+            $candidate_matches = self::normalize_unit_test_tab((string) ($candidate['tab'] ?? '')) === $tab
+                && self::normalize_unit_test_scope((string) ($candidate['scope'] ?? '')) === $scope
+                && (int) ($candidate['item_index'] ?? -1) === $item_index;
+            if (!$candidate_matches || !self::is_terminal_flow_job_status((string) ($candidate['status'] ?? 'queued'))) {
+                continue;
+            }
+
+            if (self::remove_flow_check_job_files($candidate)) {
+                $deleted_count += 1;
+            }
+        }
+
+        if ($deleted_count <= 0) {
+            return self::build_test_hub_action_result($tab, $scope, '', 'Tidak ada job flow check terminal yang bisa dibersihkan.');
+        }
+
+        $result = self::build_test_hub_action_result($tab, $scope, $deleted_count . ' job flow check berhasil dibersihkan.', '');
+        $result['deleted_count'] = $deleted_count;
+
+        return $result;
+    }
+
+    /**
+     * @param array<string,mixed> $post
+     * @return array<string,mixed>
+     */
+    private static function build_repair_stuck_flow_check_jobs_action_result(array $post): array
+    {
+        $tab = self::normalize_unit_test_tab(self::read_action_scalar($post, 'cbt_unit_test_tab'));
+        $scope = self::normalize_unit_test_scope(self::read_action_scalar($post, 'cbt_checklist_scope'));
+        $summary = self::repair_stuck_flow_check_jobs(self::read_flow_check_jobs(false));
+
+        $repaired_count = (int) ($summary['repaired_count'] ?? 0);
+        $still_active_count = (int) ($summary['still_active_count'] ?? 0);
+        $terminal_count = (int) ($summary['terminal_count'] ?? 0);
+        $message = sprintf(
+            'Repair Stuck Jobs selesai: %d repaired, %d still active, %d terminal.',
+            $repaired_count,
+            $still_active_count,
+            $terminal_count
+        );
+
+        $result = self::build_test_hub_action_result($tab, $scope, $message, '');
+        $result['repair_summary'] = $summary;
+
+        return $result;
+    }
+
+    /**
+     * @param array<string,mixed> $request
+     * @return array<string,mixed>
+     */
+    private static function build_download_test_hub_artifact_result(array $request): array
+    {
+        $job_id = sanitize_file_name(self::read_action_scalar($request, 'cbt_flow_job_id'));
+        $artifact_key = sanitize_text_field(self::read_action_scalar($request, 'cbt_artifact_key'));
+        if ($job_id === '' || $artifact_key === '') {
+            return [
+                'success' => false,
+                'error' => 'Parameter artifact Test Hub tidak lengkap.',
+            ];
+        }
+
+        $job = self::find_flow_check_job_by_id($job_id);
+        if (empty($job)) {
+            return [
+                'success' => false,
+                'error' => 'Job flow check tidak ditemukan.',
+            ];
+        }
+
+        $file = self::resolve_flow_job_artifact_file_by_key($job, $artifact_key);
+        if (empty($file) || empty($file['absolute_path']) || !is_string($file['absolute_path']) || !is_file($file['absolute_path']) || !is_readable($file['absolute_path'])) {
+            return [
+                'success' => false,
+                'error' => 'Artifact Test Hub tidak ditemukan atau tidak aman untuk diunduh.',
+            ];
+        }
+
+        return [
+            'success' => true,
+            'error' => '',
+            'file_path' => (string) $file['absolute_path'],
+            'download_name' => (string) ($file['download_name'] ?? basename((string) $file['absolute_path'])),
+            'content_type' => (string) ($file['content_type'] ?? 'application/octet-stream'),
+            'file' => $file,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $post
+     */
+    private static function read_action_scalar(array $post, string $key): string
+    {
+        if (!array_key_exists($key, $post) || !is_scalar($post[$key])) {
+            return '';
+        }
+
+        return (string) wp_unslash((string) $post[$key]);
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function build_test_hub_action_result(string $tab, string $scope, string $message, string $error, array $extra_args = []): array
+    {
+        $normalized_tab = self::normalize_unit_test_tab($tab);
+        $normalized_scope = self::normalize_unit_test_scope($scope);
+        $args = array_merge([
+            'page' => 'cbt-test-hub',
+            'cbt_unit_test_tab' => $normalized_tab,
+            'cbt_checklist_scope' => $normalized_scope,
+        ], $extra_args);
+
+        if ($message !== '') {
+            $args['cbt_msg'] = $message;
+        }
+        if ($error !== '') {
+            $args['cbt_err'] = $error;
+        }
+
+        return [
+            'tab' => $normalized_tab,
+            'scope' => $normalized_scope,
+            'message' => $message,
+            'error' => $error,
+            'redirect_args' => $args,
+            'redirect_url' => self::test_hub_page_url($args),
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $result
+     */
+    private static function redirect_test_hub_action_result(array $result): void
+    {
+        if (self::is_test_hub_async_request()) {
+            self::send_test_hub_async_response($result);
+        }
+
+        $redirect_url = isset($result['redirect_url']) && is_string($result['redirect_url'])
+            ? $result['redirect_url']
+            : self::test_hub_page_url();
+
+        wp_safe_redirect($redirect_url);
+        exit;
+    }
+
+    private static function is_test_hub_async_request(): bool
+    {
+        $requested_with = isset($_SERVER['HTTP_X_REQUESTED_WITH']) && is_scalar($_SERVER['HTTP_X_REQUESTED_WITH'])
+            ? strtolower((string) $_SERVER['HTTP_X_REQUESTED_WITH'])
+            : '';
+
+        if ($requested_with === 'xmlhttprequest') {
+            return true;
+        }
+
+        return isset($_REQUEST['cbt_test_hub_async'])
+            && is_scalar($_REQUEST['cbt_test_hub_async'])
+            && (string) wp_unslash((string) $_REQUEST['cbt_test_hub_async']) === '1';
+    }
+
+    /**
+     * @param array<string,mixed> $result
+     */
+    private static function send_test_hub_async_response(array $result): void
+    {
+        $query = isset($result['redirect_args']) && is_array($result['redirect_args'])
+            ? (array) $result['redirect_args']
+            : ['page' => 'cbt-test-hub'];
+        $query['page'] = 'cbt-test-hub';
+
+        foreach ($query as $key => $value) {
+            if (!is_scalar($value)) {
+                unset($query[$key]);
+                continue;
+            }
+            $query[$key] = (string) $value;
+        }
+
+        if (function_exists('nocache_headers')) {
+            nocache_headers();
+        }
+        if (!headers_sent()) {
+            header('Content-Type: text/html; charset=' . get_option('blog_charset'));
+        }
+
+        $context = self::build_unit_test_context($query);
+        extract($context, EXTR_SKIP);
+
+        require CBT_EXAM_SYSTEM_PATH . 'admin/views/test-hub/page.php';
+        exit;
     }
 
     /**
@@ -1072,6 +2841,7 @@ final class CBT_Admin_Test_Hub_Service
      */
     private static function run_unit_test_command(string $label, string $command, array $environment = []): array
     {
+        self::extend_test_hub_action_time_limit();
         $wrapped_command = '/bin/bash -lc ' . escapeshellarg($command);
         $descriptorspec = [
             0 => ['pipe', 'r'],
@@ -1117,6 +2887,23 @@ final class CBT_Admin_Test_Hub_Service
         ];
     }
 
+    private static function extend_test_hub_action_time_limit(): void
+    {
+        if (function_exists('ignore_user_abort')) {
+            @ignore_user_abort(true);
+        }
+        if (!function_exists('set_time_limit')) {
+            return;
+        }
+
+        $current_limit = (int) ini_get('max_execution_time');
+        if ($current_limit > 0 && $current_limit >= self::UNIT_TEST_ACTION_TIME_LIMIT) {
+            return;
+        }
+
+        @set_time_limit(self::UNIT_TEST_ACTION_TIME_LIMIT);
+    }
+
     /**
      * @return array{passed:int,failed:int,total:int}
      */
@@ -1152,6 +2939,17 @@ final class CBT_Admin_Test_Hub_Service
             ];
         }
 
+        if (preg_match('/Tests:\s*(\d+),\s*Assertions:\s*\d+,\s*Skipped:\s*(\d+)/i', $combined, $matches)) {
+            $total = max(0, (int) $matches[1]);
+            $skipped = max(0, (int) $matches[2]);
+            $passed = max(0, $total - $skipped);
+            return [
+                'passed' => $passed,
+                'failed' => 0,
+                'total' => $passed,
+            ];
+        }
+
         if (preg_match('/Tests:\s*(\d+),\s*Assertions:\s*\d+(.*)/i', $combined, $matches)) {
             $total = (int) $matches[1];
             $defect_summary = (string) ($matches[2] ?? '');
@@ -1175,17 +2973,6 @@ final class CBT_Admin_Test_Hub_Service
                 'passed' => max(0, $total),
                 'failed' => 0,
                 'total' => max(0, $total),
-            ];
-        }
-
-        if (preg_match('/Tests:\s*(\d+),\s*Assertions:\s*\d+,\s*Skipped:\s*(\d+)/i', $combined, $matches)) {
-            $total = max(0, (int) $matches[1]);
-            $skipped = max(0, (int) $matches[2]);
-            $passed = max(0, $total - $skipped);
-            return [
-                'passed' => $passed,
-                'failed' => 0,
-                'total' => $passed,
             ];
         }
 
@@ -1306,6 +3093,10 @@ final class CBT_Admin_Test_Hub_Service
         $settings = self::get_settings();
         if ($settings['e2e_base_url'] !== '') {
             $environment['CBT_E2E_BASE_URL'] = $settings['e2e_base_url'];
+            $environment['CBT_E2E_WP_BASE_URL'] = $settings['e2e_base_url'];
+        }
+        if ($settings['e2e_frontend_url'] !== '') {
+            $environment['CBT_E2E_FRONTEND_URL'] = $settings['e2e_frontend_url'];
         }
         $results_root = self::playwright_results_root_path();
         $environment['PLAYWRIGHT_BROWSERS_PATH'] = rtrim(CBT_EXAM_SYSTEM_PATH, '/\\') . '/.playwright-browsers';
@@ -1620,14 +3411,7 @@ final class CBT_Admin_Test_Hub_Service
 
     private static function playwright_results_root_path(): string
     {
-        static $resolved_root = null;
-        if (is_string($resolved_root) && $resolved_root !== '') {
-            return $resolved_root;
-        }
-
-        $candidate_paths = [
-            rtrim(CBT_EXAM_SYSTEM_PATH, '/\\') . '/playwright-results',
-        ];
+        $candidate_paths = [];
 
         if (function_exists('wp_upload_dir')) {
             $uploads = wp_upload_dir();
@@ -1637,15 +3421,15 @@ final class CBT_Admin_Test_Hub_Service
             }
         }
 
+        $candidate_paths[] = rtrim(CBT_EXAM_SYSTEM_PATH, '/\\') . '/playwright-results';
+
         foreach ($candidate_paths as $candidate_path) {
             if (self::ensure_directory_is_writable($candidate_path)) {
-                $resolved_root = $candidate_path;
-                return $resolved_root;
+                return $candidate_path;
             }
         }
 
-        $resolved_root = $candidate_paths[0];
-        return $resolved_root;
+        return $candidate_paths[0] ?? (rtrim(CBT_EXAM_SYSTEM_PATH, '/\\') . '/playwright-results');
     }
 
     private static function ensure_directory_is_writable(string $directory_path): bool
@@ -1684,12 +3468,22 @@ final class CBT_Admin_Test_Hub_Service
             return false;
         }
 
+        $raw_job_id = isset($job['job_id']) && is_scalar($job['job_id']) ? trim((string) $job['job_id']) : '';
+        if ($raw_job_id === '') {
+            return false;
+        }
+        $job_id = sanitize_file_name($raw_job_id);
+        if ($job_id === '') {
+            return false;
+        }
+        $job['job_id'] = $job_id;
+
         $encoded = wp_json_encode($job, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
         if (!is_string($encoded) || $encoded === '') {
             return false;
         }
 
-        $job_path = self::flow_job_file_path((string) ($job['job_id'] ?? ''));
+        $job_path = self::flow_job_file_path($job_id);
         $bytes_written = file_put_contents($job_path, $encoded);
         if (is_file($job_path)) {
             @chmod($job_path, 0666);
@@ -1698,6 +3492,557 @@ final class CBT_Admin_Test_Hub_Service
         clearstatcache(true, $job_path);
 
         return $bytes_written !== false && is_file($job_path);
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private static function find_flow_check_job_by_id(string $job_id): ?array
+    {
+        $job_id = sanitize_file_name($job_id);
+        if ($job_id === '') {
+            return null;
+        }
+
+        foreach (self::read_flow_check_jobs() as $job) {
+            if (is_array($job) && (string) ($job['job_id'] ?? '') === $job_id) {
+                return $job;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<string,mixed> $job
+     */
+    private static function remove_flow_check_job_files(array $job): bool
+    {
+        $job_id = sanitize_file_name((string) ($job['job_id'] ?? ''));
+        if ($job_id === '') {
+            return false;
+        }
+
+        $paths = [
+            self::flow_job_file_path($job_id),
+            self::flow_job_log_path($job_id),
+            self::flow_job_directory_path() . '/' . $job_id . '-artifacts',
+        ];
+        $custom_log_path = isset($job['log_path']) && is_scalar($job['log_path']) ? (string) $job['log_path'] : '';
+        if ($custom_log_path !== '') {
+            $paths[] = $custom_log_path;
+        }
+
+        $success = true;
+        foreach (array_values(array_unique($paths)) as $path) {
+            if ($path === '' || !file_exists($path)) {
+                continue;
+            }
+            $success = self::remove_test_artifact_path((string) $path) && $success;
+        }
+
+        return $success;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $jobs
+     * @return array{repaired_count:int,still_active_count:int,terminal_count:int,repaired_jobs:array<int,string>}
+     */
+    private static function repair_stuck_flow_check_jobs(array $jobs): array
+    {
+        $summary = [
+            'repaired_count' => 0,
+            'still_active_count' => 0,
+            'terminal_count' => 0,
+            'repaired_jobs' => [],
+        ];
+        $now = time();
+
+        foreach ($jobs as $job) {
+            if (!is_array($job)) {
+                continue;
+            }
+
+            $raw_job_id = isset($job['job_id']) && is_scalar($job['job_id']) ? trim((string) $job['job_id']) : '';
+            if ($raw_job_id === '') {
+                continue;
+            }
+
+            $job_id = sanitize_file_name($raw_job_id);
+            if ($job_id === '') {
+                continue;
+            }
+
+            $status = self::normalize_flow_job_status((string) ($job['status'] ?? 'queued'));
+            if (self::is_terminal_flow_job_status($status)) {
+                $summary['terminal_count'] += 1;
+                continue;
+            }
+
+            if ($status === 'queued') {
+                $summary['still_active_count'] += 1;
+                continue;
+            }
+
+            if ($status === 'cancelling') {
+                $worker_pid = (int) ($job['worker_pid'] ?? 0);
+                $active_child_pid = (int) ($job['active_child_pid'] ?? 0);
+                $worker_running = $worker_pid > 0 && self::is_flow_job_process_running($worker_pid);
+                $child_running = $active_child_pid > 0 && self::is_flow_job_process_running($active_child_pid);
+                if ($worker_running || $child_running) {
+                    $summary['still_active_count'] += 1;
+                    continue;
+                }
+
+                $job['status'] = 'cancelled';
+                $job['finished_at'] = $now;
+                $job['exit_code'] = 1;
+                $job['failure_kind'] = 'cancelled';
+                $job['failure_summary'] = 'Job flow check dibatalkan dari CBT Test Hub saat repair stuck jobs.';
+                self::write_flow_check_job($job);
+                $summary['repaired_count'] += 1;
+                $summary['repaired_jobs'][] = $job_id;
+                continue;
+            }
+
+            $stuck_state = self::resolve_running_flow_job_stuck_state($job, $now);
+            if (empty($stuck_state['is_stuck'])) {
+                $summary['still_active_count'] += 1;
+                continue;
+            }
+
+            $failure_kind = (string) ($stuck_state['failure_kind'] ?? 'interrupted');
+            $reasons = isset($stuck_state['reasons']) && is_array($stuck_state['reasons']) ? (array) $stuck_state['reasons'] : [];
+            $job['status'] = 'failed';
+            $job['finished_at'] = $now;
+            $job['exit_code'] = 1;
+            $job['failure_kind'] = $failure_kind;
+            $job['failure_summary'] = $failure_kind === 'stale'
+                ? 'Job background stale karena runner tidak lagi memberi heartbeat dalam batas aman.'
+                : 'Job background terputus sebelum flow check selesai dijalankan.';
+            $repair_message = 'Repair Stuck Jobs menandai job gagal karena ' . implode(', ', $reasons) . '.';
+            $existing_stderr = trim((string) ($job['stderr'] ?? ''));
+            $job['stderr'] = $existing_stderr === '' ? $repair_message : ($existing_stderr . PHP_EOL . PHP_EOL . $repair_message);
+            self::write_flow_check_job($job);
+            $summary['repaired_count'] += 1;
+            $summary['repaired_jobs'][] = $job_id;
+        }
+
+        return $summary;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $jobs
+     * @return array{active_count:int,terminal_count:int,queued_count:int,running_count:int,cancelling_count:int,has_active_jobs:bool}
+     */
+    private static function build_flow_job_repair_context(array $jobs): array
+    {
+        $queued_count = 0;
+        $running_count = 0;
+        $cancelling_count = 0;
+        $terminal_count = 0;
+
+        foreach ($jobs as $job) {
+            if (!is_array($job)) {
+                continue;
+            }
+
+            $status = self::normalize_flow_job_status((string) ($job['status'] ?? 'queued'));
+            if ($status === 'queued') {
+                $queued_count += 1;
+            } elseif ($status === 'running') {
+                $running_count += 1;
+            } elseif ($status === 'cancelling') {
+                $cancelling_count += 1;
+            } elseif (self::is_terminal_flow_job_status($status)) {
+                $terminal_count += 1;
+            }
+        }
+
+        $active_count = $queued_count + $running_count + $cancelling_count;
+
+        return [
+            'active_count' => $active_count,
+            'terminal_count' => $terminal_count,
+            'queued_count' => $queued_count,
+            'running_count' => $running_count,
+            'cancelling_count' => $cancelling_count,
+            'has_active_jobs' => $active_count > 0,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $job
+     * @return array{is_stuck:bool,failure_kind:string,reasons:array<int,string>}
+     */
+    private static function resolve_running_flow_job_stuck_state(array $job, int $now): array
+    {
+        $started_at = (int) ($job['started_at'] ?? 0);
+        $heartbeat_at = (int) ($job['heartbeat_at'] ?? 0);
+        $worker_pid = (int) ($job['worker_pid'] ?? 0);
+
+        $heartbeat_is_stale = $heartbeat_at > 0 && ($now - $heartbeat_at) > self::FLOW_JOB_HEARTBEAT_TIMEOUT;
+        $runtime_is_excessive = $started_at > 0 && ($now - $started_at) > self::FLOW_JOB_MAX_RUNTIME;
+        $process_missing = $worker_pid > 0 && !self::is_flow_job_process_running($worker_pid);
+        $worker_pid_missing_too_long = $worker_pid <= 0
+            && $started_at > 0
+            && ($now - $started_at) > self::FLOW_JOB_WORKER_PID_GRACE_SECONDS;
+
+        $reasons = [];
+        if ($process_missing) {
+            $reasons[] = 'process worker sudah tidak aktif';
+        }
+        if ($worker_pid_missing_too_long) {
+            $reasons[] = 'worker PID kosong terlalu lama';
+        }
+        if ($heartbeat_is_stale) {
+            $reasons[] = 'heartbeat job sudah stale';
+        }
+        if ($runtime_is_excessive) {
+            $reasons[] = 'runtime job melewati batas aman';
+        }
+
+        return [
+            'is_stuck' => !empty($reasons),
+            'failure_kind' => ($heartbeat_is_stale || $runtime_is_excessive) ? 'stale' : 'interrupted',
+            'reasons' => $reasons,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed>|null $job
+     * @return array<string,mixed>
+     */
+    private static function build_flow_job_artifact_context(?array $job): array
+    {
+        $empty = [
+            'has_any' => false,
+            'log' => null,
+            'output_preview' => null,
+            'artifacts' => [],
+            'artifact_count' => 0,
+        ];
+
+        if (!is_array($job) || empty($job)) {
+            return $empty;
+        }
+
+        $job_id = sanitize_file_name((string) ($job['job_id'] ?? ''));
+        if ($job_id === '') {
+            return $empty;
+        }
+
+        $log = self::resolve_flow_job_log_artifact($job);
+        $output_preview = self::build_flow_job_inline_output_preview($job);
+        $artifacts = self::collect_flow_job_artifact_files($job);
+
+        return [
+            'has_any' => !empty($log) || !empty($output_preview) || !empty($artifacts),
+            'log' => $log,
+            'output_preview' => $output_preview,
+            'artifacts' => $artifacts,
+            'artifact_count' => count($artifacts),
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $job
+     * @return array<string,mixed>|null
+     */
+    private static function resolve_flow_job_log_artifact(array $job, bool $include_absolute = false): ?array
+    {
+        $job_id = sanitize_file_name((string) ($job['job_id'] ?? ''));
+        if ($job_id === '') {
+            return null;
+        }
+
+        $log_paths = [self::flow_job_log_path($job_id)];
+        $custom_log_path = isset($job['log_path']) && is_scalar($job['log_path']) ? (string) $job['log_path'] : '';
+        if ($custom_log_path !== '') {
+            $log_paths[] = $custom_log_path;
+        }
+
+        foreach (array_values(array_unique($log_paths)) as $log_path) {
+            $meta = self::build_flow_job_artifact_file_meta($job_id, (string) $log_path, 'log', $include_absolute);
+            if (empty($meta)) {
+                continue;
+            }
+
+            $preview = self::read_flow_job_log_preview((string) ($meta['absolute_path'] ?? $log_path));
+            if (!$include_absolute) {
+                unset($meta['absolute_path']);
+            }
+            $meta['preview'] = $preview['preview'];
+            $meta['truncated'] = $preview['truncated'];
+            $meta['line_count'] = $preview['line_count'];
+
+            return $meta;
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<string,mixed> $job
+     * @return array<string,mixed>|null
+     */
+    private static function build_flow_job_inline_output_preview(array $job): ?array
+    {
+        $blocks = [];
+        $failure_summary = trim((string) ($job['failure_summary'] ?? ''));
+        $stdout = trim((string) ($job['stdout'] ?? ''));
+        $stderr = trim((string) ($job['stderr'] ?? ''));
+
+        if ($failure_summary !== '') {
+            $blocks[] = "Failure Summary\n" . $failure_summary;
+        }
+        if ($stdout !== '') {
+            $blocks[] = "Stdout\n" . $stdout;
+        }
+        if ($stderr !== '') {
+            $blocks[] = "Stderr\n" . $stderr;
+        }
+        if (empty($blocks)) {
+            return null;
+        }
+
+        $preview = self::build_text_preview(implode("\n\n", $blocks));
+
+        return [
+            'label' => 'Output Snapshot',
+            'preview' => $preview['preview'],
+            'truncated' => $preview['truncated'],
+            'line_count' => $preview['line_count'],
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $job
+     * @return array<int,array<string,mixed>>
+     */
+    private static function collect_flow_job_artifact_files(array $job, bool $include_absolute = false): array
+    {
+        $job_id = sanitize_file_name((string) ($job['job_id'] ?? ''));
+        if ($job_id === '') {
+            return [];
+        }
+
+        $artifact_dir = self::flow_job_directory_path() . '/' . $job_id . '-artifacts';
+        $safe_artifact_dir = self::normalize_safe_flow_artifact_path($artifact_dir, true);
+        if ($safe_artifact_dir === '' || !is_dir($safe_artifact_dir)) {
+            return [];
+        }
+
+        $files = [];
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($safe_artifact_dir, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::SELF_FIRST
+        );
+
+        foreach ($iterator as $item) {
+            if (!$item->isFile()) {
+                continue;
+            }
+
+            $meta = self::build_flow_job_artifact_file_meta($job_id, (string) $item->getPathname(), 'artifact', $include_absolute);
+            if (!empty($meta)) {
+                if (!$include_absolute) {
+                    unset($meta['absolute_path']);
+                }
+                $files[] = $meta;
+            }
+        }
+
+        usort($files, static function (array $left, array $right): int {
+            return strcmp((string) ($left['relative_path'] ?? ''), (string) ($right['relative_path'] ?? ''));
+        });
+
+        return array_slice($files, 0, self::FLOW_JOB_ARTIFACT_LIST_LIMIT);
+    }
+
+    /**
+     * @param array<string,mixed> $job
+     * @return array<string,mixed>|null
+     */
+    private static function resolve_flow_job_artifact_file_by_key(array $job, string $artifact_key): ?array
+    {
+        $artifact_key = sanitize_text_field($artifact_key);
+        if ($artifact_key === '') {
+            return null;
+        }
+
+        $log = self::resolve_flow_job_log_artifact($job, true);
+        if (is_array($log) && (string) ($log['key'] ?? '') === $artifact_key) {
+            return $log;
+        }
+
+        foreach (self::collect_flow_job_artifact_files($job, true) as $artifact) {
+            if (is_array($artifact) && (string) ($artifact['key'] ?? '') === $artifact_key) {
+                return $artifact;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private static function build_flow_job_artifact_file_meta(string $job_id, string $path, string $type, bool $include_absolute = false): ?array
+    {
+        $safe_path = self::normalize_safe_flow_artifact_path($path, false);
+        if ($safe_path === '' || !is_file($safe_path) || !is_readable($safe_path)) {
+            return null;
+        }
+
+        $relative_path = self::relative_flow_job_artifact_path($safe_path);
+        if ($relative_path === '') {
+            return null;
+        }
+
+        $size = filesize($safe_path);
+        $updated_at = filemtime($safe_path);
+        $key = self::flow_job_artifact_key($job_id, $relative_path);
+        $download_name = sanitize_file_name($job_id . '-' . basename($safe_path));
+
+        $meta = [
+            'type' => $type,
+            'key' => $key,
+            'name' => basename($safe_path),
+            'relative_path' => $relative_path,
+            'size' => $size === false ? 0 : (int) $size,
+            'updated_at' => $updated_at === false ? 0 : (int) $updated_at,
+            'download_name' => $download_name,
+            'content_type' => $type === 'log' ? 'text/plain; charset=utf-8' : 'application/octet-stream',
+            'download_url' => add_query_arg([
+                'action' => 'cbt_download_test_hub_artifact',
+                'cbt_flow_job_id' => $job_id,
+                'cbt_artifact_key' => $key,
+                '_wpnonce' => wp_create_nonce('cbt_test_hub_artifact_' . $job_id),
+            ], admin_url('admin-post.php')),
+        ];
+
+        if ($include_absolute) {
+            $meta['absolute_path'] = $safe_path;
+        }
+
+        return $meta;
+    }
+
+    private static function normalize_safe_flow_artifact_path(string $path, bool $allow_directory): string
+    {
+        $path = trim($path);
+        if ($path === '' || !file_exists($path)) {
+            return '';
+        }
+
+        if ($allow_directory && !is_dir($path)) {
+            return '';
+        }
+        if (!$allow_directory && !is_file($path)) {
+            return '';
+        }
+
+        $real_path = realpath($path);
+        $root_path = realpath(self::flow_job_directory_path());
+        if (!is_string($real_path) || !is_string($root_path) || $real_path === '' || $root_path === '') {
+            return '';
+        }
+
+        $normalized_path = wp_normalize_path($real_path);
+        $normalized_root = rtrim(wp_normalize_path($root_path), '/');
+        if ($normalized_path !== $normalized_root && !str_starts_with($normalized_path, $normalized_root . '/')) {
+            return '';
+        }
+
+        return $real_path;
+    }
+
+    private static function relative_flow_job_artifact_path(string $safe_path): string
+    {
+        $root_path = realpath(self::flow_job_directory_path());
+        if (!is_string($root_path) || $root_path === '') {
+            return '';
+        }
+
+        $normalized_path = wp_normalize_path($safe_path);
+        $normalized_root = rtrim(wp_normalize_path($root_path), '/');
+        if ($normalized_path === $normalized_root || !str_starts_with($normalized_path, $normalized_root . '/')) {
+            return '';
+        }
+
+        return ltrim(substr($normalized_path, strlen($normalized_root)), '/');
+    }
+
+    private static function flow_job_artifact_key(string $job_id, string $relative_path): string
+    {
+        return substr(hash('sha256', sanitize_file_name($job_id) . '|' . wp_normalize_path($relative_path)), 0, 24);
+    }
+
+    /**
+     * @return array{preview:string,truncated:bool,line_count:int}
+     */
+    private static function read_flow_job_log_preview(string $path): array
+    {
+        $safe_path = self::normalize_safe_flow_artifact_path($path, false);
+        if ($safe_path === '' || !is_readable($safe_path)) {
+            return [
+                'preview' => '',
+                'truncated' => false,
+                'line_count' => 0,
+            ];
+        }
+
+        $size = filesize($safe_path);
+        $size = $size === false ? 0 : (int) $size;
+        $offset = max(0, $size - self::FLOW_JOB_LOG_PREVIEW_MAX_BYTES);
+        $raw = file_get_contents($safe_path, false, null, $offset);
+        if (!is_string($raw)) {
+            $raw = '';
+        }
+
+        $preview = self::build_text_preview($raw, $size > self::FLOW_JOB_LOG_PREVIEW_MAX_BYTES);
+
+        return $preview;
+    }
+
+    /**
+     * @return array{preview:string,truncated:bool,line_count:int}
+     */
+    private static function build_text_preview(string $content, bool $already_truncated = false): array
+    {
+        $normalized = trim(str_replace(["\r\n", "\r"], "\n", $content));
+        if ($normalized === '') {
+            return [
+                'preview' => '',
+                'truncated' => $already_truncated,
+                'line_count' => 0,
+            ];
+        }
+
+        $truncated = $already_truncated;
+        if (strlen($normalized) > self::FLOW_JOB_LOG_PREVIEW_MAX_BYTES) {
+            $normalized = substr($normalized, -self::FLOW_JOB_LOG_PREVIEW_MAX_BYTES);
+            $truncated = true;
+        }
+
+        $lines = preg_split("/\n/", $normalized);
+        $lines = is_array($lines) ? $lines : [];
+        if (count($lines) > self::FLOW_JOB_LOG_PREVIEW_MAX_LINES) {
+            $lines = array_slice($lines, -self::FLOW_JOB_LOG_PREVIEW_MAX_LINES);
+            $truncated = true;
+        }
+
+        $preview = trim(implode("\n", $lines));
+        if ($truncated && $preview !== '') {
+            $preview = "[preview truncated to last " . self::FLOW_JOB_LOG_PREVIEW_MAX_LINES . " lines / " . self::FLOW_JOB_LOG_PREVIEW_MAX_BYTES . " bytes]\n" . $preview;
+        }
+
+        return [
+            'preview' => $preview,
+            'truncated' => $truncated,
+            'line_count' => count($lines),
+        ];
     }
 
     private static function mark_flow_check_job_failed(string $job_id, string $failure_summary, string $stderr = '', string $failure_kind = 'interrupted'): void
@@ -1736,13 +4081,27 @@ final class CBT_Admin_Test_Hub_Service
         }
 
         $decoded = json_decode($raw, true);
-        return is_array($decoded) ? $decoded : null;
+        if (!is_array($decoded)) {
+            return null;
+        }
+
+        $raw_job_id = isset($decoded['job_id']) && is_scalar($decoded['job_id']) ? trim((string) $decoded['job_id']) : '';
+        if ($raw_job_id === '') {
+            return null;
+        }
+        $job_id = sanitize_file_name($raw_job_id);
+        if ($job_id === '') {
+            return null;
+        }
+        $decoded['job_id'] = $job_id;
+
+        return $decoded;
     }
 
     /**
      * @return array<int,array<string,mixed>>
      */
-    private static function read_flow_check_jobs(): array
+    private static function read_flow_check_jobs(bool $normalize_runtime = true): array
     {
         $directory = self::flow_job_directory_path();
         if (!is_dir($directory)) {
@@ -1761,7 +4120,9 @@ final class CBT_Admin_Test_Hub_Service
                 continue;
             }
 
-            $job = self::normalize_flow_check_job_runtime_state($job);
+            if ($normalize_runtime) {
+                $job = self::normalize_flow_check_job_runtime_state($job);
+            }
             $jobs[] = $job;
         }
 
@@ -1779,35 +4140,37 @@ final class CBT_Admin_Test_Hub_Service
     private static function normalize_flow_check_job_runtime_state(array $job): array
     {
         $status = self::normalize_flow_job_status((string) ($job['status'] ?? 'queued'));
+        if ($status === 'cancelling') {
+            $worker_pid = (int) ($job['worker_pid'] ?? 0);
+            $active_child_pid = (int) ($job['active_child_pid'] ?? 0);
+            $worker_running = $worker_pid > 0 && self::is_flow_job_process_running($worker_pid);
+            $child_running = $active_child_pid > 0 && self::is_flow_job_process_running($active_child_pid);
+            if ($worker_running || $child_running) {
+                return $job;
+            }
+
+            $job['status'] = 'cancelled';
+            $job['finished_at'] = time();
+            $job['exit_code'] = 1;
+            $job['failure_kind'] = 'cancelled';
+            $job['failure_summary'] = 'Job flow check dibatalkan dari CBT Test Hub.';
+            self::write_flow_check_job($job);
+
+            return $job;
+        }
+
         if ($status !== 'running') {
             return $job;
         }
 
         $now = time();
-        $started_at = (int) ($job['started_at'] ?? 0);
-        $heartbeat_at = (int) ($job['heartbeat_at'] ?? 0);
-        $worker_pid = (int) ($job['worker_pid'] ?? 0);
-
-        $heartbeat_is_stale = $heartbeat_at > 0 && ($now - $heartbeat_at) > self::FLOW_JOB_HEARTBEAT_TIMEOUT;
-        $runtime_is_excessive = $started_at > 0 && ($now - $started_at) > self::FLOW_JOB_MAX_RUNTIME;
-        $process_missing = $worker_pid > 0 && !self::is_flow_job_process_running($worker_pid);
-
-        if (!$heartbeat_is_stale && !$runtime_is_excessive && !$process_missing) {
+        $stuck_state = self::resolve_running_flow_job_stuck_state($job, $now);
+        if (empty($stuck_state['is_stuck'])) {
             return $job;
         }
 
-        $reasons = [];
-        if ($process_missing) {
-            $reasons[] = 'process worker sudah tidak aktif';
-        }
-        if ($heartbeat_is_stale) {
-            $reasons[] = 'heartbeat job sudah stale';
-        }
-        if ($runtime_is_excessive) {
-            $reasons[] = 'runtime job melewati batas aman';
-        }
-
-        $failure_kind = ($heartbeat_is_stale || $runtime_is_excessive) ? 'stale' : 'interrupted';
+        $reasons = isset($stuck_state['reasons']) && is_array($stuck_state['reasons']) ? (array) $stuck_state['reasons'] : [];
+        $failure_kind = (string) ($stuck_state['failure_kind'] ?? 'interrupted');
 
         $job['status'] = 'failed';
         $job['finished_at'] = $now;
@@ -1845,6 +4208,33 @@ final class CBT_Admin_Test_Hub_Service
         }
 
         return true;
+    }
+
+    private static function terminate_flow_job_process(int $pid): bool
+    {
+        if ($pid <= 0 || !self::is_flow_job_process_running($pid)) {
+            return false;
+        }
+
+        if (function_exists('posix_kill')) {
+            return @posix_kill($pid, defined('SIGTERM') ? SIGTERM : 15);
+        }
+
+        if (stripos(PHP_OS, 'WIN') === 0) {
+            if (function_exists('exec')) {
+                @exec('taskkill /F /PID ' . (int) $pid . ' 2>NUL');
+                return true;
+            }
+
+            return false;
+        }
+
+        if (function_exists('exec')) {
+            @exec('kill -TERM ' . (int) $pid . ' 2>/dev/null');
+            return true;
+        }
+
+        return false;
     }
 
     private static function flow_job_lookup_key(string $tab, string $scope, int $item_index): string
@@ -1900,7 +4290,7 @@ final class CBT_Admin_Test_Hub_Service
     {
         foreach ($latest_jobs as $job) {
             $status = self::normalize_flow_job_status((string) ($job['status'] ?? ''));
-            if (in_array($status, ['queued', 'running'], true)) {
+            if (self::is_active_flow_job_status($status)) {
                 return true;
             }
         }
@@ -1914,7 +4304,7 @@ final class CBT_Admin_Test_Hub_Service
     private static function has_running_flow_jobs_only(array $latest_jobs): bool
     {
         foreach ($latest_jobs as $job) {
-            if (self::normalize_flow_job_status((string) ($job['status'] ?? '')) === 'running') {
+            if (in_array(self::normalize_flow_job_status((string) ($job['status'] ?? '')), ['running', 'cancelling'], true)) {
                 return true;
             }
         }
@@ -1925,11 +4315,21 @@ final class CBT_Admin_Test_Hub_Service
     private static function normalize_flow_job_status(string $status): string
     {
         $status = sanitize_key($status);
-        if (in_array($status, ['queued', 'running', 'passed', 'failed'], true)) {
+        if (in_array($status, ['queued', 'running', 'cancelling', 'passed', 'failed', 'cancelled'], true)) {
             return $status;
         }
 
-        return 'queued';
+        return 'unknown';
+    }
+
+    private static function is_active_flow_job_status(string $status): bool
+    {
+        return in_array(self::normalize_flow_job_status($status), ['queued', 'running', 'cancelling'], true);
+    }
+
+    private static function is_terminal_flow_job_status(string $status): bool
+    {
+        return in_array(self::normalize_flow_job_status($status), ['passed', 'failed', 'cancelled'], true);
     }
 
     /**
@@ -1974,14 +4374,20 @@ final class CBT_Admin_Test_Hub_Service
         }
 
         switch ($status) {
+            case 'queued':
+                return ['label' => 'Queued', 'tone' => 'idle'];
+            case 'cancelling':
+                return ['label' => 'Cancelling', 'tone' => 'planned'];
             case 'running':
                 return ['label' => 'Running', 'tone' => 'planned'];
             case 'passed':
                 return ['label' => 'Passed', 'tone' => 'done'];
+            case 'cancelled':
+                return ['label' => 'Cancelled', 'tone' => 'idle'];
             case 'failed':
                 return ['label' => 'Failed', 'tone' => 'danger'];
             default:
-                return ['label' => 'Queued', 'tone' => 'idle'];
+                return ['label' => 'Unknown', 'tone' => 'idle'];
         }
     }
 
@@ -1992,8 +4398,10 @@ final class CBT_Admin_Test_Hub_Service
      */
     private static function create_flow_check_job(string $tab, string $scope, int $item_index, array $item_definition, array $item_commands): array
     {
-        $job_id = 'flow-' . strtolower((string) wp_generate_password(16, false, false));
         $now = time();
+        $job_seed = strtolower((string) wp_generate_password(16, false, false));
+        $job_hash = substr(md5($tab . '|' . $scope . '|' . $item_index . '|' . $now . '|' . microtime(true) . '|' . $job_seed), 0, 8);
+        $job_id = 'flow-' . $job_seed . '-' . $job_hash;
 
         return [
             'job_id' => $job_id,
@@ -2007,6 +4415,8 @@ final class CBT_Admin_Test_Hub_Service
             'finished_at' => 0,
             'heartbeat_at' => 0,
             'worker_pid' => 0,
+            'active_child_pid' => 0,
+            'cancel_requested_at' => 0,
             'command' => isset($item_commands[0]['command']) ? (string) $item_commands[0]['command'] : '',
             'commands' => array_values($item_commands),
             'results' => [],
@@ -2026,34 +4436,54 @@ final class CBT_Admin_Test_Hub_Service
             return;
         }
 
-        $has_running_job = false;
-        $next_queued_job_id = '';
-        $next_queued_created_at = 0;
+        $latest_jobs = self::build_latest_flow_job_lookup($jobs);
+        if (self::has_running_flow_jobs_only($latest_jobs)) {
+            return;
+        }
+
+        $next_queued_job_id = self::resolve_next_queued_flow_job_id($jobs);
+        if ($next_queued_job_id === '') {
+            return;
+        }
+
+        self::start_flow_check_job_process($next_queued_job_id);
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $jobs
+     */
+    private static function resolve_next_queued_flow_job_id(array $jobs): string
+    {
+        $next_job_id = '';
+        $next_created_at = 0;
 
         foreach ($jobs as $job) {
             if (!is_array($job)) {
                 continue;
             }
 
-            $status = self::normalize_flow_job_status((string) ($job['status'] ?? ''));
-            if ($status === 'running') {
-                $has_running_job = true;
-                break;
+            if (self::normalize_flow_job_status((string) ($job['status'] ?? '')) !== 'queued') {
+                continue;
             }
-            if ($status === 'queued') {
-                $created_at = (int) ($job['created_at'] ?? 0);
-                if ($next_queued_job_id === '' || $created_at < $next_queued_created_at || $next_queued_created_at <= 0) {
-                    $next_queued_job_id = (string) ($job['job_id'] ?? '');
-                    $next_queued_created_at = $created_at;
-                }
+
+            $raw_job_id = isset($job['job_id']) && is_scalar($job['job_id']) ? trim((string) $job['job_id']) : '';
+            if ($raw_job_id === '') {
+                continue;
+            }
+
+            $job_id = sanitize_file_name($raw_job_id);
+            if ($job_id === '') {
+                continue;
+            }
+
+            $created_at = (int) ($job['created_at'] ?? 0);
+            if ($next_job_id === '' || $created_at < $next_created_at || $next_created_at <= 0) {
+                $next_job_id = $job_id;
+                $next_created_at = $created_at;
             }
         }
 
-        if ($has_running_job || $next_queued_job_id === '') {
-            return;
-        }
-
-        self::start_flow_check_job_process($next_queued_job_id);
+        return $next_job_id;
     }
 
     private static function start_flow_check_job_process(string $job_id): bool
@@ -2307,10 +4737,18 @@ final class CBT_Admin_Test_Hub_Service
             }
         ));
         $has_failed_run_results = !empty($failed_run_results);
-        $job_status = $list_key === 'smoke_tests' && !empty($flow_job) ? self::normalize_flow_job_status((string) ($flow_job['status'] ?? 'queued')) : '';
+        $has_flow_job = $list_key === 'smoke_tests' && !empty($flow_job) && is_array($flow_job);
+        $job_status = $has_flow_job ? self::normalize_flow_job_status((string) ($flow_job['status'] ?? 'queued')) : '';
         $job_status_meta = $job_status !== '' ? self::flow_job_status_meta_for_job($flow_job) : null;
         $async_output_preview = $list_key === 'smoke_tests' ? self::build_flow_job_output_preview($flow_job) : '';
         $should_surface_async_preview = in_array((string) ($job_status_meta['label'] ?? ''), ['Interrupted', 'Stale'], true) && $async_output_preview !== '';
+        $artifact_context = $list_key === 'smoke_tests' ? self::build_flow_job_artifact_context($flow_job) : [
+            'has_any' => false,
+            'log' => null,
+            'output_preview' => null,
+            'artifacts' => [],
+            'artifact_count' => 0,
+        ];
 
         $item['detail_id'] = sanitize_html_class($tab_key . '-' . $list_key . '-' . $item_index);
         $item['item_index'] = $item_index;
@@ -2322,24 +4760,28 @@ final class CBT_Admin_Test_Hub_Service
         $item['failed_run_results'] = $failed_run_results;
         $item['has_failed_run_results'] = $has_failed_run_results;
         $item['has_runner'] = !empty($runner_commands);
-        $item['async_job'] = $flow_job;
+        $item['async_job'] = $has_flow_job ? $flow_job : null;
         $item['async_status'] = $job_status;
         $item['async_status_label'] = is_array($job_status_meta) ? (string) $job_status_meta['label'] : '';
         $item['async_status_tone'] = is_array($job_status_meta) ? (string) $job_status_meta['tone'] : 'idle';
         $item['async_output_preview'] = $should_surface_async_preview ? $async_output_preview : '';
-        $item['is_job_active'] = in_array($job_status, ['queued', 'running'], true);
-        $item['can_run_task'] = !empty($runner_commands) && !in_array($job_status, ['queued', 'running'], true);
-        $item['run_button_label'] = in_array($job_status, ['queued', 'running'], true)
-            ? ($job_status === 'running' ? 'Running...' : 'Queued...')
+        $item['artifact_context'] = $artifact_context;
+        $item['is_job_active'] = $job_status !== '' && self::is_active_flow_job_status($job_status);
+        $item['can_run_task'] = !empty($runner_commands) && empty($item['is_job_active']);
+        $item['can_cancel_job'] = $job_status !== '' && in_array($job_status, ['queued', 'running', 'cancelling'], true);
+        $item['can_retry_job'] = $job_status !== '' && self::is_terminal_flow_job_status($job_status);
+        $item['can_clear_job'] = $job_status !== '' && self::is_terminal_flow_job_status($job_status);
+        $item['run_button_label'] = !empty($item['is_job_active'])
+            ? ($job_status === 'running' ? 'Running...' : ($job_status === 'cancelling' ? 'Cancelling...' : 'Queued...'))
             : 'Run Task';
         $item['detail_hint'] = $has_runner_output
             ? 'Runner terbaru tersedia'
             : (
-                in_array($job_status, ['queued', 'running'], true)
+                !empty($item['is_job_active'])
                     ? 'Flow check sedang diproses di background'
                     : ($status === 'ready' ? 'Coverage awal sudah ditautkan' : 'Backlog dan proses verifikasi')
             );
-        $item['detail_open'] = !empty($item['open_by_default']) || $should_surface_async_preview || $has_failed_run_results;
+        $item['detail_open'] = !empty($item['open_by_default']) || $should_surface_async_preview || $has_failed_run_results || !empty($artifact_context['has_any']);
 
         return $item;
     }
@@ -2551,7 +4993,7 @@ final class CBT_Admin_Test_Hub_Service
         $tabs = [
             'recovery_persistence' => [
                 'label' => 'Recovery & Persistence',
-                'summary' => 'Checkpoint utama untuk memastikan progress kerja siswa pulih kembali setelah refresh atau reopen, sementara snapshot lokal dan cache attempt tetap tahan banting.',
+                'summary' => 'Checkpoint utama untuk memastikan progress kerja siswa, object-map answer, pending autosave, doubtful state, snapshot lokal, remote ui_state, dan cache attempt tetap pulih setelah refresh atau reopen.',
                 'status' => 'ready',
                 'unit_tests' => [
                     self::unit_test_checklist_item('Resolver local vs remote snapshot memilih state attempt yang paling aman dan paling baru.', 'ready', [
@@ -2613,11 +5055,39 @@ final class CBT_Admin_Test_Hub_Service
                         'process_steps' => [
                             'Vitest memverifikasi snapshot yang share revision digabung sehingga jawaban valid dari dua sumber tetap dipertahankan.',
                             'Vitest memverifikasi snapshot stale ditolak saat revision dan order signature berubah, lalu snapshot baru menjadi sumber restore tunggal.',
+                            'Vitest juga memastikan snapshot corrupt dengan attempt_id berbeda dari attempt aktif ditolak total.',
                             'Fixture restore ini berjalan lewat readPersistedQuestionCache agar menembak jalur recovery yang benar-benar dipakai runtime.',
                         ],
                         'evidence' => [
                             'tests/js/unit/question-cache-recovery.test.js',
                             'src/frontend/app/storage/question-cache.js',
+                        ],
+                        'runner_commands' => ['Vitest Recovery'],
+                    ]),
+                    self::unit_test_checklist_item('Object-map answer dan metadata structured question tetap utuh saat cache recovery.', 'ready', [
+                        'description' => 'Question cache recovery sekarang punya coverage untuk Matching, Cloze Dropdown, Categorization, dan Table Completion agar jawaban object-map serta metadata dropdown/tabel tidak berubah menjadi scalar atau hilang saat restore.',
+                        'process_steps' => [
+                            'Vitest menulis snapshot structured question ke session storage dengan answer object-map.',
+                            'readPersistedQuestionCache() dipanggil seperti jalur runtime restore.',
+                            'Assertion memverifikasi answer map, matching_meta, cloze_dropdown_meta, categorization_meta, dan table_completion_meta tetap utuh.',
+                        ],
+                        'evidence' => [
+                            'tests/js/unit/question-cache-recovery.test.js',
+                            'src/frontend/app/storage/question-cache.js',
+                        ],
+                        'runner_commands' => ['Vitest Recovery'],
+                    ]),
+                    self::unit_test_checklist_item('Pending autosave object-map tetap dipulihkan dari snapshot cache.', 'ready', [
+                        'description' => 'Question cache recovery sekarang ikut mengunci state autosave batch agar jawaban object-map yang belum sempat tersubmit tidak berubah atau hilang setelah refresh/reopen.',
+                        'process_steps' => [
+                            'Vitest menulis snapshot question cache dengan pending_answer_batch_by_question berisi answer object-map.',
+                            'readPersistedQuestionCache() memulihkan pendingAnswerBatchByQuestion, pendingAnswerBatchOrder, lastSubmittedPayloadByQuestion, dan blocking reason.',
+                            'Assertion memverifikasi order pending disaring dari key invalid/duplikat tanpa mengubah object-map answer.',
+                        ],
+                        'evidence' => [
+                            'tests/js/unit/question-cache-recovery.test.js',
+                            'src/frontend/app/storage/question-cache.js',
+                            'src/frontend/app/exam/answer-sync.js',
                         ],
                         'runner_commands' => ['Vitest Recovery'],
                     ]),
@@ -2786,11 +5256,25 @@ final class CBT_Admin_Test_Hub_Service
                         ],
                         'runner_commands' => ['Playwright Recovery Conflict Resolver'],
                     ]),
+                    self::unit_test_checklist_item('Structured object-map answers tetap restore setelah reload runtime siswa.', 'ready', [
+                        'description' => 'Flow check ini memakai fixture tipe soal baru untuk memastikan object-map answer dari Matching, Cloze Dropdown, Categorization, dan Table Completion tersimpan ke backend lalu kembali terpilih setelah reload.',
+                        'process_steps' => [
+                            'Siswa membuka exam fixture tipe soal baru dan mengisi dropdown/input structured.',
+                            'Runner memverifikasi answer_text backend berisi object-map lengkap untuk tipe baru.',
+                            'Halaman direload, lalu dropdown/input structured harus terisi kembali sesuai jawaban sebelum reload.',
+                        ],
+                        'evidence' => [
+                            'tests/e2e/new-question-types.spec.js',
+                            'tests/e2e/run-new-question-types-flow.mjs',
+                            'src/frontend/app/storage/question-cache.js',
+                        ],
+                        'runner_commands' => ['Playwright Recovery Object Map Restore'],
+                    ]),
                 ],
             ],
             'sync_rest' => [
                 'label' => 'Sync & REST',
-                'summary' => 'Area untuk memetakan retry policy, pending queue, blocking reason, dan kestabilan kontrak endpoint yang menopang lifecycle attempt frontend.',
+                'summary' => 'Area untuk memetakan retry policy, pending queue, autosave feedback, object-map answer sync, delivery snapshot, blocking reason, dan kestabilan kontrak endpoint yang menopang lifecycle attempt frontend.',
                 'status' => 'ready',
                 'unit_tests' => [
                     self::unit_test_checklist_item('Submit jawaban single dan batch menghasilkan efek yang setara untuk kasus yang sama.', 'ready', [
@@ -2805,6 +5289,32 @@ final class CBT_Admin_Test_Hub_Service
                             'src/frontend/app/exam/answer-sync.js',
                         ],
                         'runner_commands' => ['Vitest Sync & REST'],
+                    ]),
+                    self::unit_test_checklist_item('Autosave batch menjaga payload object-map dan feedback status per soal tetap benar.', 'ready', [
+                        'description' => 'Answer sync runtime sekarang ikut dijalankan dari tab Sync & REST agar object-map answer Matching/Cloze/Categorization/Table Completion tidak rusak saat masuk antrean autosave batch.',
+                        'process_steps' => [
+                            'Vitest mengantrekan jawaban object-map dan memaksa flush ke submit_answers_batch.',
+                            'Body request diverifikasi masih membawa object map utuh sebagai answer, bukan array/string yang salah.',
+                            'State autosave juga dicek bersih setelah submit sukses dan signature payload tersimpan untuk feedback Tersimpan.',
+                        ],
+                        'evidence' => [
+                            'tests/js/unit/answer-sync.test.js',
+                            'src/frontend/app/exam/answer-sync.js',
+                        ],
+                        'runner_commands' => ['Vitest Answer Sync'],
+                    ]),
+                    self::unit_test_checklist_item('Restore autosave dari snapshot sparse atau cache corrupt tidak membuat runtime sync crash.', 'ready', [
+                        'description' => 'Answer sync runtime sekarang punya guard untuk snapshot autosave yang tidak lengkap dan state question payload yang kosong, sehingga recovery tetap aman saat cache lokal rusak sebagian.',
+                        'process_steps' => [
+                            'Vitest memanggil restoreQuestionAutoSaveState() dengan snapshot yang hanya berisi error sync.',
+                            'lastSubmittedPayloadByQuestion, pendingAnswerBatchByQuestion, dan pendingAnswerBatchOrder harus fallback ke struktur kosong yang aman.',
+                            'initializeSubmittedPayloadCache() dan queueLoadedQuestionAnswersForFlush() juga diverifikasi tidak crash ketika questionPayloadById kosong.',
+                        ],
+                        'evidence' => [
+                            'tests/js/unit/answer-sync.test.js',
+                            'src/frontend/app/exam/answer-sync.js',
+                        ],
+                        'runner_commands' => ['Vitest Answer Sync'],
                     ]),
                     self::unit_test_checklist_item('Payload invalid untuk attempt_id atau answers menghasilkan error code dan pesan yang tepat.', 'ready', [
                         'description' => 'Validasi REST ringan sekarang dikunci lewat PHPUnit untuk jalur submit_answer dan submit_answers_batch agar payload invalid tetap mengembalikan invalid_payload dengan status 400.',
@@ -3021,7 +5531,7 @@ final class CBT_Admin_Test_Hub_Service
             ],
             'auth_session' => [
                 'label' => 'Auth & Session',
-                'summary' => 'Area untuk menjaga login, token, session aktif, revoke, dan bootstrap session tetap konsisten saat siswa memulai atau melanjutkan attempt.',
+                'summary' => 'Area untuk menjaga REST login validation, persisted token guard, session aktif, revoke, login snapshot freshness, dan bootstrap session tetap konsisten saat siswa memulai atau melanjutkan attempt.',
                 'status' => 'ready',
                 'unit_tests' => [
                     self::unit_test_checklist_item('Single active login session enforcement tetap konsisten saat user login berulang.', 'ready', [
@@ -3089,12 +5599,52 @@ final class CBT_Admin_Test_Hub_Service
                         ],
                         'runner_commands' => ['PHPUnit Auth Session'],
                     ]),
+                    self::unit_test_checklist_item('REST login menolak payload non-scalar, overlong, dan rate-limit tanpa memanggil auth utama.', 'ready', [
+                        'description' => 'Endpoint login sekarang punya runner khusus untuk menjaga payload object/array/overlong tidak sampai memanggil CBT_Auth::login(), sekaligus mengunci retry_after dan user-agent restriction.',
+                        'process_steps' => [
+                            'PHPUnit memanggil login route harness dengan identifier object, password array, dan identifier terlalu panjang.',
+                            'Assertion memastikan response invalid_payload/400 dan auth utama belum dipanggil.',
+                            'Test yang sama mengunci retry_after setelah beberapa kegagalan dan forbidden user-agent untuk siswa.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/RestLoginInputValidationTest.php',
+                            'includes/class-cbt-rest.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Login Input Guard'],
+                    ]),
+                    self::unit_test_checklist_item('Login snapshot freshness refresh per exam window tanpa menabrak preflight aktif.', 'ready', [
+                        'description' => 'Service freshness login snapshot sekarang masuk tab Auth supaya cache login Redis tetap relevan: window exam di-refresh, batch besar dibatasi, dan exam dengan preflight aktif di-skip.',
+                        'process_steps' => [
+                            'PHPUnit menyiapkan user siswa dan fake Redis profile/login snapshot.',
+                            'tick() dijalankan untuk memverifikasi cursor round-robin, snapshot ready, dan skip saat preflight job aktif.',
+                            'Batch besar diverifikasi berhenti di batas 150 user per exam agar refresh tidak terlalu agresif.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/LoginSnapshotFreshnessServiceTest.php',
+                            'includes/class-cbt-login-snapshot-freshness-service.php',
+                            'includes/class-cbt-login-auth-snapshot-cache.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Login Snapshot Freshness'],
+                    ]),
                     self::unit_test_checklist_item('Persisted auth payload tanpa user_id atau role dianggap invalid dan tidak dipakai untuk bootstrap.', 'ready', [
                         'description' => 'Normalizer auth session frontend sudah punya coverage untuk menolak payload persist yang tidak punya user_id valid atau role yang terisi.',
                         'process_steps' => [
                             'Vitest memanggil normalizePersistedUser() dengan payload valid untuk baseline.',
                             'Payload dengan user_id kosong atau role kosong dipastikan menghasilkan null.',
                             'readPersistedAuthSession() juga diverifikasi mengembalikan null untuk snapshot storage yang malformed.',
+                        ],
+                        'evidence' => [
+                            'tests/js/unit/auth-session.test.js',
+                            'src/frontend/app/core/auth-session.js',
+                        ],
+                        'runner_commands' => ['Vitest Auth Session'],
+                    ]),
+                    self::unit_test_checklist_item('Persisted token yang malformed ditolak sebelum bootstrap session dipakai ulang.', 'ready', [
+                        'description' => 'Normalizer auth session frontend sekarang menolak token persist non-string, kosong, atau terlalu panjang agar storage yang korup/manual edit tidak bisa membuka jalur bootstrap dengan token palsu.',
+                        'process_steps' => [
+                            'Vitest memanggil normalizePersistedToken() untuk token valid, object, dan token overlong.',
+                            'Storage auth dengan token object dibaca ulang lewat readPersistedAuthSession().',
+                            'Assertion memastikan hasil restore null sehingga bootstrap session tidak memakai payload malformed.',
                         ],
                         'evidence' => [
                             'tests/js/unit/auth-session.test.js',
@@ -3239,7 +5789,7 @@ final class CBT_Admin_Test_Hub_Service
             ],
             'timer_lifecycle' => [
                 'label' => 'Timer & Lifecycle',
-                'summary' => 'Area untuk memastikan countdown, heartbeat, timeout, dan transisi stage exam tetap sinkron saat runtime berubah cepat.',
+                'summary' => 'Area untuk memastikan countdown, adaptive heartbeat, heartbeat-lost signal, page lifecycle listener, timeout, dan transisi stage exam tetap sinkron saat runtime berubah cepat.',
                 'status' => 'ready',
                 'unit_tests' => [
                     self::unit_test_checklist_item('Timer payload diklem dengan aman dan tidak menimpa attempt yang tidak cocok.', 'ready', [
@@ -3346,6 +5896,19 @@ final class CBT_Admin_Test_Hub_Service
                         ],
                         'runner_commands' => ['Vitest Timer & Lifecycle'],
                     ]),
+                    self::unit_test_checklist_item('Adaptive heartbeat dan heartbeat-lost signal tetap aman saat koneksi berubah.', 'ready', [
+                        'description' => 'Heartbeat manager sekarang mengunci dua jalur runtime yang paling sering berubah: interval adaptif dari server dan warning heartbeat lost setelah kegagalan online beruntun.',
+                        'process_steps' => [
+                            'Vitest mengirim payload adaptive load busy dan critical lalu memverifikasi interval heartbeat berubah ke nilai yang benar.',
+                            'Kegagalan network beruntun saat browser online harus menaikkan heartbeat_lost satu kali dan mencatat security event.',
+                            'Heartbeat sukses berikutnya harus membersihkan warning heartbeat lost tanpa merusak stage exam.',
+                        ],
+                        'evidence' => [
+                            'tests/js/unit/session-heartbeat.test.js',
+                            'src/frontend/app/core/session-heartbeat.js',
+                        ],
+                        'runner_commands' => ['Vitest Timer & Lifecycle'],
+                    ]),
                     self::unit_test_checklist_item('Disable calculator dari heartbeat membersihkan runtime kalkulator dan notice tetap konsisten.', 'ready', [
                         'description' => 'Heartbeat sekarang punya coverage untuk perubahan enable_calculator dari server: runtime kalkulator harus dibersihkan, exam payload diperbarui, dan notice user tetap konsisten.',
                         'process_steps' => [
@@ -3359,7 +5922,33 @@ final class CBT_Admin_Test_Hub_Service
                         ],
                         'runner_commands' => ['Vitest Timer & Lifecycle'],
                     ]),
-                    self::unit_test_checklist_item('Cleanup lifecycle memastikan timer, interval, dan listener tidak tertinggal setelah stage berubah.', 'ready', [
+                    self::unit_test_checklist_item('Page lifecycle listener melakukan flush yang tepat saat visible, hidden, blur, pagehide, dan beforeunload.', 'ready', [
+                        'description' => 'Lifecycle manager sekarang ikut dijalankan dari runner Timer agar flush normal dan force keepalive pada event browser tidak lepas dari checklist ini.',
+                        'process_steps' => [
+                            'Vitest memicu blur, focus, online, dan visibility visible lalu memastikan flush ui_state non-force tetap dipakai.',
+                            'Vitest memicu visibility hidden, pagehide, dan beforeunload lalu memastikan force keepalive flush dipakai.',
+                            'Coverage ini menjaga transisi browser/tab tetap aman tanpa menjalankan Playwright berat dari unit runner.',
+                        ],
+                        'evidence' => [
+                            'tests/js/unit/lifecycle.test.js',
+                            'src/frontend/app/core/lifecycle.js',
+                        ],
+                        'runner_commands' => ['Vitest Timer & Lifecycle'],
+                    ]),
+                    self::unit_test_checklist_item('Reconnect burst dari visible, focus, dan online tidak menjadwalkan retry/heartbeat berulang.', 'ready', [
+                        'description' => 'Lifecycle listener sekarang punya coverage untuk burst event browser yang sering muncul saat tab kembali aktif, sehingga retry sync dan heartbeat hanya dipicu sekali dalam window dedupe.',
+                        'process_steps' => [
+                            'Vitest memicu visibility visible, focus, dan online secara berurutan dalam satu burst.',
+                            'triggerPendingSyncLifecycleRetry() dan runSessionHeartbeat() diverifikasi hanya terpanggil sekali dari event visible.',
+                            'Event online tetap memperbarui status koneksi, tetapi membawa triggerRetry=false karena retry sudah dilakukan pada burst yang sama.',
+                        ],
+                        'evidence' => [
+                            'tests/js/unit/lifecycle.test.js',
+                            'src/frontend/app/core/lifecycle.js',
+                        ],
+                        'runner_commands' => ['Vitest Timer & Lifecycle'],
+                    ]),
+                    self::unit_test_checklist_item('Cleanup lifecycle memastikan timer, interval, dan runtime state tidak tertinggal setelah stage berubah.', 'ready', [
                         'description' => 'resetExamSession() dan heartbeat stop sekarang bersama-sama menutup jalur cleanup saat stage sudah bergeser: timer berhenti, fullscreen keluar, calculator state bersih, dan snapshot attempt lama dihapus saat sudah bukan di stage exam.',
                         'process_steps' => [
                             'Vitest memulai timer lalu memanggil resetExamSession() ketika stage sudah result.',
@@ -3444,7 +6033,7 @@ final class CBT_Admin_Test_Hub_Service
             ],
             'question_runtime' => [
                 'label' => 'Question Runtime',
-                'summary' => 'Area untuk menjaga input jawaban, question state, navigation, doubtful flag, dan runtime soal tetap sinkron pada semua tipe soal.',
+                'summary' => 'Area untuk menjaga input jawaban, question state, navigation, doubtful flag, dan runtime soal tetap sinkron pada semua 11 tipe soal.',
                 'status' => 'ready',
                 'unit_tests' => [
                     self::unit_test_checklist_item('Answer normalization per tipe soal tetap konsisten untuk pilihan, text, dan payload yang kompleks.', 'ready', [
@@ -3498,6 +6087,19 @@ final class CBT_Admin_Test_Hub_Service
                         'evidence' => [
                             'tests/js/unit/question-runtime-manager.test.js',
                             'src/frontend/app/exam/question-runtime.js',
+                        ],
+                        'runner_commands' => ['Vitest Question Runtime'],
+                    ]),
+                    self::unit_test_checklist_item('Renderer siswa menampilkan kontrol dasar untuk semua 11 tipe soal.', 'ready', [
+                        'description' => 'Question render sekarang punya matrix test untuk MC, MA, True/False, TF Matrix, Short Answer, Essay, Ordering, Matching, Cloze Dropdown, Categorization, dan Table Completion agar tipe lama dan tipe baru sama-sama terjaga.',
+                        'process_steps' => [
+                            'Vitest merender stem/input tiap tipe soal memakai stored answer yang sudah ada.',
+                            'Assertion memverifikasi action control utama, selected/restored value, dan rich renderer TF Matrix tetap muncul.',
+                            'Coverage ini menjaga runtime siswa agar tidak kehilangan control saat renderer diubah untuk tipe tertentu.',
+                        ],
+                        'evidence' => [
+                            'tests/js/unit/question-render.test.js',
+                            'src/frontend/app/exam/question-render.js',
                         ],
                         'runner_commands' => ['Vitest Question Runtime'],
                     ]),
@@ -3663,11 +6265,25 @@ final class CBT_Admin_Test_Hub_Service
                         ],
                         'runner_commands' => ['Playwright Runtime Rapid Navigation'],
                     ]),
+                    self::unit_test_checklist_item('Structured object-map answer untuk tipe baru restore stabil setelah reload.', 'ready', [
+                        'description' => 'Flow check ini memakai Matching, Cloze Dropdown, Categorization, dan Table Completion untuk memastikan object-map answer tetap tersimpan, restore, dan tidak rusak saat siswa reload.',
+                        'process_steps' => [
+                            'Runner menyinkronkan bank soal structured ke fixture runtime.',
+                            'Siswa menjawab Matching, Cloze Dropdown, Categorization, dan Table Completion lewat UI.',
+                            'Setelah reload, dropdown/input pada tiap tipe harus memuat jawaban yang sama dan row answer backend tetap berupa object-map.',
+                        ],
+                        'evidence' => [
+                            'tests/e2e/new-question-types.spec.js',
+                            'tests/e2e/helpers/frontend-browser.js',
+                            'src/frontend/app/questions/renderer.js',
+                        ],
+                        'runner_commands' => ['Playwright New Types Runtime Restore'],
+                    ]),
                 ],
             ],
             'result_scoring' => [
-                'label' => 'Result & Scoring',
-                'summary' => 'Fokus pada stabilitas pass/fail, KKM, restricted result, pending essay, dan drift score antara snapshot review dengan nilai attempt tersimpan.',
+                'label' => 'Result & Export',
+                'summary' => 'Fokus pada stabilitas pass/fail, review siswa object-map, progress admin, restricted result, pending essay, dan export report print-ready.',
                 'status' => 'ready',
                 'unit_tests' => [
                     self::unit_test_checklist_item('resolveResultPassMeta menghitung pass/fail, KKM, dan passing score secara konsisten.', 'ready', [
@@ -3683,7 +6299,7 @@ final class CBT_Admin_Test_Hub_Service
                             'src/frontend/app/stages/result.js',
                             'includes/class-cbt-rest.php',
                         ],
-                        'runner_commands' => ['Vitest Result & Scoring', 'PHPUnit Result Payload'],
+                        'runner_commands' => ['Vitest Result & Export', 'PHPUnit Result Payload'],
                     ]),
                     self::unit_test_checklist_item('buildResultBreakdown menormalkan segment benar, salah, kosong, dan manual review.', 'ready', [
                         'description' => 'Renderer result sekarang punya coverage markup untuk breakdown progress sehingga segment empty dan pending manual tetap terbentuk benar dari review summary yang berbeda-beda.',
@@ -3696,7 +6312,7 @@ final class CBT_Admin_Test_Hub_Service
                             'tests/js/unit/result-stage.test.js',
                             'src/frontend/app/stages/result.js',
                         ],
-                        'runner_commands' => ['Vitest Result & Scoring'],
+                        'runner_commands' => ['Vitest Result & Export'],
                     ]),
                     self::unit_test_checklist_item('Restricted result mode tidak membocorkan score, review item, atau detail hasil.', 'ready', [
                         'description' => 'Jalur restricted sekarang dikunci di frontend result stage dan finish flow: score, review item, dan review detail tidak boleh bocor ketika show_student_result dimatikan atau result_view_mode restricted.',
@@ -3711,7 +6327,7 @@ final class CBT_Admin_Test_Hub_Service
                             'src/frontend/app/stages/result.js',
                             'src/frontend/app/exam/finish-flow.js',
                         ],
-                        'runner_commands' => ['Vitest Result & Scoring'],
+                        'runner_commands' => ['Vitest Result & Export'],
                     ]),
                     self::unit_test_checklist_item('Result payload tetap konsisten saat ada score drift antara stored attempt dan review snapshot.', 'ready', [
                         'description' => 'Finish flow sekarang punya coverage untuk drift: nilai awal dari finish_exam boleh berbeda, tetapi payload final yang dipakai UI harus mengikuti snapshot review terbaru dari endpoint result.',
@@ -3724,7 +6340,7 @@ final class CBT_Admin_Test_Hub_Service
                             'tests/js/unit/finish-flow.test.js',
                             'src/frontend/app/exam/finish-flow.js',
                         ],
-                        'runner_commands' => ['Vitest Result & Scoring'],
+                        'runner_commands' => ['Vitest Result & Export'],
                     ]),
                     self::unit_test_checklist_item('Submission summary tetap akurat untuk total, answered, unanswered, dan pending manual.', 'ready', [
                         'description' => 'Helper backend summary sekarang punya coverage untuk menghitung total_questions, answered_questions, dan pending_manual_questions baik dari review summary lengkap maupun dari hitungan turunan saat answered_questions tidak tersedia.',
@@ -3739,6 +6355,59 @@ final class CBT_Admin_Test_Hub_Service
                         ],
                         'runner_commands' => ['PHPUnit Result Payload'],
                     ]),
+                    self::unit_test_checklist_item('Review payload object-map memuat rows Matching, Cloze, Categorization, dan Table Completion.', 'ready', [
+                        'description' => 'Result payload backend sekarang punya coverage untuk empat tipe object-map agar submitted/correct text, status wrong, dan skor parsial tidak hilang di review siswa.',
+                        'process_steps' => [
+                            'PHPUnit memanggil build_result_payload() dengan fixture matching, cloze dropdown, categorization, dan table completion.',
+                            'Assertion memeriksa review_items berisi row detail per item/cell, label submitted/correct, dan skor parsial.',
+                            'Snapshot submission context tetap dipakai sebagai sumber kunci server-side tanpa mengubah payload delivery siswa.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/RestQuestionSubmissionContextSnapshotTest.php',
+                            'includes/class-cbt-rest.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Result & Export'],
+                    ]),
+                    self::unit_test_checklist_item('Review renderer menampilkan semua 11 tipe soal dan meng-escape nilai Table Completion.', 'ready', [
+                        'description' => 'Frontend review sekarang punya coverage minimal untuk MC, MA, TF, TF Matrix, Short Answer, Essay, Ordering, Matching, Cloze Dropdown, Categorization, dan Table Completion, termasuk alias status incorrect sebagai salah.',
+                        'process_steps' => [
+                            'Vitest merender review_items semua tipe utama.',
+                            'Object-map rows diverifikasi menampilkan jawaban siswa, kunci, dan status match/mismatch.',
+                            'Status incorrect diverifikasi tetap tampil sebagai label Salah dengan class is-wrong.',
+                            'Nilai Table Completion yang menyerupai script harus tampil sebagai teks escaped.',
+                        ],
+                        'evidence' => [
+                            'tests/js/unit/review-stage.test.js',
+                            'src/frontend/app/stages/review.js',
+                        ],
+                        'runner_commands' => ['Vitest Result Review'],
+                    ]),
+                    self::unit_test_checklist_item('Progress admin mempertahankan preview object-map dan skor parsial.', 'ready', [
+                        'description' => 'Admin Results Helper sekarang punya coverage khusus agar jawaban object-map kosong dianggap unanswered, skor parsial tetap terlihat sebagai wrong, dan label opsi dipakai saat tersedia.',
+                        'process_steps' => [
+                            'PHPUnit membangun progress item untuk matching, categorization, dan table completion.',
+                            'Assertion memeriksa status, score_awarded, serta answer_preview yang dipakai di tabel progress admin.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/AdminResultsHelperObjectMapProgressTest.php',
+                            'admin/class-cbt-admin-results-helper.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Result & Export'],
+                    ]),
+                    self::unit_test_checklist_item('Report export print-ready memakai score final atau fallback SUM(score_awarded) dengan aman.', 'ready', [
+                        'description' => 'Service report exam sekarang punya coverage untuk nilai completed, nilai in-progress dari akumulasi score_awarded, peserta absen, filter kelas, dan peserta hadir yang tidak ada di target list.',
+                        'process_steps' => [
+                            'PHPUnit memanggil get_exam_report_rows() dengan fake query report.',
+                            'Completed attempt harus memakai attempt.score, in-progress memakai answer_score_awarded/exam_total_points, dan peserta tanpa attempt tampil Belum ujian.',
+                            'Siswa yang punya attempt tetapi tidak ada di daftar target tetap dimasukkan sebagai hadir agar export tidak kehilangan data.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/AdminReportExamRowsTest.php',
+                            'admin/class-cbt-admin-report-exam-service.php',
+                            'admin/views/report-exam/print.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Result & Export'],
+                    ]),
                     self::unit_test_checklist_item('buildResultBreakdown() menghasilkan segment empty saat semua count bernilai nol.', 'ready', [
                         'description' => 'Jalur empty segment pada result stage sekarang punya assertion eksplisit, jadi result tanpa jawaban atau tanpa review summary tidak runtuh menjadi progress bar kosong tanpa label.',
                         'process_steps' => [
@@ -3750,7 +6419,7 @@ final class CBT_Admin_Test_Hub_Service
                             'tests/js/unit/result-stage.test.js',
                             'src/frontend/app/stages/result.js',
                         ],
-                        'runner_commands' => ['Vitest Result & Scoring'],
+                        'runner_commands' => ['Vitest Result & Export'],
                     ]),
                     self::unit_test_checklist_item('Restricted result mengosongkan score, review_items, dan review_summary saat mode hasil dibatasi.', 'ready', [
                         'description' => 'Finish flow sekarang menormalkan payload restricted sebelum result stage dipasang ke state, sehingga score, review_items, dan review_summary benar-benar kosong dan tidak cuma disembunyikan di UI.',
@@ -3763,7 +6432,7 @@ final class CBT_Admin_Test_Hub_Service
                             'tests/js/unit/finish-flow.test.js',
                             'src/frontend/app/exam/finish-flow.js',
                         ],
-                        'runner_commands' => ['Vitest Result & Scoring'],
+                        'runner_commands' => ['Vitest Result & Export'],
                     ]),
                     self::unit_test_checklist_item('syncCompletedExamIntoList() menghormati show_student_result = 0 dan tidak membocorkan nilai ke daftar exam.', 'ready', [
                         'description' => 'Sinkronisasi daftar exam setelah finish sekarang punya coverage restricted khusus: latest_attempt_score, latest_attempt_pass_label, dan result tone tidak boleh ikut terisi saat exam menyembunyikan hasil siswa.',
@@ -3776,7 +6445,7 @@ final class CBT_Admin_Test_Hub_Service
                             'tests/js/unit/finish-flow.test.js',
                             'src/frontend/app/exam/finish-flow.js',
                         ],
-                        'runner_commands' => ['Vitest Result & Scoring'],
+                        'runner_commands' => ['Vitest Result & Export'],
                     ]),
                     self::unit_test_checklist_item('[Integration] Drift antara stored attempt dan recalculated review tetap menghasilkan payload final yang konsisten.', 'ready', [
                         'description' => 'Walau levelnya lintas endpoint, coverage drift sekarang sudah menembak jalur finish -> result sungguhan di finish flow manager dengan dua payload berbeda, sehingga payload final yang sampai ke state result dan exam list tetap konsisten.',
@@ -3789,7 +6458,7 @@ final class CBT_Admin_Test_Hub_Service
                             'tests/js/unit/finish-flow.test.js',
                             'src/frontend/app/exam/finish-flow.js',
                         ],
-                        'runner_commands' => ['Vitest Result & Scoring'],
+                        'runner_commands' => ['Vitest Result & Export'],
                     ]),
                     self::unit_test_checklist_item('Pending essay tidak memberi label lulus atau gagal final yang salah sebelum koreksi selesai.', 'ready', [
                         'description' => 'Result stage sekarang punya coverage untuk essay pending: UI harus menampilkan kartu menunggu koreksi dan menandai hasil sebagai sementara, bukan memberi kesan final sekalipun pass label dasar masih ada di payload.',
@@ -3802,7 +6471,7 @@ final class CBT_Admin_Test_Hub_Service
                             'tests/js/unit/result-stage.test.js',
                             'src/frontend/app/stages/result.js',
                         ],
-                        'runner_commands' => ['Vitest Result & Scoring'],
+                        'runner_commands' => ['Vitest Result & Export'],
                     ]),
                 ],
                 'smoke_tests' => [
@@ -3888,7 +6557,7 @@ final class CBT_Admin_Test_Hub_Service
             ],
             'import_preview' => [
                 'label' => 'Import & Preview',
-                'summary' => 'Fokus ke parser DOCX, field pembahasan, gambar, tabel, normalisasi opsi, dan parity tampilan preview admin terhadap frontend.',
+                'summary' => 'Fokus ke parser DOCX, field pembahasan, gambar, tabel, template dinamis, structured question types, dan parity tampilan preview admin terhadap frontend.',
                 'status' => 'ready',
                 'unit_tests' => [
                     self::unit_test_checklist_item('Parser DOCX dan type mapping menerima format soal yang diizinkan secara konsisten.', 'ready', [
@@ -4052,6 +6721,33 @@ final class CBT_Admin_Test_Hub_Service
                             'admin/class-cbt-admin-questions-import-helper.php',
                         ],
                         'runner_commands' => ['PHPUnit Import & Preview'],
+                    ]),
+                    self::unit_test_checklist_item('Form manual compact punya kontrol jumlah, tab tipe soal, dan server-side count guard yang selaras.', 'ready', [
+                        'description' => 'Safety net ringan ini membaca source form manual dan backend reader agar kontrol Jumlah + Expand tidak drift dari batas tipe soal yang sekarang dipakai plugin.',
+                        'process_steps' => [
+                            'PHPUnit memeriksa semua 11 tab tipe soal manual tetap dirender sebagai tab input.',
+                            'Kontrol count MC/MA, TF Matrix, Short Answer, Ordering, Matching, Cloze, Categorization, dan Table Completion diverifikasi punya batas min/max yang benar.',
+                            'JS submit dan backend reader harus sama-sama memakai count aktif sehingga baris tersembunyi tidak ikut disimpan.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/AdminQuestionManualCompactAuthoringTest.php',
+                            'admin/views/questions/page.php',
+                            'admin/class-cbt-admin-questions-service.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Manual Compact Authoring'],
+                    ]),
+                    self::unit_test_checklist_item('Download template hanya membawa parameter struktur untuk tipe import yang sedang aktif.', 'ready', [
+                        'description' => 'Kontrol template dinamis sekarang punya guard source agar parameter dari tab import lain tidak ikut masuk ke URL download saat kontrolnya tersembunyi.',
+                        'process_steps' => [
+                            'PHPUnit membaca source form import dan memastikan templateParams selalu dimulai dari question_count.',
+                            'Kontrol dinamis diverifikasi disembunyikan serta disabled ketika tidak relevan dengan tipe import aktif.',
+                            'Parameter tambahan seperti option_count, pair_count, atau table_rows baru ditambahkan setelah guard inactive return early.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/AdminQuestionManualCompactAuthoringTest.php',
+                            'admin/views/questions/page.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Manual Compact Authoring'],
                     ]),
                     self::unit_test_checklist_item('Short Answer tetap positional: placeholder dan key dijaga ketat, tetapi jawaban antar input boleh sama.', 'ready', [
                         'description' => 'Hardening Short Answer sekarang eksplisit mempertahankan model positional: key placeholder wajib cocok, tetapi dua input berbeda tetap boleh punya jawaban valid yang sama setelah normalisasi.',
@@ -4337,11 +7033,50 @@ final class CBT_Admin_Test_Hub_Service
                         ],
                         'runner_commands' => ['Playwright Authoring Equation TFM'],
                     ]),
+                    self::unit_test_checklist_item('Manual authoring structured types menyimpan dan reopen compact form dengan jumlah aktif benar.', 'ready', [
+                        'description' => 'Flow ini mengunci form manual untuk Matching, Cloze Dropdown, Categorization, dan Table Completion agar jumlah aktif/compact form tidak menyembunyikan data tersimpan.',
+                        'process_steps' => [
+                            'Admin membuat empat tipe structured baru dari form manual.',
+                            'Setiap soal dibuka ulang dari edit page.',
+                            'Field jumlah aktif dan nilai yang tersimpan harus sesuai data yang dibuat.',
+                        ],
+                        'evidence' => [
+                            'tests/e2e/new-question-types.spec.js',
+                            'admin/views/questions/page.php',
+                        ],
+                        'runner_commands' => ['Playwright New Types Manual Authoring'],
+                    ]),
+                    self::unit_test_checklist_item('DOCX import structured types menerima Matching, Cloze, Categorization, dan Table Completion.', 'ready', [
+                        'description' => 'Flow ini memastikan parser DOCX menerima format structured question baru dan menyimpan detailnya ke bank soal tanpa fallback ke tipe lama.',
+                        'process_steps' => [
+                            'Admin mengunggah DOCX yang berisi empat tipe structured baru.',
+                            'Import preview harus menampilkan semua marker soal.',
+                            'Bank soal hasil import harus punya question_type yang benar untuk tiap marker.',
+                        ],
+                        'evidence' => [
+                            'tests/e2e/new-question-types.spec.js',
+                            'tests/php/unit/QuestionsImportPreviewTest.php',
+                        ],
+                        'runner_commands' => ['Playwright New Types DOCX Import'],
+                    ]),
+                    self::unit_test_checklist_item('Template import structured types menampilkan kontrol jumlah sesuai parameter aktif.', 'ready', [
+                        'description' => 'Flow ini memastikan download template untuk Matching, Cloze Dropdown, Categorization, dan Table Completion membawa query parameter struktur yang dipilih admin.',
+                        'process_steps' => [
+                            'Admin membuka tab import tiap tipe structured.',
+                            'Kontrol jumlah/ukuran struktur diubah dari default.',
+                            'URL download template harus memuat parameter aktif seperti pair_count, dropdown_count, category_count, table_rows, dan table_cols.',
+                        ],
+                        'evidence' => [
+                            'tests/e2e/new-question-types.spec.js',
+                            'admin/views/questions/page.php',
+                        ],
+                        'runner_commands' => ['Playwright New Types Template Controls'],
+                    ]),
                 ],
             ],
             'security_log_observability' => [
                 'label' => 'Security Log & Observability',
-                'summary' => 'Area untuk memastikan event security tercatat rapi, severity tetap benar, must-watch aggregation stabil, dan context insiden mudah ditelusuri.',
+                'summary' => 'Area untuk memastikan event security tercatat rapi, severity tetap benar, live Redis/fallback MySQL ingest aman, live roster aktif, native bridge terhubung, must-watch aggregation stabil, dan context insiden mudah ditelusuri.',
                 'status' => 'ready',
                 'unit_tests' => [
                     self::unit_test_checklist_item('Security event recording menyimpan event yang relevan ke attempt yang tepat.', 'ready', [
@@ -4433,6 +7168,19 @@ final class CBT_Admin_Test_Hub_Service
                             'tests/js/unit/native-bridge.test.js',
                             'src/frontend/app/core/native-bridge.js',
                             'src/frontend/app/runtime.js',
+                        ],
+                        'runner_commands' => ['Vitest Native Bridge'],
+                    ]),
+                    self::unit_test_checklist_item('Native bridge menolak persisted token malformed sebelum snapshot dibuka ke app shell.', 'ready', [
+                        'description' => 'Native bridge sekarang menormalisasi token seperti auth session: token persist non-string, kosong, atau terlalu panjang tidak boleh berubah menjadi string palsu di snapshot native.',
+                        'process_steps' => [
+                            'Vitest menyiapkan state exam aktif tanpa token state dan persisted auth dengan token object.',
+                            'getSecuritySnapshot() dipanggil lewat CBTNativeBridge seperti app native asli.',
+                            'Snapshot harus ok=0, token kosong, dan endpoint nativeSecurityEvent tidak dibuka.',
+                        ],
+                        'evidence' => [
+                            'tests/js/unit/native-bridge.test.js',
+                            'src/frontend/app/core/native-bridge.js',
                         ],
                         'runner_commands' => ['Vitest Native Bridge'],
                     ]),
@@ -4556,6 +7304,20 @@ final class CBT_Admin_Test_Hub_Service
                         ],
                         'runner_commands' => ['Playwright Security Multi Event Aggregate'],
                     ]),
+                    self::unit_test_checklist_item('Live roster menampilkan attempt aktif berdasarkan exam, kelas, dan ruang.', 'ready', [
+                        'description' => 'Flow check ini memastikan panel Live Roster tetap relevan dengan proctoring sekarang: attempt aktif muncul lengkap dengan exam, kelas, ruang, status koneksi, dan shortcut Results.',
+                        'process_steps' => [
+                            'Siswa memulai attempt pada TEST Security Fixture agar presence aktif masuk ke roster.',
+                            'Admin membuka CBT Security > Security Log dan melihat section Live Roster di atas Must Watch.',
+                            'Row siswa harus menampilkan exam, kode kelas, kode ruang, status Online, Seen, dan tombol Buka Results.',
+                        ],
+                        'evidence' => [
+                            'tests/e2e/security-log-observability.spec.js',
+                            'includes/class-cbt-live-proctoring-presence.php',
+                            'admin/views/security/page.php',
+                        ],
+                        'runner_commands' => ['Playwright Security Live Roster'],
+                    ]),
                     self::unit_test_checklist_item('Event security dari frontend tetap terbaca di panel observability setelah refresh admin.', 'ready', [
                         'description' => 'Flow check ini memverifikasi row observability tidak hilang setelah panel admin direfresh, sehingga histori frontend yang baru masuk tetap bisa ditelusuri ulang.',
                         'process_steps' => [
@@ -4622,7 +7384,7 @@ final class CBT_Admin_Test_Hub_Service
 
     public static function normalize_unit_test_tab($raw_tab): string
     {
-        $tab = sanitize_key((string) $raw_tab);
+        $tab = sanitize_key(is_scalar($raw_tab) ? (string) $raw_tab : '');
         $definitions = self::get_unit_test_tab_definitions();
 
         return isset($definitions[$tab]) ? $tab : 'recovery_persistence';
@@ -4630,7 +7392,7 @@ final class CBT_Admin_Test_Hub_Service
 
     public static function normalize_unit_test_scope($raw_scope): string
     {
-        $scope = sanitize_key((string) $raw_scope);
+        $scope = sanitize_key(is_scalar($raw_scope) ? (string) $raw_scope : '');
 
         return $scope === 'smoke_tests' ? 'smoke_tests' : 'unit_tests';
     }

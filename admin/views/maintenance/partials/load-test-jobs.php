@@ -41,7 +41,7 @@ if ($selected_job_id === '') {
         <span class="cbt-maintenance-chip cbt-maintenance-chip--<?php echo esc_attr($running_job_count > 0 ? 'running' : 'idle'); ?>">
             <?php echo esc_html(count($job_cards) . ' histori'); ?>
         </span>
-        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" onsubmit="return confirm('Hapus semua histori load test? Job aktif akan dihentikan dan workspace runtime yang tersisa akan ikut dibersihkan.');">
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" data-maintenance-async-form data-maintenance-loading-label="Membersihkan histori..." onsubmit="return confirm('Hapus semua histori load test? Job aktif akan dihentikan dan workspace runtime yang tersisa akan ikut dibersihkan.');">
             <?php wp_nonce_field('cbt_clear_load_test_jobs'); ?>
             <input type="hidden" name="action" value="cbt_clear_load_test_jobs" />
             <input type="hidden" name="cbt_maintenance_tab" value="load" />
@@ -249,7 +249,7 @@ if ($selected_job_id === '') {
             </p>
             <div class="cbt-maintenance-load-job-actions">
                 <?php if (in_array((string) ($job['status'] ?? ''), ['queued', 'running'], true)): ?>
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" data-maintenance-async-form data-maintenance-loading-label="Membatalkan job...">
                         <?php wp_nonce_field('cbt_cancel_load_test_' . (string) ($job['id'] ?? '')); ?>
                         <input type="hidden" name="action" value="cbt_cancel_load_test" />
                         <input type="hidden" name="cbt_maintenance_tab" value="load" />
@@ -279,7 +279,7 @@ if ($selected_job_id === '') {
                 <?php endforeach; ?>
 
                 <?php if (!in_array((string) ($job['status'] ?? ''), ['queued', 'running'], true)): ?>
-                    <form class="cbt-maintenance-load-job-delete" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" onsubmit="return confirm('Hapus hasil test ini? Histori dan artifact di workspace akan ikut dihapus.');">
+                    <form class="cbt-maintenance-load-job-delete" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" data-maintenance-async-form data-maintenance-loading-label="Menghapus hasil..." onsubmit="return confirm('Hapus hasil test ini? Histori dan artifact di workspace akan ikut dihapus.');">
                         <?php wp_nonce_field('cbt_delete_load_test_job_' . (string) ($job['id'] ?? '')); ?>
                         <input type="hidden" name="action" value="cbt_delete_load_test_job" />
                         <input type="hidden" name="cbt_maintenance_tab" value="load" />

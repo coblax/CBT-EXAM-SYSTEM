@@ -29,7 +29,9 @@ function createFixture(overrides = {}) {
         flushAttemptUiState: [],
         flushPendingAnswerBatch: [],
         persistCurrentQuestionCacheLocally: 0,
+        recordActionTrail: [],
         runSessionHeartbeat: 0,
+        setConnectionStatus: [],
         triggerPendingSyncLifecycleRetry: []
     };
     var state = Object.assign({
@@ -64,14 +66,25 @@ function createFixture(overrides = {}) {
         persistCurrentQuestionCacheLocally: function () {
             calls.persistCurrentQuestionCacheLocally += 1;
         },
-        recordActionTrail: function () {},
+        recordActionTrail: function (kind, summary, meta) {
+            calls.recordActionTrail.push({
+                kind: kind || '',
+                meta: meta || null,
+                summary: summary || ''
+            });
+        },
         render: function () {},
         runSessionHeartbeat: function () {
             calls.runSessionHeartbeat += 1;
         },
         scheduleNavigationGridLayout: function () {},
         setCompactViewportState: function () {},
-        setConnectionStatus: function () {},
+        setConnectionStatus: function (status, options) {
+            calls.setConnectionStatus.push({
+                options: options || null,
+                status: status || ''
+            });
+        },
         triggerPendingSyncLifecycleRetry: function (reason, options) {
             calls.triggerPendingSyncLifecycleRetry.push({
                 options: options || null,
@@ -137,6 +150,45 @@ describe('createLifecycleManager', function () {
         expect(fixture.calls.flushAttemptUiState.pop()).toEqual({
             force: true,
             keepalive: true
+        });
+    });
+
+    it('deduplicates visible, focus, and online reconnect retries within one browser burst', function () {
+        var fixture = createFixture();
+
+        fixture.documentRef.visibilityState = 'visible';
+        fixture.documentRef.dispatchEvent('visibilitychange', {});
+        fixture.windowRef.dispatchEvent('focus', {});
+        fixture.windowRef.dispatchEvent('online', {});
+
+        expect(fixture.calls.triggerPendingSyncLifecycleRetry).toEqual([
+            {
+                options: {
+                    delayMs: 180
+                },
+                reason: 'visible'
+            }
+        ]);
+        expect(fixture.calls.runSessionHeartbeat).toBe(1);
+        expect(fixture.calls.setConnectionStatus).toEqual([
+            {
+                options: {
+                    immediate: true,
+                    render: true,
+                    resetBackoff: true,
+                    triggerRetry: false
+                },
+                status: 'online'
+            }
+        ]);
+        expect(fixture.calls.recordActionTrail.map(function (entry) {
+            return entry.kind;
+        })).toEqual([
+            'reconnect:visible',
+            'reconnect:online'
+        ]);
+        expect(fixture.calls.recordActionTrail[1].meta).toMatchObject({
+            skippedRetry: true
         });
     });
 });

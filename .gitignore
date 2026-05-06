@@ -5,8 +5,11 @@ Thumbs.db
 .vscode/
 
 playwright-results/
+playwright-results.stale*/
+playwright-results.local-stale*/
 test-results/
 .playwright-browsers/
 .scannerwork/
 node_modules/
 .phpunit.cache/
+.phpunit.cache-stale*/

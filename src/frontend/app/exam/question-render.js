@@ -736,7 +736,9 @@ export function createQuestionRenderManager(deps) {
 
                     return [
                         '<tr>',
-                        '<td class="cbt-tf-matrix-statement"><span class="cbt-option-key">' + escapeHtml(index + 1) + '.</span> <span>' + safeRichHtml(item.text || '') + '</span></td>',
+                        '<td class="cbt-tf-matrix-statement"><span class="cbt-option-key">' + escapeHtml(index + 1) + '.</span> <span>' + renderExamRichHtml(item.text || '', {
+                            context: 'question'
+                        }) + '</span></td>',
                         '<td class="cbt-tf-matrix-choice">',
                         '<label>',
                         '<input type="radio" name="' + escapeHtml(rowName) + '" data-action="answer-tf-matrix" data-qid="' + escapeHtml(question.id) + '" data-key="' + escapeHtml(item.key) + '" data-value="true"' + (trueChecked ? ' checked' : '') + disabledAttr + ' />',

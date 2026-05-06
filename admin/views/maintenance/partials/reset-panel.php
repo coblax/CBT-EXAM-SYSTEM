@@ -5,7 +5,7 @@ if (!defined('ABSPATH')) {
 }
 ?>
 <?php if (is_array($reset_progress_state)): ?>
-    <section class="cbt-maintenance-card">
+    <section class="cbt-maintenance-card" <?php echo $reset_progress_is_running ? 'data-maintenance-auto-continue-url="' . esc_url($reset_progress_continue_url) . '"' : ''; ?>>
         <div class="cbt-maintenance-card-header">
             <div>
                 <h2>Progress Reset Database</h2>
@@ -40,14 +40,6 @@ if (!defined('ABSPATH')) {
             Tahap saat ini: <strong><?php echo esc_html($reset_progress_phase_label); ?></strong>.
             <?php if ($reset_progress_is_running): ?>
                 Memproses batch berikutnya secara otomatis.
-                <script>
-                    if (!window.__cbtMaintenanceAutoContinue) {
-                        window.__cbtMaintenanceAutoContinue = true;
-                        window.setTimeout(function () {
-                            window.location.href = <?php echo wp_json_encode($reset_progress_continue_url); ?>;
-                        }, 350);
-                    }
-                </script>
             <?php else: ?>
                 Reset database selesai diproses.
             <?php endif; ?>
@@ -68,7 +60,7 @@ if (!defined('ABSPATH')) {
         <strong>Peringatan:</strong> semua data tabel plugin CBT akan dikosongkan, termasuk subjects, exam ujian, Bank Soal, questions, attempts, answers, options, hasil, dan pengaturan token global.
     </div>
 
-    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" onsubmit="return confirm('Yakin reset data CBT? Aksi ini tidak bisa dibatalkan.');" style="margin-top:18px;">
+    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" data-maintenance-async-form data-maintenance-loading-label="Menyiapkan reset..." onsubmit="return confirm('Yakin reset data CBT? Aksi ini tidak bisa dibatalkan.');" style="margin-top:18px;">
         <?php wp_nonce_field('cbt_reset_database'); ?>
         <input type="hidden" name="action" value="cbt_reset_database" />
         <input type="hidden" name="cbt_maintenance_tab" value="reset" data-maintenance-tab-input />

@@ -20,6 +20,11 @@ final class QuestionsImportPreviewTest extends TestCase
         self::assertSame('true_false_matrix', \CBT_Admin_Questions_Import_Helper::map_import_question_type('True False Matrix'));
         self::assertSame('short_answer', \CBT_Admin_Questions_Import_Helper::map_import_question_type('short'));
         self::assertSame('essay', \CBT_Admin_Questions_Import_Helper::map_import_question_type('essay'));
+        self::assertSame('ordering', \CBT_Admin_Questions_Import_Helper::map_import_question_type('mengurutkan'));
+        self::assertSame('matching', \CBT_Admin_Questions_Import_Helper::map_import_question_type('menjodohkan'));
+        self::assertSame('cloze_dropdown', \CBT_Admin_Questions_Import_Helper::map_import_question_type('cloze dropdown'));
+        self::assertSame('categorization', \CBT_Admin_Questions_Import_Helper::map_import_question_type('kategori'));
+        self::assertSame('table_completion', \CBT_Admin_Questions_Import_Helper::map_import_question_type('melengkapi tabel'));
     }
 
     public function test_normalize_question_import_created_question_ids_filters_invalid_values_and_duplicates(): void

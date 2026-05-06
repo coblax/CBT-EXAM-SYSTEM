@@ -8,6 +8,7 @@ if (!defined('ABSPATH')) {
             class="wrap cbt-questions-page"
             data-cbt-questions-default-tab="<?php echo esc_attr($default_question_tab); ?>"
             data-cbt-questions-force-tab="<?php echo $question_tab_is_forced ? '1' : '0'; ?>"
+            data-cbt-questions-root
         >
             <div class="cbt-questions-shell">
                 <section class="cbt-questions-hero">
@@ -16,37 +17,39 @@ if (!defined('ABSPATH')) {
                         <h1>CBT Questions</h1>
                         <p>Kelola bank soal CBT melalui tab terpisah agar proses tambah manual, import, dan peninjauan daftar soal terasa lebih fokus dan tidak padat dalam satu halaman panjang.</p>
                     </div>
-                    <div class="cbt-questions-overview" aria-hidden="true">
+                    <div class="cbt-questions-overview" data-cbt-questions-refresh-area="overview" aria-hidden="true">
                         <span class="cbt-questions-pill"><?php echo esc_html(sprintf('Total: %d soal', $total_questions)); ?></span>
                         <span class="cbt-questions-pill"><?php echo esc_html($question_scope_label); ?></span>
                         <span class="cbt-questions-pill"><?php echo esc_html(!empty($editing_question) ? 'Mode edit aktif' : (is_array($question_import_state) ? 'Import berjalan' : 'Input siap')); ?></span>
                     </div>
                 </section>
 
-                <?php if ($notice): ?>
-                    <div class="notice notice-success is-dismissible"><p><?php echo esc_html($notice); ?></p></div>
-                <?php endif; ?>
-                <?php if ($error): ?>
-                    <?php $error_messages = array_values(array_filter(array_map('trim', explode('||', (string) $error)))); ?>
-                    <div class="notice notice-error is-dismissible">
-                        <?php if (count($error_messages) <= 1): ?>
-                            <p><?php echo esc_html($error); ?></p>
-                        <?php else: ?>
-                            <p><strong>Detail error terbaru:</strong></p>
-                            <ul style="margin:0 0 0 1.2rem; list-style:disc;">
-                                <?php foreach ($error_messages as $error_message): ?>
-                                    <li><?php echo esc_html($error_message); ?></li>
-                                <?php endforeach; ?>
-                            </ul>
-                        <?php endif; ?>
-                    </div>
-                <?php endif; ?>
-                <?php if ($lock_question_type): ?>
-                    <div class="notice notice-info"><p>
-                        Submenu aktif: <strong><?php echo esc_html((string) ($question_type_labels[$active_question_type] ?? $active_question_type)); ?></strong>.
-                        Form dan daftar soal difilter ke jenis ini.
-                    </p></div>
-                <?php endif; ?>
+                <div class="cbt-questions-notices" data-cbt-questions-refresh-area="notices">
+                    <?php if ($notice): ?>
+                        <div class="notice notice-success is-dismissible"><p><?php echo esc_html($notice); ?></p></div>
+                    <?php endif; ?>
+                    <?php if ($error): ?>
+                        <?php $error_messages = array_values(array_filter(array_map('trim', explode('||', (string) $error)))); ?>
+                        <div class="notice notice-error is-dismissible">
+                            <?php if (count($error_messages) <= 1): ?>
+                                <p><?php echo esc_html($error); ?></p>
+                            <?php else: ?>
+                                <p><strong>Detail error terbaru:</strong></p>
+                                <ul style="margin:0 0 0 1.2rem; list-style:disc;">
+                                    <?php foreach ($error_messages as $error_message): ?>
+                                        <li><?php echo esc_html($error_message); ?></li>
+                                    <?php endforeach; ?>
+                                </ul>
+                            <?php endif; ?>
+                        </div>
+                    <?php endif; ?>
+                    <?php if ($lock_question_type): ?>
+                        <div class="notice notice-info"><p>
+                            Submenu aktif: <strong><?php echo esc_html((string) ($question_type_labels[$active_question_type] ?? $active_question_type)); ?></strong>.
+                            Form dan daftar soal difilter ke jenis ini.
+                        </p></div>
+                    <?php endif; ?>
+                </div>
 
                 <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
@@ -1578,6 +1581,91 @@ if (!defined('ABSPATH')) {
                         color: #475569;
                         line-height: 1.55;
                     }
+                    .cbt-questions-local-progress {
+                        display: none;
+                        gap: 10px;
+                        padding: 14px 16px;
+                        border: 1px solid #bfdbfe;
+                        border-radius: 18px;
+                        background: linear-gradient(135deg, rgba(239, 246, 255, 0.97), rgba(240, 253, 250, 0.92));
+                        box-shadow: 0 14px 30px rgba(37, 99, 235, 0.12);
+                    }
+                    .cbt-questions-local-progress.is-active {
+                        display: grid;
+                    }
+                    .cbt-questions-local-progress.is-error {
+                        border-color: #fecaca;
+                        background: linear-gradient(135deg, rgba(254, 242, 242, 0.98), rgba(255, 247, 237, 0.94));
+                        box-shadow: 0 14px 30px rgba(239, 68, 68, 0.10);
+                    }
+                    .cbt-questions-local-progress-head {
+                        display: flex;
+                        align-items: flex-start;
+                        justify-content: space-between;
+                        gap: 14px;
+                        flex-wrap: wrap;
+                    }
+                    .cbt-questions-local-progress-title {
+                        display: grid;
+                        gap: 3px;
+                        min-width: 0;
+                    }
+                    .cbt-questions-local-progress-title strong {
+                        color: #0f172a;
+                        font-size: 14px;
+                        line-height: 1.25;
+                    }
+                    .cbt-questions-local-progress-title span,
+                    .cbt-questions-local-progress-step {
+                        color: #52637a;
+                        font-size: 13px;
+                        line-height: 1.45;
+                    }
+                    .cbt-questions-local-progress-percent {
+                        display: inline-flex;
+                        align-items: center;
+                        justify-content: center;
+                        min-width: 54px;
+                        min-height: 30px;
+                        padding: 0 10px;
+                        border: 1px solid #bfdbfe;
+                        border-radius: 999px;
+                        background: #ffffff;
+                        color: #1d4ed8;
+                        font-size: 12px;
+                        font-weight: 800;
+                        letter-spacing: 0.04em;
+                    }
+                    .cbt-questions-local-progress.is-error .cbt-questions-local-progress-percent {
+                        color: #b91c1c;
+                        border-color: #fecaca;
+                    }
+                    .cbt-questions-local-progress-track {
+                        height: 9px;
+                        overflow: hidden;
+                        border-radius: 999px;
+                        background: rgba(148, 163, 184, 0.22);
+                    }
+                    .cbt-questions-local-progress-fill {
+                        display: block;
+                        width: var(--cbt-questions-progress, 0%);
+                        height: 100%;
+                        border-radius: inherit;
+                        background: linear-gradient(90deg, #2563eb 0%, #06b6d4 54%, #10b981 100%);
+                        transition: width 0.24s ease;
+                    }
+                    .cbt-questions-local-progress.is-error .cbt-questions-local-progress-fill {
+                        background: linear-gradient(90deg, #ef4444 0%, #f97316 100%);
+                    }
+                    .cbt-questions-local-progress-step {
+                        margin: 0;
+                        font-weight: 600;
+                    }
+                    .cbt-questions-panel .button.is-loading,
+                    .cbt-questions-row-action.is-loading {
+                        pointer-events: none;
+                        opacity: 0.78;
+                    }
                     .cbt-import-batch-analysis {
                         margin: 14px 0 18px;
                         padding: 16px 18px;
@@ -2404,7 +2492,21 @@ if (!defined('ABSPATH')) {
                     <button type="button" class="cbt-questions-tab" data-cbt-questions-tab="list" role="tab" aria-selected="false">Question List</button>
                 </div>
 
-                <section class="cbt-questions-panel" data-cbt-questions-panel="form" role="tabpanel">
+                <div class="cbt-questions-local-progress" data-cbt-questions-progress role="status" aria-live="polite" aria-hidden="true">
+                    <div class="cbt-questions-local-progress-head">
+                        <div class="cbt-questions-local-progress-title">
+                            <strong data-cbt-questions-progress-label>Menunggu aksi CBT Questions...</strong>
+                            <span>Progress ini memperbarui area Questions yang terdampak saja, tanpa reload halaman global.</span>
+                        </div>
+                        <span class="cbt-questions-local-progress-percent" data-cbt-questions-progress-percent>0%</span>
+                    </div>
+                    <div class="cbt-questions-local-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-cbt-questions-progress-track>
+                        <span class="cbt-questions-local-progress-fill" data-cbt-questions-progress-fill></span>
+                    </div>
+                    <p class="cbt-questions-local-progress-step" data-cbt-questions-progress-step>Siap memproses perubahan soal.</p>
+                </div>
+
+                <section class="cbt-questions-panel" data-cbt-questions-panel="form" data-cbt-questions-refresh-area="form-panel" role="tabpanel">
                     <div class="cbt-questions-panel-header">
                         <div>
                             <h2><?php echo $editing_question ? 'Edit Question' : 'Add Question'; ?></h2>
@@ -2453,7 +2555,7 @@ if (!defined('ABSPATH')) {
                             <div class="cbt-question-inline-preview-question"><?php echo CBT_Admin_Questions_Helper::render_editor_html((string) ($editing_question['question_text'] ?? '')); ?></div>
                         </div>
                     <?php else: ?>
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" id="cbt-question-manual-form" data-cbt-questions-tab-submit="form">
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" id="cbt-question-manual-form" data-cbt-questions-tab-submit="form" data-cbt-questions-async-form data-cbt-questions-progress-profile="save" data-cbt-questions-refresh-areas="notices,overview,list-panel" data-cbt-questions-success-tab="list">
                     <?php wp_nonce_field('cbt_save_question'); ?>
                     <?php
                     $question_editor_content_style = implode('', [
@@ -3314,7 +3416,7 @@ if (!defined('ABSPATH')) {
                     <?php endif; ?>
                 </section>
 
-                <section class="cbt-questions-panel" data-cbt-questions-panel="import" role="tabpanel">
+                <section class="cbt-questions-panel" data-cbt-questions-panel="import" data-cbt-questions-refresh-area="import-panel" role="tabpanel">
                     <div class="cbt-questions-panel-header">
                         <div>
                             <h2>Import Questions</h2>
@@ -3322,6 +3424,7 @@ if (!defined('ABSPATH')) {
                         </div>
                         <span class="cbt-questions-chip">DOCX Import</span>
                     </div>
+                <div data-cbt-questions-refresh-area="import-status">
                 <?php if (is_array($question_import_state)): ?>
                     <div class="notice notice-info">
                         <p>
@@ -3332,18 +3435,21 @@ if (!defined('ABSPATH')) {
                             | Failed: <?php echo esc_html((string) $question_import_failed); ?>
                         </p>
                     </div>
-                    <div class="cbt-questions-progress">
+                    <div
+                        class="cbt-questions-progress"
+                        data-cbt-questions-import-progress
+                        data-cbt-questions-import-running="<?php echo $question_import_is_running ? '1' : '0'; ?>"
+                        data-cbt-questions-import-continue-url="<?php echo esc_url($question_import_continue_url); ?>"
+                        data-cbt-questions-progress-profile="import"
+                        data-cbt-questions-refresh-areas="notices,overview,import-status,list-panel"
+                        data-cbt-questions-success-tab="import"
+                    >
                         <div class="cbt-questions-progress-track" aria-hidden="true">
                             <div class="cbt-questions-progress-fill" style="width: <?php echo esc_attr((string) $question_import_progress_percent); ?>%;"></div>
                         </div>
                         <div class="cbt-questions-progress-meta">
                             <?php if ($question_import_is_running): ?>
                                 Memproses batch soal berikutnya...
-                                <script>
-                                    window.setTimeout(function () {
-                                        window.location.href = <?php echo wp_json_encode($question_import_continue_url); ?>;
-                                    }, 350);
-                                </script>
                             <?php else: ?>
                                 <span style="color:#0a7a2f; font-weight:600;">Import ke Bank Soal selesai diproses.</span>
                             <?php endif; ?>
@@ -3530,12 +3636,20 @@ if (!defined('ABSPATH')) {
                                         class="button button-secondary"
                                         href="<?php echo esc_url($question_import_batch_back_to_all_url); ?>"
                                         data-cbt-questions-tab-link="import"
+                                        data-cbt-questions-async-link
+                                        data-cbt-questions-progress-profile="list"
+                                        data-cbt-questions-refresh-areas="notices,overview,import-status,list-panel"
+                                        data-cbt-questions-success-tab="import"
                                     >
                                         TUTUP REPORT INI
                                     </a>
                                     <a
                                         class="button button-secondary cbt-admin-btn--danger"
                                         href="<?php echo esc_url($question_import_batch_delete_all_url); ?>"
+                                        data-cbt-questions-async-link
+                                        data-cbt-questions-progress-profile="delete"
+                                        data-cbt-questions-refresh-areas="notices,overview,import-status,list-panel"
+                                        data-cbt-questions-success-tab="list"
                                         onclick="return confirm('Hapus semua soal hasil import batch ini?');"
                                     >
                                         HAPUS SEMUA HASIL IMPORT INI
@@ -3547,6 +3661,7 @@ if (!defined('ABSPATH')) {
                         </div>
                     <?php endif; ?>
                 <?php endif; ?>
+                </div>
                 <p class="description"><strong>Rekomendasi:</strong> gunakan file <code>.docx</code> sesuai jenis soal yang dipilih.</p>
                 <?php if ($lock_question_type): ?>
                     <p><strong>Jenis Soal:</strong> <?php echo esc_html((string) ($question_type_labels[$import_active_type] ?? $import_active_type)); ?></p>
@@ -3690,7 +3805,7 @@ if (!defined('ABSPATH')) {
                         Download Template Word MC (.docx)
                     </a>
                 </p>
-                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" enctype="multipart/form-data" data-cbt-questions-tab-submit="import">
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" enctype="multipart/form-data" data-cbt-questions-tab-submit="import" data-cbt-questions-async-form data-cbt-questions-progress-profile="import" data-cbt-questions-refresh-areas="notices,overview,import-status,list-panel" data-cbt-questions-success-tab="import">
                     <?php wp_nonce_field('cbt_import_questions'); ?>
                     <input type="hidden" name="action" value="cbt_import_questions" />
                     <input type="hidden" name="return_page" value="<?php echo esc_attr($current_page_slug); ?>" />
@@ -3738,7 +3853,7 @@ if (!defined('ABSPATH')) {
                 </section>
 
                 <section class="cbt-questions-panel" data-cbt-questions-panel="list" role="tabpanel">
-                    <div data-cbt-questions-list-shell>
+                    <div data-cbt-questions-list-shell data-cbt-questions-refresh-area="list-panel">
                     <div class="cbt-questions-panel-header">
                         <div>
                             <h2>Question List</h2>
@@ -3767,6 +3882,10 @@ if (!defined('ABSPATH')) {
                                     class="button button-secondary"
                                     href="<?php echo esc_url($question_import_batch_back_to_all_url); ?>"
                                     data-cbt-questions-tab-link="list"
+                                    data-cbt-questions-async-link
+                                    data-cbt-questions-progress-profile="list"
+                                    data-cbt-questions-refresh-areas="notices,overview,list-panel"
+                                    data-cbt-questions-success-tab="list"
                                 >
                                     Kembali ke Semua Soal
                                 </a>
@@ -3774,6 +3893,10 @@ if (!defined('ABSPATH')) {
                                     <a
                                         class="button button-secondary cbt-admin-btn--danger"
                                         href="<?php echo esc_url($question_import_batch_delete_all_url); ?>"
+                                        data-cbt-questions-async-link
+                                        data-cbt-questions-progress-profile="delete"
+                                        data-cbt-questions-refresh-areas="notices,overview,import-status,list-panel"
+                                        data-cbt-questions-success-tab="list"
                                         onclick="return confirm('Hapus semua soal hasil import batch ini?');"
                                     >
                                         Delete All Batch
@@ -3807,18 +3930,21 @@ if (!defined('ABSPATH')) {
                         | Failed: <?php echo esc_html((string) $question_delete_failed); ?>
                     </p>
                 </div>
-                <div class="cbt-questions-progress">
+                <div
+                    class="cbt-questions-progress"
+                    data-cbt-questions-delete-progress
+                    data-cbt-questions-delete-running="<?php echo $question_delete_is_running ? '1' : '0'; ?>"
+                    data-cbt-questions-delete-continue-url="<?php echo esc_url($question_delete_continue_url); ?>"
+                    data-cbt-questions-progress-profile="delete"
+                    data-cbt-questions-refresh-areas="notices,overview,list-panel"
+                    data-cbt-questions-success-tab="list"
+                >
                     <div class="cbt-questions-progress-track" aria-hidden="true">
                         <div class="cbt-questions-progress-fill" style="width: <?php echo esc_attr((string) $question_delete_progress_percent); ?>%;"></div>
                     </div>
-                    <div class="cbt-questions-progress-meta">
-                        <?php if ($question_delete_is_running): ?>
-                            Memproses batch hapus soal berikutnya...
-                            <script>
-                                window.setTimeout(function () {
-                                    window.location.href = <?php echo wp_json_encode($question_delete_continue_url); ?>;
-                                }, 350);
-                            </script>
+                        <div class="cbt-questions-progress-meta">
+                            <?php if ($question_delete_is_running): ?>
+                                Memproses batch hapus soal berikutnya...
                         <?php else: ?>
                             <span style="color:#0a7a2f; font-weight:600;">Proses hapus soal selesai diproses.</span>
                         <?php endif; ?>
@@ -3827,7 +3953,7 @@ if (!defined('ABSPATH')) {
             <?php endif; ?>
                     <?php if (!$question_import_batch_active): ?>
                     <div class="cbt-questions-list-toolbar">
-                        <form method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>" class="cbt-questions-filter-form" data-cbt-questions-tab-submit="list">
+                        <form method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>" class="cbt-questions-filter-form" data-cbt-questions-tab-submit="list" data-cbt-questions-progress-profile="list">
                             <input type="hidden" name="page" value="<?php echo esc_attr($current_page_slug); ?>" />
                             <label for="cbt-filter-question-type">Type</label>
                             <?php if ($lock_question_type): ?>
@@ -3874,7 +4000,7 @@ if (!defined('ABSPATH')) {
                                 <?php endforeach; ?>
                             </select>
 
-                            <a class="button button-secondary" href="<?php echo esc_url($question_reset_url); ?>" data-cbt-questions-tab-link="list" data-cbt-questions-list-reset="1">Reset</a>
+                            <a class="button button-secondary" href="<?php echo esc_url($question_reset_url); ?>" data-cbt-questions-tab-link="list" data-cbt-questions-list-reset="1" data-cbt-questions-progress-profile="list">Reset</a>
                         </form>
                     </div>
                     <div class="cbt-questions-filter-summary">
@@ -3884,7 +4010,7 @@ if (!defined('ABSPATH')) {
                     </div>
                     <?php endif; ?>
 
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" data-cbt-questions-tab-submit="list" onsubmit="return confirm('Hapus semua soal yang dipilih?');">
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" data-cbt-questions-tab-submit="list" data-cbt-questions-async-form data-cbt-questions-progress-profile="delete" data-cbt-questions-refresh-areas="notices,overview,list-panel" data-cbt-questions-success-tab="list" onsubmit="return confirm('Hapus semua soal yang dipilih?');">
                 <?php wp_nonce_field('cbt_bulk_delete_questions'); ?>
                 <input type="hidden" name="action" value="cbt_bulk_delete_questions" />
                 <input type="hidden" name="return_page" value="<?php echo esc_attr($current_page_slug); ?>" />
@@ -4026,7 +4152,7 @@ if (!defined('ABSPATH')) {
                                         <?php if (!$question_import_batch_active): ?>
                                         <a class="cbt-admin-action cbt-admin-action--edit cbt-questions-row-action cbt-questions-row-action--edit" href="<?php echo esc_url($question_edit_url); ?>"><?php echo esc_html($question_edit_label); ?></a>
                                         <?php endif; ?>
-                                        <a class="cbt-admin-action cbt-admin-action--delete cbt-questions-row-action cbt-questions-row-action--delete" href="<?php echo esc_url(wp_nonce_url(add_query_arg($question_delete_args, admin_url('admin-post.php')), 'cbt_delete_question_' . (int) $question['id'])); ?>" onclick="return confirm('Delete this question?');">Delete</a>
+                                        <a class="cbt-admin-action cbt-admin-action--delete cbt-questions-row-action cbt-questions-row-action--delete" href="<?php echo esc_url(wp_nonce_url(add_query_arg($question_delete_args, admin_url('admin-post.php')), 'cbt_delete_question_' . (int) $question['id'])); ?>" data-cbt-questions-async-link data-cbt-questions-progress-profile="delete" data-cbt-questions-refresh-areas="notices,overview,list-panel" data-cbt-questions-success-tab="list" onclick="return confirm('Delete this question?');">Delete</a>
                                     </div>
                                 </td>
                             </tr>
@@ -4189,6 +4315,245 @@ if (!defined('ABSPATH')) {
                 const importBankTarget = document.getElementById('cbt-import-bank-target');
                 const importBankTargetName = document.getElementById('cbt-import-bank-target-name');
                 const importBankTargetLabels = importBankTarget ? JSON.parse(String(importBankTarget.getAttribute('data-bank-labels') || '{}')) : {};
+                const supportsQuestionPartialRefresh = !!(window.fetch && window.DOMParser && window.FormData && window.URL);
+                let questionProgressTimer = 0;
+                let questionProgressValue = 0;
+                let questionContinuationTimer = 0;
+                let questionContinuationInFlight = false;
+
+                function getQuestionProgressProfile(profile) {
+                    const profiles = {
+                        save: {
+                            start: 'Menyimpan soal...',
+                            detail: 'Validasi tipe soal, simpan detail, lalu segarkan ringkasan dan daftar soal.',
+                            done: 'Soal sudah disimpan.',
+                            doneDetail: 'Ringkasan dan Question List sudah diperbarui secara lokal.',
+                        },
+                        import: {
+                            start: 'Memproses import soal...',
+                            detail: 'Batch DOCX diproses bertahap, status import dan list akan disegarkan lokal.',
+                            done: 'Import soal diperbarui.',
+                            doneDetail: 'Status import, ringkasan, dan hasil Question List sudah dimuat ulang.',
+                        },
+                        delete: {
+                            start: 'Menghapus soal...',
+                            detail: 'Permintaan hapus diproses lalu Question List disegarkan tanpa reload halaman.',
+                            done: 'Question List sudah diperbarui.',
+                            doneDetail: 'Soal terhapus dan daftar sekarang memakai data terbaru.',
+                        },
+                        list: {
+                            start: 'Memuat Question List...',
+                            detail: 'Filter, preview, referensi, atau pagination sedang disegarkan di area daftar.',
+                            done: 'Question List sudah diperbarui.',
+                            doneDetail: 'Area daftar sekarang memuat hasil terbaru.',
+                        },
+                    };
+
+                    return profiles[profile] || profiles.list;
+                }
+
+                function getQuestionProgressElements() {
+                    const progress = page ? page.querySelector('[data-cbt-questions-progress]') : null;
+                    if (!progress) {
+                        return null;
+                    }
+
+                    return {
+                        root: progress,
+                        label: progress.querySelector('[data-cbt-questions-progress-label]'),
+                        percent: progress.querySelector('[data-cbt-questions-progress-percent]'),
+                        track: progress.querySelector('[data-cbt-questions-progress-track]'),
+                        fill: progress.querySelector('[data-cbt-questions-progress-fill]'),
+                        step: progress.querySelector('[data-cbt-questions-progress-step]'),
+                    };
+                }
+
+                function clampQuestionProgress(value) {
+                    return Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+                }
+
+                function setQuestionProgress(value, label, step, tone) {
+                    const elements = getQuestionProgressElements();
+                    if (!elements) {
+                        return;
+                    }
+
+                    questionProgressValue = clampQuestionProgress(value);
+                    elements.root.classList.add('is-active');
+                    elements.root.classList.toggle('is-error', tone === 'error');
+                    elements.root.setAttribute('aria-hidden', 'false');
+                    elements.root.style.setProperty('--cbt-questions-progress', questionProgressValue + '%');
+                    if (elements.percent) {
+                        elements.percent.textContent = questionProgressValue + '%';
+                    }
+                    if (elements.track) {
+                        elements.track.setAttribute('aria-valuenow', String(questionProgressValue));
+                    }
+                    if (elements.label && label) {
+                        elements.label.textContent = label;
+                    }
+                    if (elements.step && step) {
+                        elements.step.textContent = step;
+                    }
+                }
+
+                function startQuestionProgress(profile) {
+                    const config = getQuestionProgressProfile(profile);
+                    window.clearInterval(questionProgressTimer);
+                    setQuestionProgress(8, config.start, config.detail, 'active');
+                    questionProgressTimer = window.setInterval(function () {
+                        if (questionProgressValue >= 88) {
+                            window.clearInterval(questionProgressTimer);
+                            return;
+                        }
+                        setQuestionProgress(questionProgressValue + Math.max(2, Math.round((88 - questionProgressValue) / 7)), config.start, config.detail, 'active');
+                    }, 360);
+                }
+
+                function completeQuestionProgress(label, step, tone) {
+                    window.clearInterval(questionProgressTimer);
+                    setQuestionProgress(tone === 'error' ? Math.max(questionProgressValue, 72) : 100, label, step, tone);
+                    if (tone === 'error') {
+                        return;
+                    }
+
+                    window.setTimeout(function () {
+                        const elements = getQuestionProgressElements();
+                        if (!elements) {
+                            return;
+                        }
+                        elements.root.classList.remove('is-active', 'is-error');
+                        elements.root.setAttribute('aria-hidden', 'true');
+                    }, 1800);
+                }
+
+                function extractQuestionResponseError(html, status) {
+                    const fallback = 'HTTP ' + String(status || 0);
+                    if (!html) {
+                        return fallback;
+                    }
+
+                    try {
+                        const parsed = new DOMParser().parseFromString(String(html), 'text/html');
+                        const title = parsed.querySelector('title');
+                        const bodyText = String((parsed.body && parsed.body.textContent) || '').replace(/\s+/g, ' ').trim();
+                        const titleText = title ? String(title.textContent || '').replace(/\s+/g, ' ').trim() : '';
+                        const message = bodyText || titleText || fallback;
+                        return fallback + ': ' + message.slice(0, 220);
+                    } catch (error) {
+                        return fallback;
+                    }
+                }
+
+                async function fetchQuestionHtml(nextUrl, options) {
+                    const fetchOptions = Object.assign({
+                        credentials: 'same-origin',
+                        cache: 'no-store',
+                        redirect: 'follow',
+                        headers: {},
+                    }, options || {});
+                    fetchOptions.headers = Object.assign({
+                        Accept: 'text/html, */*',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    }, fetchOptions.headers || {});
+
+                    const response = await window.fetch(nextUrl.toString(), fetchOptions);
+                    const html = await response.text();
+                    if (!response.ok) {
+                        throw new Error(extractQuestionResponseError(html, response.status));
+                    }
+
+                    return {
+                        html,
+                        url: response.url || nextUrl.toString(),
+                    };
+                }
+
+                function updateQuestionHistory(nextUrl) {
+                    if (!window.history || typeof window.history.replaceState !== 'function') {
+                        return;
+                    }
+                    const parsedUrl = new URL(nextUrl.toString(), window.location.href);
+                    if (parsedUrl.origin !== window.location.origin) {
+                        return;
+                    }
+                    window.history.replaceState({}, '', parsedUrl.toString());
+                }
+
+                function getQuestionAreaList(source, fallbackAreas) {
+                    const raw = source ? String(source.getAttribute('data-cbt-questions-refresh-areas') || '') : '';
+                    const parsed = raw.split(',').map((area) => area.trim()).filter(Boolean);
+                    return parsed.length > 0 ? parsed : fallbackAreas;
+                }
+
+                function replaceQuestionRefreshAreas(html, areas) {
+                    const parsed = new DOMParser().parseFromString(html, 'text/html');
+                    const replaced = [];
+                    (areas || []).forEach((area) => {
+                        const currentArea = page ? page.querySelector('[data-cbt-questions-refresh-area="' + area + '"]') : null;
+                        const nextArea = parsed.querySelector('[data-cbt-questions-refresh-area="' + area + '"]');
+                        if (!currentArea || !nextArea) {
+                            return;
+                        }
+                        currentArea.replaceWith(nextArea);
+                        replaced.push(area);
+                    });
+                    return replaced;
+                }
+
+                function getQuestionTargetTab(source, replacedAreas) {
+                    const explicit = source ? String(source.getAttribute('data-cbt-questions-success-tab') || '') : '';
+                    if (explicit !== '') {
+                        return explicit;
+                    }
+                    if ((replacedAreas || []).includes('import-status')) {
+                        return 'import';
+                    }
+                    return 'list';
+                }
+
+                function setQuestionElementLoading(element, isLoading) {
+                    if (!element) {
+                        return;
+                    }
+                    element.classList.toggle('is-loading', isLoading);
+                    element.setAttribute('aria-busy', isLoading ? 'true' : 'false');
+                    if ('disabled' in element) {
+                        element.disabled = isLoading;
+                    }
+                }
+
+                function showQuestionLocalRefreshError(message) {
+                    completeQuestionProgress('Gagal memperbarui area Questions.', message || 'Aksi masih bisa dicoba lagi tanpa reload global.', 'error');
+                }
+
+                function rebindQuestionLocalUi(replacedAreas, targetTab) {
+                    bindQuestionListInteractions();
+                    bindQuestionBatchAnalysisInteractions();
+                    bindQuestionLocalActions();
+                    bindQuestionContinuations();
+                    activatePageTab(targetTab || 'list', true);
+                }
+
+                async function runQuestionLocalAction(source, requestUrl, options) {
+                    if (!supportsQuestionPartialRefresh) {
+                        showQuestionLocalRefreshError('Browser belum mendukung partial refresh untuk area Questions.');
+                        return;
+                    }
+
+                    const profileName = source ? String(source.getAttribute('data-cbt-questions-progress-profile') || 'list') : 'list';
+                    const profile = getQuestionProgressProfile(profileName);
+                    const areas = getQuestionAreaList(source, ['notices', 'overview', 'list-panel']);
+                    startQuestionProgress(profileName);
+                    const result = await fetchQuestionHtml(requestUrl, options);
+                    const replacedAreas = replaceQuestionRefreshAreas(result.html, areas);
+                    if (replacedAreas.length === 0) {
+                        throw new Error('Respons tidak memuat area Questions yang bisa diperbarui.');
+                    }
+                    updateQuestionHistory(new URL(result.url, window.location.href));
+                    rebindQuestionLocalUi(replacedAreas, getQuestionTargetTab(source, replacedAreas));
+                    completeQuestionProgress(profile.done, profile.doneDetail, 'success');
+                }
 
                 function activatePageTab(tabId, persist) {
                     let hasTarget = false;
@@ -5146,47 +5511,37 @@ if (!defined('ABSPATH')) {
 
                 async function refreshQuestionList(url) {
                     if (!questionListPanel) {
-                        window.location.href = url;
+                        showQuestionLocalRefreshError('Panel Question List tidak ditemukan untuk diperbarui lokal.');
                         return;
                     }
 
                     const currentRequestId = ++questionListRequestId;
                     questionListPanel.classList.add('cbt-is-loading');
+                    startQuestionProgress('list');
 
                     try {
-                        const response = await window.fetch(url, {
-                            credentials: 'same-origin',
-                            headers: {
-                                'X-Requested-With': 'XMLHttpRequest',
-                            },
-                        });
-
-                        if (!response.ok) {
-                            throw new Error(`HTTP ${response.status}`);
-                        }
-
-                        const html = await response.text();
+                        const result = await fetchQuestionHtml(new URL(url, window.location.href), {});
                         if (currentRequestId !== questionListRequestId) {
                             return;
                         }
 
-                        const parsed = new window.DOMParser().parseFromString(html, 'text/html');
+                        const parsed = new window.DOMParser().parseFromString(result.html, 'text/html');
                         const incomingShell = parsed.querySelector('[data-cbt-questions-list-shell]');
                         const currentShell = questionListPanel.querySelector('[data-cbt-questions-list-shell]');
 
                         if (!incomingShell || !currentShell) {
-                            window.location.href = url;
+                            throw new Error('Respons tidak memuat panel daftar soal.');
                             return;
                         }
 
                         currentShell.replaceWith(incomingShell);
-                        if (window.history && typeof window.history.replaceState === 'function') {
-                            window.history.replaceState({}, '', url);
-                        }
+                        updateQuestionHistory(new URL(result.url, window.location.href));
                         bindQuestionListInteractions();
+                        bindQuestionLocalActions();
+                        bindQuestionContinuations();
+                        completeQuestionProgress(getQuestionProgressProfile('list').done, getQuestionProgressProfile('list').doneDetail, 'success');
                     } catch (error) {
-                        window.location.href = url;
-                        return;
+                        showQuestionLocalRefreshError(error && error.message ? error.message : 'Question List belum bisa dimuat lokal.');
                     } finally {
                         if (currentRequestId === questionListRequestId) {
                             questionListPanel.classList.remove('cbt-is-loading');
@@ -5311,7 +5666,206 @@ if (!defined('ABSPATH')) {
                     }
                 }
 
+                function bindQuestionBatchAnalysisInteractions() {
+                    const roots = Array.from(document.querySelectorAll('[data-cbt-import-batch-analysis]'));
+                    roots.forEach((root) => {
+                        if (!root || root.dataset.cbtBatchAnalysisBound === '1') {
+                            return;
+                        }
+                        root.dataset.cbtBatchAnalysisBound = '1';
+                        const navItems = Array.from(root.querySelectorAll('[data-cbt-import-batch-analysis-nav-item]'));
+                        const detailPanels = Array.from(root.querySelectorAll('[data-cbt-import-batch-analysis-panel]'));
+
+                        const applyBatchAnalysisFilterLocal = (panel, kind) => {
+                            if (!panel) return;
+                            const normalizedKind = String(kind || 'needs-review');
+                            const filterButtons = Array.from(panel.querySelectorAll('[data-cbt-import-batch-analysis-filter]'));
+                            const analysisItems = Array.from(panel.querySelectorAll('[data-diagnostic-kind]'));
+                            const emptyState = panel.querySelector('[data-cbt-import-batch-analysis-empty]');
+                            let visibleCount = 0;
+
+                            filterButtons.forEach((button) => {
+                                button.classList.toggle('is-active', button.getAttribute('data-cbt-import-batch-analysis-filter') === normalizedKind);
+                            });
+
+                            analysisItems.forEach((item) => {
+                                const itemKind = String(item.getAttribute('data-diagnostic-kind') || '');
+                                const shouldShow = normalizedKind === 'all'
+                                    ? true
+                                    : (normalizedKind === 'needs-review'
+                                        ? (itemKind === 'fallback' || itemKind === 'unsupported')
+                                        : itemKind === normalizedKind);
+                                item.hidden = !shouldShow;
+                                if (shouldShow) {
+                                    visibleCount += 1;
+                                }
+                            });
+
+                            if (emptyState) {
+                                emptyState.textContent = normalizedKind === 'needs-review'
+                                    ? 'Soal ini tidak punya catatan yang perlu dicek.'
+                                    : 'Tidak ada diagnostics untuk filter ini pada soal terpilih.';
+                                emptyState.hidden = visibleCount > 0;
+                            }
+                        };
+
+                        const activateBatchAnalysisQuestionLocal = (questionId) => {
+                            const normalizedId = String(questionId || '');
+                            navItems.forEach((item) => {
+                                item.classList.toggle('is-active', String(item.getAttribute('data-question-id') || '') === normalizedId);
+                            });
+                            detailPanels.forEach((panel) => {
+                                const isActive = String(panel.getAttribute('data-question-id') || '') === normalizedId;
+                                panel.classList.toggle('is-active', isActive);
+                                if (isActive) {
+                                    const defaultFilter = panel.querySelector('[data-cbt-import-batch-analysis-filter="needs-review"]');
+                                    applyBatchAnalysisFilterLocal(panel, defaultFilter ? 'needs-review' : 'all');
+                                }
+                            });
+                        };
+
+                        navItems.forEach((item) => {
+                            item.addEventListener('click', () => {
+                                activateBatchAnalysisQuestionLocal(item.getAttribute('data-question-id') || '');
+                            });
+                        });
+
+                        detailPanels.forEach((panel) => {
+                            Array.from(panel.querySelectorAll('[data-cbt-import-batch-analysis-filter]')).forEach((button) => {
+                                button.addEventListener('click', () => {
+                                    applyBatchAnalysisFilterLocal(panel, button.getAttribute('data-cbt-import-batch-analysis-filter') || 'needs-review');
+                                });
+                            });
+                        });
+
+                        const initiallyActiveItem = navItems.find((item) => item.classList.contains('is-active')) || navItems[0];
+                        if (initiallyActiveItem) {
+                            activateBatchAnalysisQuestionLocal(initiallyActiveItem.getAttribute('data-question-id') || '');
+                        }
+                    });
+                }
+
+                function bindQuestionLocalActions() {
+                    Array.from(document.querySelectorAll('form[data-cbt-questions-tab-submit]')).forEach((form) => {
+                        if (form.dataset.cbtTabMemoryBound === '1') {
+                            return;
+                        }
+                        form.dataset.cbtTabMemoryBound = '1';
+                        form.addEventListener('submit', function () {
+                            const tabId = String(form.getAttribute('data-cbt-questions-tab-submit') || '');
+                            if (tabId !== '' && window.localStorage) {
+                                window.localStorage.setItem(pageTabStorageKey, tabId);
+                            }
+                        });
+                    });
+
+                    Array.from(document.querySelectorAll('[data-cbt-questions-tab-link]')).forEach((link) => {
+                        if (link.dataset.cbtTabMemoryBound === '1') {
+                            return;
+                        }
+                        link.dataset.cbtTabMemoryBound = '1';
+                        link.addEventListener('click', function () {
+                            const tabId = String(link.getAttribute('data-cbt-questions-tab-link') || '');
+                            if (tabId !== '' && window.localStorage) {
+                                window.localStorage.setItem(pageTabStorageKey, tabId);
+                            }
+                        });
+                    });
+
+                    Array.from(document.querySelectorAll('[data-cbt-questions-async-form]')).forEach((form) => {
+                        if (form.dataset.cbtLocalActionBound === '1') {
+                            return;
+                        }
+                        form.dataset.cbtLocalActionBound = '1';
+                        form.addEventListener('submit', function (event) {
+                            if (event.defaultPrevented) {
+                                return;
+                            }
+
+                            event.preventDefault();
+                            const submitter = event.submitter || document.activeElement;
+                            const actionUrl = new URL(form.getAttribute('action') || window.location.href, window.location.href);
+                            const formData = new FormData(form);
+                            formData.set('cbt_questions_local_refresh', '1');
+                            if (submitter && submitter.name && !formData.has(submitter.name)) {
+                                formData.append(submitter.name, submitter.value || '');
+                            }
+
+                            setQuestionElementLoading(submitter, true);
+                            runQuestionLocalAction(form, actionUrl, {
+                                method: String(form.getAttribute('method') || 'post').toUpperCase(),
+                                body: formData,
+                            }).catch((error) => {
+                                showQuestionLocalRefreshError(error && error.message ? error.message : 'Aksi soal gagal diproses lokal.');
+                            }).finally(() => {
+                                setQuestionElementLoading(submitter, false);
+                            });
+                        });
+                    });
+
+                    Array.from(document.querySelectorAll('[data-cbt-questions-async-link]')).forEach((link) => {
+                        if (link.dataset.cbtLocalActionBound === '1') {
+                            return;
+                        }
+                        link.dataset.cbtLocalActionBound = '1';
+                        link.addEventListener('click', function (event) {
+                            if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+                                return;
+                            }
+                            event.preventDefault();
+                            const nextUrl = new URL(link.getAttribute('href') || window.location.href, window.location.href);
+                            nextUrl.searchParams.set('cbt_questions_local_refresh', '1');
+                            setQuestionElementLoading(link, true);
+                            runQuestionLocalAction(link, nextUrl, {
+                                method: 'GET',
+                            }).catch((error) => {
+                                showQuestionLocalRefreshError(error && error.message ? error.message : 'Link soal gagal diproses lokal.');
+                            }).finally(() => {
+                                setQuestionElementLoading(link, false);
+                            });
+                        });
+                    });
+                }
+
+                function bindQuestionContinuations() {
+                    const importProgress = page ? page.querySelector('[data-cbt-questions-import-progress]') : null;
+                    const deleteProgress = page ? page.querySelector('[data-cbt-questions-delete-progress]') : null;
+                    const activeProgress = importProgress && importProgress.getAttribute('data-cbt-questions-import-running') === '1'
+                        ? importProgress
+                        : (deleteProgress && deleteProgress.getAttribute('data-cbt-questions-delete-running') === '1' ? deleteProgress : null);
+                    if (!activeProgress || questionContinuationInFlight || activeProgress.dataset.cbtContinuationBound === '1') {
+                        return;
+                    }
+
+                    const continueUrl = String(
+                        activeProgress.getAttribute('data-cbt-questions-import-continue-url') ||
+                        activeProgress.getAttribute('data-cbt-questions-delete-continue-url') ||
+                        ''
+                    );
+                    if (continueUrl === '') {
+                        return;
+                    }
+
+                    activeProgress.dataset.cbtContinuationBound = '1';
+                    questionContinuationInFlight = true;
+                    window.clearTimeout(questionContinuationTimer);
+                    questionContinuationTimer = window.setTimeout(function () {
+                        const nextUrl = new URL(continueUrl, window.location.href);
+                        nextUrl.searchParams.set('cbt_questions_local_refresh', '1');
+                        runQuestionLocalAction(activeProgress, nextUrl, {
+                            method: 'GET',
+                        }).catch((error) => {
+                            showQuestionLocalRefreshError(error && error.message ? error.message : 'Batch soal berikutnya gagal dimuat lokal.');
+                        }).finally(() => {
+                            questionContinuationInFlight = false;
+                            bindQuestionContinuations();
+                        });
+                    }, 420);
+                }
+
                 bindQuestionListInteractions();
+                bindQuestionBatchAnalysisInteractions();
+                bindQuestionContinuations();
 
                 const clipboardImageMaxBytes = 1572864;
                 const manualRichEditorIdPattern = /^(cbt_question_text_editor|cbt_essay_answer_editor|cbt_question_explanation_editor|cbt_(mc|ma)_option_\d+|cbt_ordering_item_\d+|cbt_matching_(left|right)_\d+|cbt-tfm-statement-\d+)$/;
@@ -6241,6 +6795,8 @@ if (!defined('ABSPATH')) {
                         }
                     });
                 }
+                bindQuestionLocalActions();
+                bindQuestionContinuations();
             })();
         </script>
         <?php

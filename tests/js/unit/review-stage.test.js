@@ -37,6 +37,69 @@ function createFixture(reviewItems) {
 }
 
 describe('createReviewRenderer', function () {
+    it('renders legacy choice and short answer review items', function () {
+        var renderer = createFixture([
+            {
+                question_number: 1,
+                question_text: '<p>Pilih satu</p>',
+                question_type: 'multiple_choice',
+                points: 2,
+                score_awarded: 2,
+                status: 'correct',
+                options: [
+                    { id: 1, option_text: '<p>Benar</p>', is_selected: 1, is_correct: 1 },
+                    { id: 2, option_text: '<p>Salah</p>', is_selected: 0, is_correct: 0 }
+                ]
+            },
+            {
+                question_number: 2,
+                question_text: '<p>Pilih beberapa</p>',
+                question_type: 'multiple_answer',
+                points: 4,
+                score_awarded: 0,
+                status: 'wrong',
+                options: [
+                    { id: 3, option_text: '<p>A</p>', is_selected: 1, is_correct: 1 },
+                    { id: 4, option_text: '<p>B</p>', is_selected: 0, is_correct: 1 }
+                ]
+            },
+            {
+                question_number: 3,
+                question_text: '<p>Pernyataan benar?</p>',
+                question_type: 'true_false',
+                points: 2,
+                score_awarded: 0,
+                status: 'wrong',
+                options: [
+                    { id: 5, option_text: 'Benar', is_selected: 0, is_correct: 1 },
+                    { id: 6, option_text: 'Salah', is_selected: 1, is_correct: 0 }
+                ]
+            },
+            {
+                question_number: 4,
+                question_text: '<p>Kota [INPUT_1]</p>',
+                question_type: 'short_answer',
+                points: 3,
+                score_awarded: 3,
+                status: 'correct',
+                submitted_short_answers: ['Tokyo'],
+                correct_short_answers: ['Tokyo'],
+                short_answer_input_keys: ['1']
+            }
+        ]);
+
+        var markup = renderer.renderResultReviewSection();
+
+        expect(markup).toContain('MULTIPLE_CHOICE');
+        expect(markup).toContain('MULTIPLE_ANSWER');
+        expect(markup).toContain('TRUE_FALSE');
+        expect(markup).toContain('SHORT_ANSWER');
+        expect(markup).toContain('Jawaban Anda');
+        expect(markup).toContain('Kunci');
+        expect(markup).toContain('INPUT_1');
+        expect(markup).toContain('Tokyo');
+    });
+
     it('renders rich html for true false matrix statements', function () {
         var renderer = createFixture([
             {
@@ -136,6 +199,7 @@ describe('createReviewRenderer', function () {
         expect(markup).toContain('Kunci');
         expect(markup).toContain('<p>Langkah B</p>');
         expect(markup).toContain('<p>Langkah A</p>');
+        expect(markup).toContain('<span class="cbt-review-status is-wrong">Salah</span>');
         expect(markup).toContain('is-mismatch');
     });
 
@@ -223,7 +287,7 @@ describe('createReviewRenderer', function () {
                     {
                         key: 'B1',
                         cell_type: 'dropdown',
-                        submitted_text: 'Korea',
+                        submitted_text: '<script>alert(1)</script>Korea',
                         correct_text: 'Jepang',
                         is_match: 0
                     }
@@ -239,6 +303,8 @@ describe('createReviewRenderer', function () {
         expect(markup).toContain('<span>Benar</span>');
         expect(markup).toContain('<span>Salah</span>');
         expect(markup).toContain('<small>dropdown</small>');
+        expect(markup).toContain('&lt;script&gt;alert(1)&lt;/script&gt;Korea');
+        expect(markup).not.toContain('<script>alert(1)</script>');
     });
 
     it('preserves cbt math wrappers inside review rich html payloads', function () {

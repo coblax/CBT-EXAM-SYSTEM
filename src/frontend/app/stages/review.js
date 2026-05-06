@@ -169,6 +169,11 @@ export function createReviewRenderer(deps) {
     }
 
     function reviewStatusLabel(status) {
+        status = String(status || '').trim().toLowerCase();
+        if (status === 'incorrect') {
+            status = 'wrong';
+        }
+
         var map = {
             correct: 'Benar',
             wrong: 'Salah',
@@ -180,6 +185,11 @@ export function createReviewRenderer(deps) {
     }
 
     function reviewStatusClass(status) {
+        status = String(status || '').trim().toLowerCase();
+        if (status === 'incorrect') {
+            status = 'wrong';
+        }
+
         var map = {
             correct: 'is-correct',
             wrong: 'is-wrong',

@@ -34,7 +34,7 @@ async function finishCurrentExam(page) {
     await waitForResultShell(page);
 }
 
-test.describe('Result & Scoring flow check', () => {
+test.describe('Result & Export flow check', () => {
     test.setTimeout(150000);
 
     test.beforeEach(() => {

@@ -24,7 +24,32 @@ if (!defined('CBT_EXAM_SYSTEM_VERSION')) {
 }
 
 if (!defined('WP_PLUGIN_DIR')) {
-    define('WP_PLUGIN_DIR', sys_get_temp_dir() . '/cbt-exam-system-test-plugins');
+    define('WP_PLUGIN_DIR', sys_get_temp_dir() . '/cbt-exam-system-test-plugins-' . getmypid());
+}
+
+$phpunitCacheDir = $projectRoot . '/.phpunit.cache';
+if (file_exists($phpunitCacheDir) && !is_writable($phpunitCacheDir)) {
+    @rename($phpunitCacheDir, $projectRoot . '/.phpunit.cache-stale-' . getmypid() . '-' . bin2hex(random_bytes(4)));
+}
+if (!is_dir($phpunitCacheDir)) {
+    @mkdir($phpunitCacheDir, 0777, true);
+}
+if (is_dir($phpunitCacheDir)) {
+    @chmod($phpunitCacheDir, 0777);
+    if (is_writable($phpunitCacheDir)) {
+        $cacheIterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($phpunitCacheDir, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::CHILD_FIRST
+        );
+        foreach ($cacheIterator as $cacheItem) {
+            $cachePath = (string) $cacheItem->getPathname();
+            if ($cacheItem->isDir() && !$cacheItem->isLink()) {
+                @rmdir($cachePath);
+                continue;
+            }
+            @unlink($cachePath);
+        }
+    }
 }
 
 if (!defined('HOUR_IN_SECONDS')) {
@@ -73,6 +98,18 @@ if (!function_exists('sanitize_textarea_field')) {
         $filtered = str_replace(["\r\n", "\r"], "\n", $filtered);
 
         return trim($filtered);
+    }
+}
+
+if (!function_exists('get_bloginfo')) {
+    function get_bloginfo($show = '', $filter = 'raw'): string
+    {
+        $show = is_scalar($show) ? (string) $show : '';
+        if ($show === '' || $show === 'name') {
+            return 'CBT Test Site';
+        }
+
+        return '';
     }
 }
 
@@ -195,6 +232,20 @@ if (!function_exists('esc_attr')) {
     }
 }
 
+if (!function_exists('esc_js')) {
+    function esc_js($text): string
+    {
+        return addslashes(is_scalar($text) ? (string) $text : '');
+    }
+}
+
+if (!function_exists('esc_textarea')) {
+    function esc_textarea($text): string
+    {
+        return htmlspecialchars(is_scalar($text) ? (string) $text : '', ENT_QUOTES, 'UTF-8');
+    }
+}
+
 if (!function_exists('sanitize_html_class')) {
     function sanitize_html_class($classname, $fallback = ''): string
     {
@@ -205,6 +256,17 @@ if (!function_exists('sanitize_html_class')) {
         }
 
         return $sanitized;
+    }
+}
+
+if (!function_exists('sanitize_file_name')) {
+    function sanitize_file_name($filename): string
+    {
+        $filename = is_scalar($filename) ? (string) $filename : '';
+        $filename = preg_replace('/[^A-Za-z0-9._-]/', '-', $filename);
+        $filename = is_string($filename) ? trim($filename, '.-') : '';
+
+        return $filename === '' ? 'file' : $filename;
     }
 }
 
@@ -1956,10 +2018,42 @@ if (!function_exists('wp_nonce_field')) {
     }
 }
 
+if (!function_exists('wp_enqueue_media')) {
+    function wp_enqueue_media($args = []): void
+    {
+    }
+}
+
+if (!function_exists('wp_attachment_is_image')) {
+    function wp_attachment_is_image($attachment_id): bool
+    {
+        return (int) $attachment_id > 0;
+    }
+}
+
+if (!function_exists('wp_get_attachment_image_url')) {
+    function wp_get_attachment_image_url($attachment_id, $size = 'thumbnail', $icon = false)
+    {
+        $attachment_id = (int) $attachment_id;
+        if ($attachment_id <= 0) {
+            return false;
+        }
+
+        return 'http://localhost/wp-content/uploads/logo-' . $attachment_id . '.png';
+    }
+}
+
 if (!function_exists('check_admin_referer')) {
     function check_admin_referer($action = -1, $query_arg = '_wpnonce'): bool
     {
         return true;
+    }
+}
+
+if (!function_exists('wp_nonce_url')) {
+    function wp_nonce_url($actionurl, $action = -1, $name = '_wpnonce'): string
+    {
+        return add_query_arg([(string) $name => 'test-nonce'], (string) $actionurl);
     }
 }
 
@@ -1978,6 +2072,42 @@ if (!function_exists('submit_button')) {
     function submit_button($text = '', $type = 'primary', $name = 'submit', $wrap = true, $other_attributes = ''): void
     {
         echo get_submit_button($text, $type, $name, $wrap, $other_attributes);
+    }
+}
+
+if (!function_exists('disabled')) {
+    function disabled($disabled, $current = true, $display = true): string
+    {
+        $result = ((bool) $disabled === (bool) $current) ? ' disabled="disabled"' : '';
+        if ($display) {
+            echo $result;
+        }
+
+        return $result;
+    }
+}
+
+if (!function_exists('selected')) {
+    function selected($selected, $current = true, $display = true): string
+    {
+        $result = ((string) $selected === (string) $current) ? ' selected="selected"' : '';
+        if ($display) {
+            echo $result;
+        }
+
+        return $result;
+    }
+}
+
+if (!function_exists('checked')) {
+    function checked($checked, $current = true, $display = true): string
+    {
+        $result = ((bool) $checked === (bool) $current) ? ' checked="checked"' : '';
+        if ($display) {
+            echo $result;
+        }
+
+        return $result;
     }
 }
 

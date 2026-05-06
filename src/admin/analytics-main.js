@@ -393,6 +393,11 @@ function createChart(canvas, config) {
         return null;
     }
 
+    const existingChart = typeof Chart.getChart === 'function' ? Chart.getChart(canvas) : null;
+    if (existingChart && typeof existingChart.destroy === 'function') {
+        existingChart.destroy();
+    }
+
     return new Chart(context, config);
 }
 
@@ -426,4 +431,11 @@ if (typeof document !== 'undefined') {
     } else {
         initAnalyticsCharts(document);
     }
+}
+
+if (typeof window !== 'undefined') {
+    window.CBTAdminAnalyticsCharts = {
+        initAnalyticsCharts
+    };
+    window.addEventListener('cbt:analytics:local-refresh', () => initAnalyticsCharts(document));
 }

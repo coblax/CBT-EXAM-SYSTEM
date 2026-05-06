@@ -66,14 +66,11 @@ final class CBT_Admin_Maintenance_Reset_Service
             );
         }
 
-        wp_safe_redirect(add_query_arg(
-            [
-                'page' => 'cbt-maintenance',
-                'cbt_reset_progress_token' => $token,
-            ],
-            admin_url('admin.php')
-        ));
-        exit;
+        CBT_Admin_Maintenance_Common::redirect_maintenance_page_args([
+            'page' => 'cbt-maintenance',
+            'cbt_maintenance_tab' => 'reset',
+            'cbt_reset_progress_token' => $token,
+        ]);
     }
 
     /**
@@ -119,7 +116,7 @@ final class CBT_Admin_Maintenance_Reset_Service
                         'action' => 'cbt_reset_database',
                         'cbt_reset_progress_token' => $reset_progress_token,
                     ],
-                    admin_url('admin-post.php')
+                    admin_url('admin-ajax.php')
                 );
             } elseif ($notice === '' && $error === '') {
                 $error = 'Sesi reset database tidak ditemukan atau sudah berakhir. Silakan mulai ulang reset.';
@@ -325,14 +322,11 @@ final class CBT_Admin_Maintenance_Reset_Service
             );
         }
 
-        wp_safe_redirect(add_query_arg(
-            [
-                'page' => 'cbt-maintenance',
-                'cbt_reset_progress_token' => $token,
-            ],
-            admin_url('admin.php')
-        ));
-        exit;
+        CBT_Admin_Maintenance_Common::redirect_maintenance_page_args([
+            'page' => 'cbt-maintenance',
+            'cbt_maintenance_tab' => 'reset',
+            'cbt_reset_progress_token' => $token,
+        ]);
     }
 
     private static function get_reset_progress_state_key(string $token): string

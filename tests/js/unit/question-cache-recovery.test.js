@@ -295,6 +295,84 @@ describe('question cache recovery', function () {
         expect(restored.questionPayloadById[204].table_completion_meta.cells[1].options[0].id).toBe(102);
     });
 
+    it('preserves object-map pending autosave state during cache recovery', async function () {
+        var fixture = createManager();
+        var objectMapAnswer = { 1: 71, 2: 72 };
+        var submittedSignature = JSON.stringify({ 1: 70 });
+        var pendingSignature = JSON.stringify(objectMapAnswer);
+        var snapshot = createSnapshot({
+            question_order_ids: [201],
+            question_payload_by_id: {
+                201: {
+                    id: 201,
+                    question_number: 1,
+                    question_type: 'matching',
+                    matching_meta: {
+                        items: [
+                            { key: '1', text: 'Kota' },
+                            { key: '2', text: 'Negara' }
+                        ]
+                    },
+                    options: [
+                        { id: 71, option_text: 'Tokyo' },
+                        { id: 72, option_text: 'Jepang' }
+                    ]
+                }
+            },
+            answered_question_lookup: {
+                201: true
+            },
+            answers: {
+                201: objectMapAnswer
+            }
+        });
+        Object.assign(snapshot, {
+            auto_save_congested_until: 1700000005000,
+            last_submitted_payload_by_question: {
+                201: submittedSignature
+            },
+            pending_answer_batch_by_question: {
+                201: {
+                    question_id: 201,
+                    answer: objectMapAnswer,
+                    signature: pendingSignature
+                },
+                invalid: {
+                    question_id: 0,
+                    answer: 'ignored',
+                    signature: 'ignored'
+                }
+            },
+            pending_answer_batch_order: [999, 201, 201],
+            last_sync_error: 'Koneksi terputus',
+            sync_blocking_reason: 'offline_pending_sync',
+            exam_locked_for_pending_finish: 1
+        });
+
+        writeSessionSnapshot(fixture, snapshot);
+
+        var restored = await fixture.manager.readPersistedQuestionCache(55);
+
+        expect(restored.answers).toEqual({
+            201: objectMapAnswer
+        });
+        expect(restored.pendingAnswerBatchByQuestion).toEqual({
+            201: {
+                question_id: 201,
+                answer: objectMapAnswer,
+                signature: pendingSignature
+            }
+        });
+        expect(restored.pendingAnswerBatchOrder).toEqual([201]);
+        expect(restored.lastSubmittedPayloadByQuestion).toEqual({
+            201: submittedSignature
+        });
+        expect(restored.autoSaveCongestedUntil).toBe(1700000005000);
+        expect(restored.lastSyncError).toBe('Koneksi terputus');
+        expect(restored.syncBlockingReason).toBe('offline_pending_sync');
+        expect(restored.examLockedForPendingFinish).toBe(true);
+    });
+
     it('rejects incompatible stale snapshots when revision changes and keeps the newer valid answer set', async function () {
         var fixture = createManager();
         var staleSessionSnapshot = createSnapshot({
@@ -341,6 +419,34 @@ describe('question cache recovery', function () {
             102: 'B'
         });
         expect(Object.keys(restored.questionPayloadById).map(Number)).toEqual([102]);
+    });
+
+    it('rejects cached snapshots whose embedded attempt id does not match the requested attempt', async function () {
+        var fixture = createManager();
+        var staleSnapshot = createSnapshot({
+            attempt_id: 54,
+            exam_id: 9,
+            question_order_ids: [101],
+            question_payload_by_id: {
+                101: createQuestion(101, 1)
+            },
+            answered_question_lookup: {
+                101: true
+            },
+            answers: {
+                101: 'A'
+            },
+            cached_at: 300
+        });
+
+        fixture.sessionStorage.setItem(
+            fixture.manager.buildQuestionCacheSessionStorageKey(55),
+            JSON.stringify(staleSnapshot)
+        );
+
+        var restored = await fixture.manager.readPersistedQuestionCache(55);
+
+        expect(restored).toBeNull();
     });
 
     it('preserves the latest valid finish receipt when session and local cache are merged', async function () {

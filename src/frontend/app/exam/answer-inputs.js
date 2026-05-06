@@ -428,6 +428,7 @@ export function createAnswerInputManager(deps) {
             if (!state.answers[tableDropdownQid] || typeof state.answers[tableDropdownQid] !== 'object' || Array.isArray(state.answers[tableDropdownQid])) {
                 state.answers[tableDropdownQid] = {};
             }
+            var hadTableDropdownVisibleMessages = !!(state.error || state.notice || state.success);
             if (tableDropdownOptionId > 0) {
                 state.answers[tableDropdownQid][tableDropdownKey] = tableDropdownOptionId;
             } else {
@@ -448,7 +449,7 @@ export function createAnswerInputManager(deps) {
             }, {
                 includeInput: false,
                 includeQuestionHead: false,
-                includeNotice: !!(state.error || state.notice || state.success)
+                includeNotice: hadTableDropdownVisibleMessages
             });
             return true;
         }

@@ -2,6 +2,9 @@
         $cbt_admin_view_mode = isset($cbt_admin_view_mode) && $cbt_admin_view_mode === 'security' ? 'security' : 'branding';
         $is_security_view = $cbt_admin_view_mode === 'security';
         $is_branding_view = !$is_security_view;
+        $native_security_endpoint_url = isset($native_security_endpoint_url) && is_scalar($native_security_endpoint_url) ? (string) $native_security_endpoint_url : '';
+        $security_log_status_snapshot = isset($security_log_status_snapshot) && is_array($security_log_status_snapshot) ? $security_log_status_snapshot : [];
+        $security_log_events_enabled = !empty($security_log_events_enabled);
         ?>
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
@@ -336,6 +339,165 @@
                 background: linear-gradient(180deg, #ffffff 0%, #fff1f1 100%);
                 color: #912018;
                 box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+            }
+            .cbt-setup-branding-progress {
+                display: none;
+                gap: 10px;
+                padding: 16px 18px;
+                border: 1px solid #bfdbfe;
+                border-radius: 18px;
+                background: linear-gradient(180deg, #eff6ff 0%, #f8fbff 100%);
+                box-shadow: 0 16px 32px rgba(37, 99, 235, 0.10);
+            }
+            .cbt-setup-branding-progress.is-active {
+                display: grid;
+            }
+            .cbt-setup-branding-progress-head {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 12px;
+                flex-wrap: wrap;
+            }
+            .cbt-setup-branding-progress-title {
+                display: grid;
+                gap: 3px;
+                min-width: 0;
+            }
+            .cbt-setup-branding-progress-title strong {
+                color: #0f172a;
+                font-size: 14px;
+                line-height: 1.25;
+            }
+            .cbt-setup-branding-progress-title span {
+                color: #475569;
+                font-size: 12px;
+                line-height: 1.45;
+            }
+            .cbt-setup-branding-progress-percent {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 54px;
+                min-height: 30px;
+                padding: 0 10px;
+                border-radius: 999px;
+                background: #dbeafe;
+                color: #1d4ed8;
+                font-size: 12px;
+                font-weight: 800;
+                letter-spacing: 0.06em;
+            }
+            .cbt-setup-branding-progress-track {
+                height: 9px;
+                overflow: hidden;
+                border-radius: 999px;
+                background: rgba(147, 197, 253, 0.5);
+            }
+            .cbt-setup-branding-progress-fill {
+                display: block;
+                width: var(--cbt-branding-progress, 0%);
+                height: 100%;
+                border-radius: inherit;
+                background: linear-gradient(90deg, #2563eb 0%, #0ea5e9 54%, #10b981 100%);
+                transition: width 0.28s ease;
+            }
+            .cbt-setup-branding-progress-step {
+                margin: 0;
+                color: #334155;
+                font-size: 12px;
+                font-weight: 600;
+                line-height: 1.45;
+            }
+            .cbt-setup-security-progress {
+                display: none;
+                gap: 10px;
+                margin: 0 0 16px;
+                padding: 14px 16px;
+                border: 1px solid #bfdbfe;
+                border-radius: 18px;
+                background: linear-gradient(135deg, rgba(239, 246, 255, 0.96), rgba(240, 253, 250, 0.9));
+                box-shadow: 0 12px 28px rgba(59, 130, 246, 0.12);
+            }
+            .cbt-setup-security-progress.is-active {
+                display: grid;
+            }
+            .cbt-setup-security-progress.is-error {
+                border-color: #fecaca;
+                background: linear-gradient(135deg, rgba(254, 242, 242, 0.98), rgba(255, 247, 237, 0.92));
+                box-shadow: 0 12px 28px rgba(239, 68, 68, 0.10);
+            }
+            .cbt-setup-security-progress-head {
+                display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 14px;
+                flex-wrap: wrap;
+            }
+            .cbt-setup-security-progress-title {
+                display: grid;
+                gap: 3px;
+                min-width: 0;
+            }
+            .cbt-setup-security-progress-title strong {
+                color: #0f172a;
+                font-size: 14px;
+                line-height: 1.25;
+            }
+            .cbt-setup-security-progress-title span,
+            .cbt-setup-security-progress-step {
+                color: #52637a;
+                font-size: 13px;
+                line-height: 1.45;
+            }
+            .cbt-setup-security-progress-percent {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 54px;
+                min-height: 30px;
+                padding: 0 10px;
+                border-radius: 999px;
+                background: #ffffff;
+                color: #1d4ed8;
+                border: 1px solid #bfdbfe;
+                font-size: 12px;
+                font-weight: 800;
+                letter-spacing: 0.04em;
+            }
+            .cbt-setup-security-progress.is-error .cbt-setup-security-progress-percent {
+                color: #b91c1c;
+                border-color: #fecaca;
+            }
+            .cbt-setup-security-progress-track {
+                height: 9px;
+                overflow: hidden;
+                border-radius: 999px;
+                background: rgba(148, 163, 184, 0.22);
+            }
+            .cbt-setup-security-progress-fill {
+                display: block;
+                width: var(--cbt-security-progress, 0%);
+                height: 100%;
+                border-radius: inherit;
+                background: linear-gradient(90deg, #2563eb 0%, #06b6d4 54%, #10b981 100%);
+                transition: width 0.24s ease;
+            }
+            .cbt-setup-security-progress.is-error .cbt-setup-security-progress-fill {
+                background: linear-gradient(90deg, #ef4444 0%, #f97316 100%);
+            }
+            .cbt-setup-security-progress-step {
+                margin: 0;
+                font-weight: 600;
+            }
+            .cbt-setup-save-button.is-loading,
+            .cbt-setup-logo-pick-button.is-loading,
+            .cbt-setup-logo-remove-button.is-loading,
+            .cbt-setup-clear-button.is-loading,
+            .cbt-setup-security-log-delete-button.is-loading,
+            .cbt-native-actions .button.is-loading {
+                pointer-events: none;
+                opacity: 0.82;
             }
             
     .cbt-setup-actions {
@@ -1981,7 +2143,7 @@
                 }
             }
         </style>
-        <div class="wrap cbt-setup-page">
+        <div class="wrap cbt-setup-page"<?php echo $is_security_view ? ' data-security-refresh-root' : ''; ?>>
             <div class="cbt-setup-shell">
                 <section class="cbt-setup-hero">
                     <div class="cbt-setup-hero-copy">
@@ -2006,19 +2168,49 @@
                     </div>
                 </section>
 
-                <?php if ($notice): ?>
-                    <div class="notice notice-success is-dismissible"><p><?php echo esc_html($notice); ?></p></div>
-                <?php endif; ?>
-                <?php if ($error): ?>
-                    <div class="notice notice-error is-dismissible"><p><?php echo esc_html($error); ?></p></div>
+                <div class="cbt-setup-notices" data-security-refresh-area="notices">
+                    <?php if ($notice): ?>
+                        <div class="notice notice-success is-dismissible"><p><?php echo esc_html($notice); ?></p></div>
+                    <?php endif; ?>
+                    <?php if ($error): ?>
+                        <div class="notice notice-error is-dismissible"><p><?php echo esc_html($error); ?></p></div>
+                    <?php endif; ?>
+                </div>
+                <?php if ($is_security_view): ?>
+                    <div class="cbt-setup-security-progress" data-security-progress role="status" aria-live="polite" aria-hidden="true">
+                        <div class="cbt-setup-security-progress-head">
+                            <div class="cbt-setup-security-progress-title">
+                                <strong data-security-progress-label>Menunggu aksi CBT Security...</strong>
+                                <span>Progress ini hanya memperbarui area Security yang terdampak, tanpa reload halaman global.</span>
+                            </div>
+                            <span class="cbt-setup-security-progress-percent" data-security-progress-percent>0%</span>
+                        </div>
+                        <div class="cbt-setup-security-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-security-progress-track>
+                            <span class="cbt-setup-security-progress-fill" data-security-progress-fill></span>
+                        </div>
+                        <p class="cbt-setup-security-progress-step" data-security-progress-step>Siap memproses perubahan security.</p>
+                    </div>
                 <?php endif; ?>
 
                 <div class="cbt-setup-panels">
                     <?php if ($is_branding_view): ?>
                     <div class="cbt-setup-panel is-active" id="cbt-setup-panel-branding" data-setup-panel="branding" role="region" aria-label="Branding">
-                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-setup-form">
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-setup-form" id="cbt-setup-branding-form" data-branding-form>
                             <?php wp_nonce_field('cbt_save_setup_branding'); ?>
                             <input type="hidden" name="action" value="cbt_save_setup_branding" />
+                            <div class="cbt-setup-branding-progress" data-branding-progress role="status" aria-live="polite" aria-hidden="true">
+                                <div class="cbt-setup-branding-progress-head">
+                                    <div class="cbt-setup-branding-progress-title">
+                                        <strong data-branding-progress-label>Menyimpan CBT Branding...</strong>
+                                        <span>Area ini memberi status proses sebelum halaman berpindah ke hasil simpan.</span>
+                                    </div>
+                                    <span class="cbt-setup-branding-progress-percent" data-branding-progress-percent>0%</span>
+                                </div>
+                                <div class="cbt-setup-branding-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-branding-progress-track>
+                                    <span class="cbt-setup-branding-progress-fill" data-branding-progress-fill></span>
+                                </div>
+                                <p class="cbt-setup-branding-progress-step" data-branding-progress-step>Menunggu perubahan branding.</p>
+                            </div>
 
                             <section class="cbt-setup-card">
                                 <div class="cbt-setup-card-header">
@@ -2237,7 +2429,7 @@
                     <?php endif; ?>
 
                     <?php if ($is_security_view): ?>
-                    <div class="cbt-setup-panel is-active" id="cbt-setup-panel-security" data-setup-panel="security" role="tabpanel" aria-labelledby="cbt-setup-tab-security">
+                    <div class="cbt-setup-panel is-active" id="cbt-setup-panel-security" data-setup-panel="security" data-security-refresh-area="security-panel" role="tabpanel" aria-labelledby="cbt-setup-tab-security">
                         <div class="cbt-setup-security-grid">
                             <section class="cbt-setup-card cbt-setup-security-card">
                                 <div class="cbt-setup-card-header">
@@ -2247,7 +2439,7 @@
                                     </div>
                                     <span class="cbt-setup-card-chip">Control</span>
                                 </div>
-                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-setup-security-form">
+                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-setup-security-form" data-security-async-form data-security-progress-profile="settings" data-security-refresh-areas="notices,security-panel">
                                     <?php wp_nonce_field('cbt_save_security_settings'); ?>
                                     <input type="hidden" name="action" value="cbt_save_security_settings" />
                                     <div class="cbt-setup-security-masonry">
@@ -2450,7 +2642,7 @@
                         </div>
                     </div>
 
-                    <div class="cbt-setup-panel" id="cbt-setup-panel-security-log" data-setup-panel="security-log" role="tabpanel" aria-labelledby="cbt-setup-tab-security-log" hidden>
+                    <div class="cbt-setup-panel" id="cbt-setup-panel-security-log" data-setup-panel="security-log" data-security-refresh-area="security-log-panel" role="tabpanel" aria-labelledby="cbt-setup-tab-security-log" hidden>
                         <div class="cbt-setup-security-grid">
                             <section
                                 id="cbt-setup-security-log-card"
@@ -2500,7 +2692,7 @@
                                     </div>
                                     <div class="cbt-setup-security-log-view-panels">
                                         <div class="cbt-setup-security-log-view-panel" id="cbt-setup-security-log-view-panel-history" data-security-log-view-panel="history" role="tabpanel" aria-labelledby="cbt-setup-security-log-view-tab-history" hidden>
-                                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-setup-security-log-manage-form" id="cbt-setup-security-log-manage-form">
+                                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-setup-security-log-manage-form" id="cbt-setup-security-log-manage-form" data-security-async-form data-security-progress-profile="logs" data-security-refresh-areas="notices,security-log-panel" data-security-success-tab="security-log">
                                         <?php wp_nonce_field('cbt_manage_security_logs'); ?>
                                         <input type="hidden" name="action" value="cbt_manage_security_logs" />
                                         <input type="hidden" name="delete_scope" value="" data-security-log-delete-scope />
@@ -2602,7 +2794,7 @@
                         </div>
                     </div>
 
-                    <div class="cbt-setup-panel" id="cbt-setup-panel-native" data-setup-panel="native" role="tabpanel" aria-labelledby="cbt-setup-tab-native" hidden>
+                    <div class="cbt-setup-panel" id="cbt-setup-panel-native" data-setup-panel="native" data-security-refresh-area="native-panel" role="tabpanel" aria-labelledby="cbt-setup-tab-native" hidden>
                         <div class="cbt-native-grid">
                             <section class="cbt-setup-card cbt-setup-security-card">
                                 <div class="cbt-setup-card-header">
@@ -3049,7 +3241,7 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                                     <span class="cbt-setup-card-chip">Spec + Tool</span>
                                 </div>
                                 <div class="cbt-native-tool-grid">
-                                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" id="cbt-native-simulate-form" class="cbt-native-tool-form">
+                                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" id="cbt-native-simulate-form" class="cbt-native-tool-form" data-security-async-form data-security-progress-profile="native" data-security-refresh-areas="notices,native-panel,security-log-panel" data-security-success-tab="security-log">
                                         <?php wp_nonce_field('cbt_simulate_native_security_event'); ?>
                                         <input type="hidden" name="action" value="cbt_simulate_native_security_event" />
                                         <div class="cbt-native-field-grid">
@@ -3131,7 +3323,7 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                         </div>
                     </div>
 
-                    <div class="cbt-setup-panel" id="cbt-setup-panel-catalog" data-setup-panel="catalog" role="tabpanel" aria-labelledby="cbt-setup-tab-catalog" hidden>
+                    <div class="cbt-setup-panel" id="cbt-setup-panel-catalog" data-setup-panel="catalog" data-security-refresh-area="catalog-panel" role="tabpanel" aria-labelledby="cbt-setup-tab-catalog" hidden>
                         <div class="cbt-native-grid">
                             <section class="cbt-setup-card cbt-setup-security-card">
                                 <div class="cbt-setup-card-header">
@@ -3251,6 +3443,421 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
         <script>
             (function () {
                 var cbtAdminViewMode = <?php echo wp_json_encode($cbt_admin_view_mode); ?>;
+                var brandingProgressTimer = null;
+                var securityProgressTimer = null;
+
+                function clampBrandingProgress(value) {
+                    var number = parseInt(value, 10);
+                    if (Number.isNaN(number)) {
+                        return 0;
+                    }
+
+                    return Math.max(0, Math.min(100, number));
+                }
+
+                function getBrandingProgressElements() {
+                    var root = document.querySelector('[data-branding-progress]');
+                    if (!root) {
+                        return null;
+                    }
+
+                    return {
+                        root: root,
+                        label: root.querySelector('[data-branding-progress-label]'),
+                        percent: root.querySelector('[data-branding-progress-percent]'),
+                        track: root.querySelector('[data-branding-progress-track]'),
+                        fill: root.querySelector('[data-branding-progress-fill]'),
+                        step: root.querySelector('[data-branding-progress-step]')
+                    };
+                }
+
+                function setBrandingProgress(percent, label, step) {
+                    var elements = getBrandingProgressElements();
+                    var progress = clampBrandingProgress(percent);
+                    if (!elements) {
+                        return;
+                    }
+
+                    elements.root.classList.add('is-active');
+                    elements.root.setAttribute('aria-hidden', 'false');
+                    if (elements.label && label) {
+                        elements.label.textContent = label;
+                    }
+                    if (elements.percent) {
+                        elements.percent.textContent = progress + '%';
+                    }
+                    if (elements.track) {
+                        elements.track.setAttribute('aria-valuenow', String(progress));
+                    }
+                    if (elements.fill) {
+                        elements.fill.style.setProperty('--cbt-branding-progress', progress + '%');
+                    }
+                    if (elements.step && step) {
+                        elements.step.textContent = step;
+                    }
+                }
+
+                function stopBrandingProgress() {
+                    if (brandingProgressTimer) {
+                        window.clearInterval(brandingProgressTimer);
+                        brandingProgressTimer = null;
+                    }
+                }
+
+                function startBrandingProgress(label, steps, cap, interval) {
+                    var progress = 8;
+                    var startedAt = Date.now();
+                    var safeSteps = Array.isArray(steps) && steps.length ? steps : ['Menyiapkan perubahan branding.'];
+                    var safeCap = Math.max(30, Math.min(98, parseInt(cap, 10) || 92));
+                    var safeInterval = Math.max(220, parseInt(interval, 10) || 380);
+
+                    stopBrandingProgress();
+                    setBrandingProgress(progress, label || 'Memproses CBT Branding...', safeSteps[0]);
+
+                    brandingProgressTimer = window.setInterval(function () {
+                        var elapsed = Date.now() - startedAt;
+                        var stepIndex = Math.min(safeSteps.length - 1, Math.floor(elapsed / Math.max(700, safeInterval * 2)));
+                        var distance = safeCap - progress;
+                        var increment = Math.max(1, Math.min(8, Math.ceil(distance * 0.18)));
+                        progress = Math.min(safeCap, progress + increment);
+                        setBrandingProgress(progress, label || 'Memproses CBT Branding...', safeSteps[stepIndex]);
+                    }, safeInterval);
+                }
+
+                function completeBrandingProgress(label, step) {
+                    stopBrandingProgress();
+                    setBrandingProgress(100, label || 'Perubahan branding siap.', step || 'Selesai.');
+                }
+
+                function clampSecurityProgress(value) {
+                    var number = parseInt(value, 10);
+                    if (Number.isNaN(number)) {
+                        return 0;
+                    }
+
+                    return Math.max(0, Math.min(100, number));
+                }
+
+                function getSecurityProgressElements() {
+                    var root = document.querySelector('[data-security-progress]');
+                    if (!root) {
+                        return null;
+                    }
+
+                    return {
+                        root: root,
+                        label: root.querySelector('[data-security-progress-label]'),
+                        percent: root.querySelector('[data-security-progress-percent]'),
+                        track: root.querySelector('[data-security-progress-track]'),
+                        fill: root.querySelector('[data-security-progress-fill]'),
+                        step: root.querySelector('[data-security-progress-step]')
+                    };
+                }
+
+                function setSecurityProgress(percent, label, step, tone) {
+                    var elements = getSecurityProgressElements();
+                    var progress = clampSecurityProgress(percent);
+                    if (!elements) {
+                        return;
+                    }
+
+                    elements.root.classList.add('is-active');
+                    elements.root.classList.toggle('is-error', tone === 'error');
+                    elements.root.setAttribute('aria-hidden', 'false');
+                    if (elements.label && label) {
+                        elements.label.textContent = label;
+                    }
+                    if (elements.percent) {
+                        elements.percent.textContent = progress + '%';
+                    }
+                    if (elements.track) {
+                        elements.track.setAttribute('aria-valuenow', String(progress));
+                    }
+                    if (elements.fill) {
+                        elements.fill.style.setProperty('--cbt-security-progress', progress + '%');
+                    }
+                    if (elements.step && step) {
+                        elements.step.textContent = step;
+                    }
+                }
+
+                function stopSecurityProgress() {
+                    if (securityProgressTimer) {
+                        window.clearInterval(securityProgressTimer);
+                        securityProgressTimer = null;
+                    }
+                }
+
+                function getSecurityProgressProfile(profile) {
+                    var key = String(profile || 'settings');
+                    if (key === 'logs') {
+                        return {
+                            label: 'Memproses Security Log...',
+                            completeLabel: 'Security Log diperbarui.',
+                            steps: [
+                                'Mengunci pilihan log yang akan diproses.',
+                                'Mengirim aksi hapus ke admin WordPress.',
+                                'Menyusun ulang tabel histori security.',
+                                'Memperbarui badge dan filter area log.'
+                            ]
+                        };
+                    }
+                    if (key === 'native') {
+                        return {
+                            label: 'Mensimulasikan Native Event...',
+                            completeLabel: 'Native event selesai diproses.',
+                            steps: [
+                                'Memvalidasi attempt, native app, dan event type.',
+                                'Mengirim payload simulasi ke handler security.',
+                                'Mencatat event ke security log.',
+                                'Memperbarui area native dan security log.'
+                            ]
+                        };
+                    }
+
+                    return {
+                        label: 'Menyimpan Pengaturan Security...',
+                        completeLabel: 'Pengaturan security diperbarui.',
+                        steps: [
+                            'Mengumpulkan opsi proteksi ujian.',
+                            'Menormalisasi watermark, idle threshold, dan allow-list User-Agent.',
+                            'Menyimpan konfigurasi security ke WordPress option.',
+                            'Memperbarui panel Security tanpa reload global.'
+                        ]
+                    };
+                }
+
+                function startSecurityProgress(profile) {
+                    var config = getSecurityProgressProfile(profile);
+                    var progress = 7;
+                    var startedAt = Date.now();
+
+                    stopSecurityProgress();
+                    setSecurityProgress(progress, config.label, config.steps[0], '');
+
+                    securityProgressTimer = window.setInterval(function () {
+                        var elapsed = Date.now() - startedAt;
+                        var stepIndex = Math.min(config.steps.length - 1, Math.floor(elapsed / 900));
+                        var distance = 94 - progress;
+                        var increment = Math.max(1, Math.min(7, Math.ceil(distance * 0.16)));
+                        progress = Math.min(94, progress + increment);
+                        setSecurityProgress(progress, config.label, config.steps[stepIndex], '');
+                    }, 340);
+                }
+
+                function completeSecurityProgress(label, step, tone) {
+                    stopSecurityProgress();
+                    setSecurityProgress(tone === 'error' ? 100 : 100, label || 'Aksi CBT Security selesai.', step || 'Area Security sudah diperbarui.', tone || '');
+                }
+
+                function extractSecurityResponseError(text, status) {
+                    var raw = String(text || '').replace(/<script[\s\S]*?<\/script>/gi, ' ');
+                    var plain = raw.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+                    if (plain.length > 180) {
+                        plain = plain.slice(0, 180) + '...';
+                    }
+
+                    return 'HTTP ' + String(status || 0) + (plain ? ': ' + plain : '');
+                }
+
+                function replaceSecurityRefreshAreas(responseHtml, areas) {
+                    var parser = new DOMParser();
+                    var doc = parser.parseFromString(String(responseHtml || ''), 'text/html');
+                    var replaced = [];
+
+                    areas.forEach(function (areaName) {
+                        var selector = '[data-security-refresh-area="' + areaName + '"]';
+                        var current = document.querySelector(selector);
+                        var next = doc.querySelector(selector);
+                        if (!current || !next) {
+                            return;
+                        }
+
+                        current.replaceWith(document.importNode(next, true));
+                        replaced.push(areaName);
+                    });
+
+                    if (!replaced.length) {
+                        throw new Error('Response valid, tetapi area tujuan tidak ditemukan.');
+                    }
+
+                    return replaced;
+                }
+
+                function getSecurityTargetTab(form, responseUrl, replacedAreas) {
+                    var target = String(form.getAttribute('data-security-success-tab') || '').trim();
+                    var parsedUrl = null;
+
+                    if (responseUrl) {
+                        try {
+                            parsedUrl = new URL(String(responseUrl), window.location.href);
+                            if (parsedUrl.hash === '#security-log') {
+                                return 'security-log';
+                            }
+                            if (parsedUrl.hash === '#native') {
+                                return 'native';
+                            }
+                            if (parsedUrl.hash === '#catalog') {
+                                return 'catalog';
+                            }
+                            if (parsedUrl.hash === '#security') {
+                                return 'security';
+                            }
+                        } catch (error) {
+                            parsedUrl = null;
+                        }
+                    }
+
+                    if (target !== '') {
+                        return target;
+                    }
+                    if (replacedAreas.indexOf('security-log-panel') >= 0) {
+                        return 'security-log';
+                    }
+                    if (replacedAreas.indexOf('native-panel') >= 0) {
+                        return 'native';
+                    }
+
+                    return 'security';
+                }
+
+                function rebindSecurityLocalUi(replacedAreas) {
+                    bindSetupTabs();
+                    bindSecurityAsyncForms();
+
+                    if (replacedAreas.indexOf('native-panel') >= 0) {
+                        bindNativeSecurityTools();
+                    }
+                    if (replacedAreas.indexOf('catalog-panel') >= 0) {
+                        bindNativeCatalogTabs();
+                        bindNativeImplementationTabs();
+                    }
+                    if (replacedAreas.indexOf('security-log-panel') >= 0) {
+                        bindSecurityLogTools();
+                    }
+                }
+
+                function bindSecurityAsyncForms() {
+                    var forms = document.querySelectorAll('[data-security-async-form]');
+
+                    if (!forms.length || typeof window.fetch !== 'function' || typeof window.FormData !== 'function' || typeof window.DOMParser !== 'function') {
+                        return;
+                    }
+
+                    Array.prototype.forEach.call(forms, function (form) {
+                        if (form.dataset.securityAsyncBound === '1') {
+                            return;
+                        }
+
+                        form.dataset.securityAsyncBound = '1';
+                        form.addEventListener('submit', function (event) {
+                            var submitter = event.submitter || document.activeElement;
+                            var button = submitter && submitter.tagName === 'BUTTON' ? submitter : form.querySelector('button[type="submit"]');
+                            var originalText = button ? button.textContent : '';
+                            var formData = new FormData(form);
+                            var profile = String(form.getAttribute('data-security-progress-profile') || 'settings');
+                            var areaList = String(form.getAttribute('data-security-refresh-areas') || 'notices,security-panel')
+                                .split(',')
+                                .map(function (item) { return item.trim(); })
+                                .filter(Boolean);
+                            var config = getSecurityProgressProfile(profile);
+
+                            if (event.defaultPrevented) {
+                                return;
+                            }
+
+                            event.preventDefault();
+                            if (submitter && submitter.name && !formData.has(submitter.name)) {
+                                formData.append(submitter.name, submitter.value || '1');
+                            }
+                            formData.append('cbt_security_local_refresh', '1');
+
+                            if (button) {
+                                button.classList.add('is-loading');
+                                button.disabled = true;
+                                button.textContent = profile === 'logs' ? 'Memproses...' : (profile === 'native' ? 'Mengirim...' : 'Menyimpan...');
+                            }
+
+                            startSecurityProgress(profile);
+
+                            fetch(form.action, {
+                                method: 'POST',
+                                body: formData,
+                                credentials: 'same-origin',
+                                headers: {
+                                    'X-Requested-With': 'XMLHttpRequest'
+                                }
+                            })
+                                .then(function (response) {
+                                    return response.text().then(function (text) {
+                                        if (!response.ok) {
+                                            throw new Error(extractSecurityResponseError(text, response.status));
+                                        }
+                                        return {
+                                            response: response,
+                                            text: text
+                                        };
+                                    });
+                                })
+                                .then(function (payload) {
+                                    var replacedAreas = replaceSecurityRefreshAreas(payload.text, areaList);
+                                    var targetTab = getSecurityTargetTab(form, payload.response.url, replacedAreas);
+
+                                    rebindSecurityLocalUi(replacedAreas);
+                                    if (window.cbtSetupSetActiveTab) {
+                                        window.cbtSetupSetActiveTab(targetTab, true);
+                                    }
+                                    completeSecurityProgress(config.completeLabel, 'Area ' + targetTab.replace('-', ' ') + ' sudah diperbarui secara lokal.', '');
+                                })
+                                .catch(function (error) {
+                                    completeSecurityProgress('Gagal memproses CBT Security.', error && error.message ? error.message : 'Form masih aman dikirim ulang bila dibutuhkan.', 'error');
+                                    if (button) {
+                                        button.disabled = false;
+                                    }
+                                })
+                                .finally(function () {
+                                    if (button) {
+                                        button.classList.remove('is-loading');
+                                        if (button.isConnected) {
+                                            button.disabled = false;
+                                            button.textContent = originalText;
+                                        }
+                                    }
+                                });
+                        });
+                    });
+                }
+
+                function bindBrandingFormProgress() {
+                    var form = document.querySelector('[data-branding-form]');
+                    if (!form || form.dataset.brandingProgressBound === '1') {
+                        return;
+                    }
+
+                    form.dataset.brandingProgressBound = '1';
+                    form.addEventListener('submit', function (event) {
+                        var saveButton = form.querySelector('.cbt-setup-save-button');
+                        if (event.defaultPrevented) {
+                            return;
+                        }
+
+                        startBrandingProgress('Menyimpan CBT Branding...', [
+                            'Mengumpulkan identitas sekolah dan program ujian.',
+                            'Memvalidasi pilihan logo dari Media Library.',
+                            'Menyimpan konfigurasi branding ke WordPress option.',
+                            'Menyiapkan refresh tampilan admin.',
+                            'Menerapkan branding ke frontend CBT dan dokumen terkait.'
+                        ], 96, 360);
+
+                        if (saveButton) {
+                            saveButton.classList.add('is-loading');
+                            saveButton.textContent = 'Menyimpan...';
+                            window.setTimeout(function () {
+                                saveButton.disabled = true;
+                            }, 0);
+                        }
+                    });
+                }
 
                 function bindSetupTabs() {
                     var tabButtons = document.querySelectorAll('[data-setup-tab-button]');
@@ -3313,10 +3920,20 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                     }
 
                     for (var i = 0; i < tabButtons.length; i += 1) {
+                        if (tabButtons[i].dataset.setupTabBound === '1') {
+                            continue;
+                        }
+                        tabButtons[i].dataset.setupTabBound = '1';
                         tabButtons[i].addEventListener('click', function () {
                             setActiveTab(this.getAttribute('data-setup-tab-button') || 'branding', true);
                         });
                     }
+
+                    window.cbtSetupSetActiveTab = setActiveTab;
+                    window.cbtSetupGetActiveTab = function () {
+                        var active = document.querySelector('[data-setup-tab-button].is-active');
+                        return active ? String(active.getAttribute('data-setup-tab-button') || '') : '';
+                    };
 
                     setActiveTab(window.location.hash === '#security-log'
                         ? 'security-log'
@@ -3564,6 +4181,7 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
 
                 function bindLogoField(config) {
                     var mediaFrame = null;
+                    var mediaFrameSelected = false;
                     var logoInput = document.getElementById(config.inputId);
                     var previewWrap = document.getElementById(config.previewId);
                     var previewImage = document.getElementById(config.previewImageId);
@@ -3595,6 +4213,12 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                         if (removeButton) {
                             removeButton.style.display = hasLogo ? 'inline-flex' : 'none';
                         }
+                        completeBrandingProgress(
+                            hasLogo ? 'Logo branding siap disimpan.' : 'Logo branding dikosongkan.',
+                            hasLogo
+                                ? 'Preview logo sudah diperbarui. Klik Simpan Setup Branding untuk menyimpan permanen.'
+                                : 'Logo di form sudah dikosongkan. Klik Simpan Setup Branding untuk menyimpan perubahan.'
+                        );
                     }
 
                     pickButton.addEventListener('click', function (event) {
@@ -3604,6 +4228,13 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                             return;
                         }
 
+                        pickButton.classList.add('is-loading');
+                        mediaFrameSelected = false;
+                        startBrandingProgress('Membuka Media Library...', [
+                            'Menyiapkan picker logo WordPress.',
+                            'Menunggu admin memilih gambar.',
+                            'Membaca attachment dan preview logo.'
+                        ], 64, 420);
                         if (!mediaFrame) {
                             mediaFrame = wp.media({
                                 title: config.mediaTitle,
@@ -3617,6 +4248,7 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                                     return;
                                 }
 
+                                mediaFrameSelected = true;
                                 var payload = selection.toJSON();
                                 var imageUrl = '';
                                 if (payload.sizes && payload.sizes.medium && payload.sizes.medium.url) {
@@ -3626,13 +4258,32 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                                 }
                                 setLogoState(parseInt(payload.id, 10) || 0, imageUrl);
                             });
+                            mediaFrame.on('open', function () {
+                                setBrandingProgress(35, 'Media Library terbuka.', 'Pilih gambar logo yang ingin dipakai.');
+                            });
+                            mediaFrame.on('close', function () {
+                                pickButton.classList.remove('is-loading');
+                                if (!mediaFrameSelected) {
+                                    stopBrandingProgress();
+                                    setBrandingProgress(72, 'Media Library ditutup.', 'Jika logo belum berubah, pilih logo lagi atau lanjutkan edit branding.');
+                                }
+                            });
                         }
                         mediaFrame.open();
                     });
 
                     removeButton.addEventListener('click', function (event) {
                         event.preventDefault();
+                        removeButton.classList.add('is-loading');
+                        startBrandingProgress('Menghapus logo dari form...', [
+                            'Mengosongkan attachment logo.',
+                            'Membersihkan preview logo.',
+                            'Menunggu admin menyimpan perubahan.'
+                        ], 88, 260);
                         setLogoState(0, '');
+                        window.setTimeout(function () {
+                            removeButton.classList.remove('is-loading');
+                        }, 220);
                     });
                 }
 
@@ -3666,11 +4317,22 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                             return;
                         }
 
+                        clearButton.classList.add('is-loading');
+                        startBrandingProgress('Mengosongkan identitas sekolah...', [
+                            'Menghapus field nama program, sekolah, dan motto.',
+                            'Menghapus NPSN, alamat, dan wilayah.',
+                            'Menunggu admin menyimpan perubahan.'
+                        ], 88, 260);
                         for (index = 0; index < fields.length; index += 1) {
                             fields[index].value = '';
                             fields[index].dispatchEvent(new Event('input', { bubbles: true }));
                             fields[index].dispatchEvent(new Event('change', { bubbles: true }));
                         }
+
+                        completeBrandingProgress('Identitas sekolah dikosongkan.', 'Field identitas sudah kosong. Klik Simpan Setup Branding untuk menyimpan perubahan.');
+                        window.setTimeout(function () {
+                            clearButton.classList.remove('is-loading');
+                        }, 220);
 
                         if (fields.length > 0 && typeof fields[0].focus === 'function') {
                             fields[0].focus();
@@ -4060,6 +4722,7 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
 
                         monitorActionInFlight = true;
                         updateRedisMonitorActionButtons(currentSecurityStatusSnapshot || {});
+                        startSecurityProgress('logs');
                         if (actionName === 'micro_drain') {
                             setRedisMonitorStatus('Menjalankan micro-drain...');
                             setLiveStatus('Menjalankan micro-drain...', 'loading');
@@ -4100,6 +4763,7 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                                 updateRedisMonitorPanel(statusSnapshot);
                                 setRedisMonitorStatus(actionMessage);
                                 setLiveStatus(actionMessage, '');
+                                completeSecurityProgress('Security Log diperbarui.', actionMessage, '');
 
                                 if (activeSecurityLogView === 'history') {
                                     return refreshSecurityHistoryRegion().then(function () {
@@ -4115,6 +4779,7 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                                     : 'Aksi Redis monitor gagal dijalankan.';
                                 setRedisMonitorStatus(message);
                                 setLiveStatus(message, 'error');
+                                completeSecurityProgress('Aksi Security Log gagal.', message, 'error');
                                 throw error;
                             })
                             .finally(function () {
@@ -5028,6 +5693,7 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                         updateRedisMonitorActionButtons(currentSecurityStatusSnapshot || {});
                         setLiveStatus(statusMessage, 'loading');
                         if (manualRefresh) {
+                            startSecurityProgress('logs');
                             setRedisMonitorStatus(statusMessage);
                         }
 
@@ -5091,12 +5757,14 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                                 setLiveStatus(autoRefreshToggle.checked ? 'Auto refresh aktif setiap 10 detik.' : 'Auto refresh nonaktif.', '');
                                 if (manualRefresh) {
                                     setRedisMonitorStatus('Redis monitor diperbarui.');
+                                    completeSecurityProgress('Security Log diperbarui.', 'Snapshot observability, badge, dan area aktif sudah sinkron.', '');
                                 }
                             })
                             .catch(function () {
                                 setLiveStatus('Auto refresh gagal. Coba refresh halaman.', 'error');
                                 if (manualRefresh) {
                                     setRedisMonitorStatus('Refresh monitor gagal.');
+                                    completeSecurityProgress('Refresh Security Log gagal.', 'Snapshot observability gagal dimuat. Coba ulangi dari tombol refresh.', 'error');
                                 }
                             })
                             .finally(function () {
@@ -5372,6 +6040,7 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
 
                 if (cbtAdminViewMode === 'security') {
                 bindSetupTabs();
+                bindSecurityAsyncForms();
                 bindNativeCatalogTabs();
                 bindNativeImplementationTabs();
                 bindNativeSecurityTools();
@@ -5394,6 +6063,7 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                     removeButtonId: 'cbt-setup-logo-2-remove',
                     mediaTitle: 'Pilih Logo 2 - Dinas Pendidikan'
                 });
+                bindBrandingFormProgress();
                 bindClearIdentityFields();
                 bindSecurityLogTools();
             })();

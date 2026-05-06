@@ -33,6 +33,22 @@ final class AdminResultsHelperObjectMapProgressTest extends TestCase
         self::assertSame('1: #123 | 2: #124', $item['answer_preview'] ?? '');
     }
 
+    public function test_cloze_dropdown_progress_uses_option_labels_when_available(): void
+    {
+        $item = $this->buildProgressItem(
+            ['id' => 14, 'question_type' => 'cloze_dropdown', 'points' => 6],
+            ['answer_text' => '{"1":2201,"2":2202}', 'is_correct' => 0, 'score_awarded' => 3],
+            [
+                2201 => 'Jepang',
+                2202 => 'Seoul',
+            ]
+        );
+
+        self::assertSame('wrong', $item['status'] ?? '');
+        self::assertSame(3.0, $item['score_awarded'] ?? -1);
+        self::assertSame('1: Jepang | 2: Seoul', $item['answer_preview'] ?? '');
+    }
+
     public function test_table_completion_zero_text_value_counts_as_answered(): void
     {
         $item = $this->buildProgressItem(

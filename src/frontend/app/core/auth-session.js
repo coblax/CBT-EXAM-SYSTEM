@@ -12,6 +12,19 @@ export function createAuthSessionManager(deps) {
         return '';
     }
 
+    function normalizePersistedToken(rawToken) {
+        if (typeof rawToken !== 'string') {
+            return '';
+        }
+
+        var token = rawToken.trim();
+        if (token === '' || token.length > 4096) {
+            return '';
+        }
+
+        return token;
+    }
+
     function normalizePersistedUser(rawUser) {
         if (!rawUser || typeof rawUser !== 'object') {
             return null;
@@ -61,8 +74,9 @@ export function createAuthSessionManager(deps) {
             return false;
         }
 
+        var normalizedToken = normalizePersistedToken(state.token);
         var payload = {
-            token: String(state.token || ''),
+            token: normalizedToken,
             user: normalizePersistedUser(state.user),
             selected_exam_id: Number(state.selectedExamId) || 0,
             last_stage: normalizePersistedStage(state.stage)
@@ -78,7 +92,7 @@ export function createAuthSessionManager(deps) {
                 var raw = storage.getItem(storageKey);
                 if (raw) {
                     var parsed = JSON.parse(raw);
-                    var storedToken = parsed && typeof parsed === 'object' ? String(parsed.token || '') : '';
+                    var storedToken = parsed && typeof parsed === 'object' ? normalizePersistedToken(parsed.token) : '';
                     if (storedToken !== '' && storedToken !== payload.token) {
                         return false;
                     }
@@ -109,7 +123,7 @@ export function createAuthSessionManager(deps) {
                 return null;
             }
 
-            var token = String(parsed.token || '');
+            var token = normalizePersistedToken(parsed.token);
             var user = normalizePersistedUser(parsed.user || null);
             var selectedExamId = Number(parsed.selected_exam_id) || 0;
             var lastStage = normalizePersistedStage(parsed.last_stage || '');
@@ -132,6 +146,7 @@ export function createAuthSessionManager(deps) {
     return {
         clearPersistedAuthSession: clearPersistedAuthSession,
         normalizePersistedStage: normalizePersistedStage,
+        normalizePersistedToken: normalizePersistedToken,
         normalizePersistedUser: normalizePersistedUser,
         persistAuthSession: persistAuthSession,
         readPersistedAuthSession: readPersistedAuthSession

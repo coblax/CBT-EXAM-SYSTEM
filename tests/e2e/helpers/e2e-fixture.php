@@ -1036,6 +1036,198 @@ function e2e_fixture_age_login_session(array $payload): array
     ];
 }
 
+function e2e_fixture_test_hub_job_dir(): string
+{
+    $plugin_root = defined('CBT_EXAM_SYSTEM_PATH')
+        ? rtrim((string) CBT_EXAM_SYSTEM_PATH, '/\\')
+        : rtrim(dirname(__DIR__, 3), '/\\');
+
+    return $plugin_root . '/playwright-results/admin-jobs';
+}
+
+function e2e_fixture_remove_path(string $path): void
+{
+    if ($path === '' || !file_exists($path)) {
+        return;
+    }
+
+    if (is_file($path) || is_link($path)) {
+        @unlink($path);
+        return;
+    }
+
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::CHILD_FIRST
+    );
+
+    foreach ($iterator as $item) {
+        $item_path = (string) $item->getPathname();
+        if ($item->isDir() && !$item->isLink()) {
+            @rmdir($item_path);
+        } else {
+            @unlink($item_path);
+        }
+    }
+
+    @rmdir($path);
+}
+
+function e2e_fixture_reset_test_hub(array $payload): array
+{
+    delete_option('cbt_test_hub_runner_health_v1');
+    delete_option('cbt_test_hub_settings_v1');
+    e2e_fixture_remove_path(e2e_fixture_test_hub_job_dir());
+
+    $base_url = isset($payload['e2e_base_url']) && is_scalar($payload['e2e_base_url'])
+        ? esc_url_raw((string) $payload['e2e_base_url'])
+        : '';
+    $frontend_url = isset($payload['e2e_frontend_url']) && is_scalar($payload['e2e_frontend_url'])
+        ? esc_url_raw((string) $payload['e2e_frontend_url'])
+        : '';
+
+    if (is_string($base_url) && trim($base_url) !== '') {
+        update_option('cbt_test_hub_settings_v1', [
+            'e2e_base_url' => trim($base_url),
+            'e2e_frontend_url' => is_string($frontend_url) ? trim($frontend_url) : '',
+        ], false);
+    }
+
+    return [
+        'job_dir' => e2e_fixture_test_hub_job_dir(),
+    ];
+}
+
+function e2e_fixture_seed_test_hub_job(array $payload): array
+{
+    $job_dir = e2e_fixture_test_hub_job_dir();
+    wp_mkdir_p($job_dir);
+    @chmod($job_dir, 0777);
+
+    $job_id = isset($payload['job_id']) && is_scalar($payload['job_id'])
+        ? sanitize_file_name((string) $payload['job_id'])
+        : '';
+    if ($job_id === '') {
+        $job_id = 'flow-e2e-' . substr(md5((string) microtime(true)), 0, 10);
+    }
+
+    $status = isset($payload['status']) && is_scalar($payload['status'])
+        ? sanitize_key((string) $payload['status'])
+        : 'queued';
+    if (!in_array($status, ['queued', 'running', 'cancelling', 'passed', 'failed', 'cancelled'], true)) {
+        $status = 'queued';
+    }
+
+    $now = time();
+    $tab = isset($payload['tab']) && is_scalar($payload['tab']) ? sanitize_key((string) $payload['tab']) : 'sync_rest';
+    $scope = isset($payload['scope']) && is_scalar($payload['scope']) ? sanitize_key((string) $payload['scope']) : 'smoke_tests';
+    $item_index = max(0, (int) ($payload['item_index'] ?? 0));
+    $item_label = isset($payload['item_label']) && is_scalar($payload['item_label'])
+        ? sanitize_text_field((string) $payload['item_label'])
+        : 'E2E Test Hub Job';
+
+    $job = [
+        'job_id' => $job_id,
+        'tab' => $tab,
+        'scope' => $scope,
+        'item_index' => $item_index,
+        'item_label' => $item_label,
+        'status' => $status,
+        'created_at' => (int) ($payload['created_at'] ?? $now),
+        'started_at' => in_array($status, ['running', 'cancelling'], true) ? (int) ($payload['started_at'] ?? $now) : (int) ($payload['started_at'] ?? 0),
+        'finished_at' => in_array($status, ['passed', 'failed', 'cancelled'], true) ? (int) ($payload['finished_at'] ?? $now) : (int) ($payload['finished_at'] ?? 0),
+        'heartbeat_at' => in_array($status, ['running', 'cancelling'], true) ? (int) ($payload['heartbeat_at'] ?? $now) : (int) ($payload['heartbeat_at'] ?? 0),
+        'worker_pid' => (int) ($payload['worker_pid'] ?? 0),
+        'active_child_pid' => (int) ($payload['active_child_pid'] ?? 0),
+        'cancel_requested_at' => (int) ($payload['cancel_requested_at'] ?? 0),
+        'command' => 'node -e "console.log(\'e2e test hub job\')"',
+        'commands' => [
+            [
+                'label' => 'E2E Test Hub Job',
+                'command' => 'node -e "console.log(\'e2e test hub job\')"',
+            ],
+        ],
+        'results' => [],
+        'stdout' => '',
+        'stderr' => '',
+        'exit_code' => in_array($status, ['failed', 'cancelled'], true) ? 1 : 0,
+        'failure_kind' => $status === 'cancelled' ? 'cancelled' : '',
+        'failure_summary' => $status === 'cancelled' ? 'Job flow check dibatalkan dari CBT Test Hub.' : '',
+        'log_path' => $job_dir . '/' . $job_id . '.log',
+    ];
+
+    if (isset($payload['job']) && is_array($payload['job'])) {
+        $job = array_merge($job, $payload['job']);
+        $job['job_id'] = $job_id;
+    }
+
+    if (isset($payload['log_content']) && is_scalar($payload['log_content'])) {
+        $log_path = isset($job['log_path']) && is_scalar($job['log_path']) ? (string) $job['log_path'] : ($job_dir . '/' . $job_id . '.log');
+        $log_real_dir = dirname($log_path);
+        if (strpos(wp_normalize_path($log_real_dir), wp_normalize_path($job_dir)) === 0) {
+            wp_mkdir_p($log_real_dir);
+            file_put_contents($log_path, (string) $payload['log_content']);
+            @chmod($log_path, 0666);
+            $job['log_path'] = $log_path;
+        }
+    }
+
+    if (isset($payload['artifacts']) && is_array($payload['artifacts'])) {
+        $artifact_dir = $job_dir . '/' . $job_id . '-artifacts';
+        foreach ((array) $payload['artifacts'] as $artifact_key => $artifact_value) {
+            if (is_array($artifact_value)) {
+                $relative_path = isset($artifact_value['path']) && is_scalar($artifact_value['path']) ? (string) $artifact_value['path'] : (string) $artifact_key;
+                $content = isset($artifact_value['content']) && is_scalar($artifact_value['content']) ? (string) $artifact_value['content'] : '';
+            } else {
+                $relative_path = (string) $artifact_key;
+                $content = is_scalar($artifact_value) ? (string) $artifact_value : '';
+            }
+
+            $relative_path = trim(str_replace('\\', '/', $relative_path), '/');
+            if ($relative_path === '' || str_contains($relative_path, '..')) {
+                continue;
+            }
+
+            $artifact_path = $artifact_dir . '/' . $relative_path;
+            wp_mkdir_p(dirname($artifact_path));
+            file_put_contents($artifact_path, $content);
+            @chmod($artifact_path, 0666);
+        }
+    }
+
+    $encoded = wp_json_encode($job, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    if (!is_string($encoded) || $encoded === '') {
+        e2e_fixture_fail('Gagal encode job Test Hub E2E.');
+    }
+
+    $job_path = $job_dir . '/' . $job_id . '.json';
+    file_put_contents($job_path, $encoded);
+    @chmod($job_path, 0666);
+
+    return [
+        'job' => $job,
+        'job_path' => $job_path,
+    ];
+}
+
+function e2e_fixture_get_test_hub_jobs(): array
+{
+    $job_dir = e2e_fixture_test_hub_job_dir();
+    $jobs = [];
+    foreach ((array) glob($job_dir . '/*.json') as $job_path) {
+        $decoded = json_decode((string) file_get_contents((string) $job_path), true);
+        if (is_array($decoded)) {
+            $jobs[] = $decoded;
+        }
+    }
+
+    usort($jobs, static function (array $left, array $right): int {
+        return ((int) ($right['created_at'] ?? 0)) <=> ((int) ($left['created_at'] ?? 0));
+    });
+
+    return $jobs;
+}
+
 e2e_fixture_bootstrap_wordpress();
 e2e_fixture_bootstrap_classes();
 
@@ -1143,6 +1335,20 @@ switch ($action) {
 
     case 'age_login_session':
         e2e_fixture_success(e2e_fixture_age_login_session($payload));
+        break;
+
+    case 'reset_test_hub':
+        e2e_fixture_success(e2e_fixture_reset_test_hub($payload));
+        break;
+
+    case 'seed_test_hub_job':
+        e2e_fixture_success(e2e_fixture_seed_test_hub_job($payload));
+        break;
+
+    case 'test_hub_jobs':
+        e2e_fixture_success([
+            'jobs' => e2e_fixture_get_test_hub_jobs(),
+        ]);
         break;
 
     default:

@@ -132,6 +132,43 @@ describe('createNativeBridgeManager', function () {
         });
     });
 
+    it('rejects malformed persisted token before exposing a native security snapshot', function () {
+        var setup = createManager({
+            state: {
+                token: '',
+                attemptId: 114,
+                stage: 'exam',
+                selectedExamId: 16,
+                user: {
+                    user_id: 7662
+                }
+            },
+            readPersistedAuthSession: function () {
+                return {
+                    token: { value: 'not-a-string-token' },
+                    selectedExamId: 16,
+                    user: {
+                        user_id: 7662
+                    }
+                };
+            }
+        });
+
+        setup.manager.mount();
+        var snapshot = setup.windowRef.CBTNativeBridge.getSecuritySnapshot();
+
+        expect(snapshot).toEqual({
+            ok: 0,
+            token: '',
+            attemptId: 0,
+            stage: 'exam',
+            studentId: 7662,
+            selectedExamId: 16,
+            securityLoggingEnabled: true,
+            endpoints: {}
+        });
+    });
+
     it('emits snapshot change notifications through callback and browser event only when the snapshot changes', function () {
         var setup = createManager({
             state: {

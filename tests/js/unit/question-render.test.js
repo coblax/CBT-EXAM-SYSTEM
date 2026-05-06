@@ -248,4 +248,195 @@ describe('createQuestionRenderManager', function () {
         expect(html).toContain('value="Tokyo"');
         expect(html).toContain('<option value="402" selected>Jepang</option>');
     });
+
+    it('renders all supported question types with their runtime controls', function () {
+        var storedAnswers = {
+            101: 1001,
+            102: [2001],
+            103: 3001,
+            104: { 1: 'true' },
+            105: { A: 'Tokyo' },
+            106: 'Esai siswa',
+            107: [7002, 7001],
+            108: { 1: 8002 },
+            109: { 1: 9002 },
+            110: { 1: 10002 },
+            111: { A1: 'Tokyo', B1: 11002 }
+        };
+        var manager = createManager({
+            resolveStoredAnswerValueForQuestion: function (question) {
+                return storedAnswers[Number(question && question.id) || 0] || null;
+            }
+        });
+        var baseOptions = [
+            { id: 1001, option_key: 'A', option_text: 'Benar' },
+            { id: 1002, option_key: 'B', option_text: 'Salah' }
+        ];
+        var cases = [
+            {
+                expected: ['data-action="answer-single"', 'checked'],
+                input: {
+                    id: 101,
+                    question_type: 'multiple_choice',
+                    options: baseOptions
+                },
+                type: 'multiple_choice'
+            },
+            {
+                expected: ['data-action="answer-multi"', 'checked'],
+                input: {
+                    id: 102,
+                    question_type: 'multiple_answer',
+                    options: [
+                        { id: 2001, option_key: 'A', option_text: 'Pilihan A' },
+                        { id: 2002, option_key: 'B', option_text: 'Pilihan B' }
+                    ]
+                },
+                type: 'multiple_answer'
+            },
+            {
+                expected: ['data-action="answer-single"', 'checked'],
+                input: {
+                    id: 103,
+                    question_type: 'true_false',
+                    options: [
+                        { id: 3001, option_key: 'true', option_text: 'Benar' },
+                        { id: 3002, option_key: 'false', option_text: 'Salah' }
+                    ]
+                },
+                type: 'true_false'
+            },
+            {
+                expected: ['data-action="answer-tf-matrix"', 'data-key="1"', 'rendered-question'],
+                input: {
+                    id: 104,
+                    question_type: 'true_false_matrix',
+                    true_false_matrix_meta: {
+                        items: [{ key: '1', text: '<table><tbody><tr><td>Pernyataan</td></tr></tbody></table>' }]
+                    }
+                },
+                type: 'true_false_matrix'
+            },
+            {
+                expected: ['data-action="answer-short"', 'data-short-key="A"', 'value="Tokyo"'],
+                input: {
+                    id: 105,
+                    question_text: 'Kota [INPUT_A]',
+                    question_type: 'short_answer',
+                    short_answer_meta: {
+                        input_keys: ['A']
+                    }
+                },
+                render: 'stem',
+                type: 'short_answer'
+            },
+            {
+                expected: ['data-action="answer-text"', 'Esai siswa'],
+                input: {
+                    id: 106,
+                    question_type: 'essay'
+                },
+                type: 'essay'
+            },
+            {
+                expected: ['data-action="answer-ordering-move"', 'data-option-id="7002"', 'data-option-id="7001"'],
+                input: {
+                    id: 107,
+                    question_type: 'ordering',
+                    options: [
+                        { id: 7001, option_key: 'A', option_text: 'Langkah 1' },
+                        { id: 7002, option_key: 'B', option_text: 'Langkah 2' }
+                    ]
+                },
+                type: 'ordering'
+            },
+            {
+                expected: ['data-action="answer-matching"', 'data-matching-key="1"', '<option value="8002" selected>Tokyo</option>'],
+                input: {
+                    id: 108,
+                    question_type: 'matching',
+                    matching_meta: {
+                        items: [{ key: '1', text: 'Ibukota Jepang' }]
+                    },
+                    options: [
+                        { id: 8001, option_key: 'A', option_text: 'Seoul' },
+                        { id: 8002, option_key: 'B', option_text: 'Tokyo' }
+                    ]
+                },
+                type: 'matching'
+            },
+            {
+                expected: ['data-action="answer-cloze-dropdown"', 'data-cloze-key="1"', '<option value="9002" selected>Tokyo</option>'],
+                input: {
+                    id: 109,
+                    question_text: 'Kota [DROPDOWN_1]',
+                    question_type: 'cloze_dropdown',
+                    cloze_dropdown_meta: {
+                        blanks: [
+                            {
+                                key: '1',
+                                options: [
+                                    { id: 9001, option_key: 'A', option_text: 'Seoul' },
+                                    { id: 9002, option_key: 'B', option_text: 'Tokyo' }
+                                ]
+                            }
+                        ]
+                    }
+                },
+                render: 'stem',
+                type: 'cloze_dropdown'
+            },
+            {
+                expected: ['data-action="answer-categorization"', 'data-categorization-key="1"', '<option value="10002" selected>Mamalia</option>'],
+                input: {
+                    id: 110,
+                    question_type: 'categorization',
+                    categorization_meta: {
+                        items: [{ key: '1', text: 'Kucing' }]
+                    },
+                    options: [
+                        { id: 10001, option_key: 'A', option_text: 'Reptil' },
+                        { id: 10002, option_key: 'B', option_text: 'Mamalia' }
+                    ]
+                },
+                type: 'categorization'
+            },
+            {
+                expected: ['data-action="answer-table-completion-text"', 'data-action="answer-table-completion-dropdown"', 'value="Tokyo"', '<option value="11002" selected>Jepang</option>'],
+                input: {
+                    id: 111,
+                    question_type: 'table_completion',
+                    table_completion_meta: {
+                        rows: 1,
+                        columns: 2,
+                        cells: [
+                            { key: 'A1', row: 1, column: 1, type: 'text', text: 'Kota' },
+                            {
+                                key: 'B1',
+                                row: 1,
+                                column: 2,
+                                type: 'dropdown',
+                                text: 'Negara',
+                                options: [
+                                    { id: 11001, option_key: 'A', option_text: 'Korea' },
+                                    { id: 11002, option_key: 'B', option_text: 'Jepang' }
+                                ]
+                            }
+                        ]
+                    }
+                },
+                type: 'table_completion'
+            }
+        ];
+
+        cases.forEach(function (testCase) {
+            var html = testCase.render === 'stem'
+                ? manager.renderQuestionStem(testCase.input)
+                : manager.renderQuestionInput(testCase.input);
+
+            testCase.expected.forEach(function (fragment) {
+                expect(html, testCase.type + ' should render ' + fragment).toContain(fragment);
+            });
+        });
+    });
 });
