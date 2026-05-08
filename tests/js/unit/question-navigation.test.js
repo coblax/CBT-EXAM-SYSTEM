@@ -301,6 +301,32 @@ describe('createExamNavigationManager', function () {
         expect(fixture.navigationManager.renderNavigationAnswerBadges(question)).toContain('3/3');
     });
 
+    it('does not mark untouched ordering questions as answered from the default display order', function () {
+        var fixture = createFixture({
+            questionLookup: {
+                104: createQuestion(104, 'ordering', {
+                    options: [
+                        { id: 201, option_key: 'A' },
+                        { id: 202, option_key: 'B' },
+                        { id: 203, option_key: 'C' }
+                    ],
+                    question_number: 4
+                })
+            },
+            questionOrderIds: [104],
+            state: {
+                answers: {},
+                answeredQuestionLookup: {}
+            }
+        });
+
+        var question = fixture.questionLookup[104];
+
+        expect(fixture.navigationManager.isQuestionAnswered(question)).toBe(false);
+        expect(fixture.navigationManager.renderNavigationAnswerBadges(question)).toBe('');
+        expect(fixture.navigationManager.getExamProgressSummary().unansweredQuestionNumbers).toEqual(['4']);
+    });
+
     it('renders structured answer progress badges for object-map question types', function () {
         var fixture = createFixture({
             questionLookup: {

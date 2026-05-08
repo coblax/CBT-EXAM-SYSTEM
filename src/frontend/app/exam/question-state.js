@@ -546,21 +546,6 @@ export function createQuestionStateManager(deps) {
         }
 
         if (question.question_type === 'multiple_answer' || question.question_type === 'ordering') {
-            if (question.question_type === 'ordering' && !Array.isArray(answer)) {
-                var defaultOrderingIds = [];
-                var seenDefaultOrderingIds = {};
-                var defaultOrderingOptions = Array.isArray(question.options) ? question.options : [];
-                defaultOrderingOptions.forEach(function (option) {
-                    var optionId = Number(option && option.id) || 0;
-                    if (optionId <= 0 || seenDefaultOrderingIds[optionId]) {
-                        return;
-                    }
-                    seenDefaultOrderingIds[optionId] = true;
-                    defaultOrderingIds.push(optionId);
-                });
-                return defaultOrderingIds.length > 1 ? defaultOrderingIds : null;
-            }
-
             var normalizedMultiAnswer = normalizeAnswerValueForQuestion(question, answer, {
                 preserveText: true
             });

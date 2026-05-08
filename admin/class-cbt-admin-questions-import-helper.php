@@ -3770,7 +3770,7 @@ final class CBT_Admin_Questions_Import_Helper
                 $correct_index = 0;
                 $correct_index = self::normalize_docx_option_index($correct_raw);
 
-                for ($option_idx = 1; $option_idx <= 12; $option_idx++) {
+                for ($option_idx = 1; $option_idx <= 6; $option_idx++) {
                     $option_text = trim((string) (
                         $row['dropdown_' . $blank_idx . '_opsi_' . $option_idx] ??
                         ($row['dropdown_' . $blank_idx . '_option_' . $option_idx] ?? ($row['dropdown_' . $blank_idx . '_pilihan_' . $option_idx] ?? ''))
@@ -5510,11 +5510,11 @@ final class CBT_Admin_Questions_Import_Helper
 
                     if (
                         $forced_question_type === 'cloze_dropdown' &&
-                        preg_match('/^dropdown_?([1-8])_?(opsi|option|pilihan)_?([1-9]|1[0-2])$/', $key, $matches)
+                        preg_match('/^dropdown_?([1-8])_?(opsi|option|pilihan)_?([1-6])$/', $key, $matches)
                     ) {
                         $blank_idx = (int) $matches[1];
                         $option_idx = (int) $matches[3];
-                        if ($blank_idx >= 1 && $blank_idx <= 8 && $option_idx >= 1 && $option_idx <= 12) {
+                        if ($blank_idx >= 1 && $blank_idx <= 8 && $option_idx >= 1 && $option_idx <= 6) {
                             if (!isset($cloze_dropdown_option_map[$blank_idx])) {
                                 $cloze_dropdown_option_map[$blank_idx] = [];
                             }
@@ -5992,7 +5992,7 @@ final class CBT_Admin_Questions_Import_Helper
                 foreach (range(1, 8) as $blank_idx) {
                     $options_for_blank = [];
                     $correct_index = self::normalize_docx_option_index((string) ($cloze_dropdown_correct_map[$blank_idx] ?? ''));
-                    foreach (range(1, 12) as $option_idx) {
+                    foreach (range(1, 6) as $option_idx) {
                         $option_text = trim((string) ($cloze_dropdown_option_map[$blank_idx][$option_idx] ?? ''));
                         if ($option_text === '') {
                             continue;
@@ -6846,7 +6846,7 @@ final class CBT_Admin_Questions_Import_Helper
             }
 
             return (bool) preg_match(
-                '/^(jenis_soal|question_type|type|soal|question|pertanyaan|subject_code|kode_mapel|exam_title|judul_exam|ujian|point|points|poin|nilai|pembahasan|explanation|jawaban|answer|correct_answer|jawaban_ke|answer_option|correct_text|rubrik|rubric|rubric_text|(pilihan|opsi|option)_?([1-9]|1[0-2])|(pernyataan|statement|item)_?([1-9]|1[0-2])|(kunci|truth|tf)_?([1-9]|10)|(jawaban|answer|correct)_?([1-9]|10|[a-h])|(kiri|left|prompt)_?([1-9]|1[0-2])|(kanan|right|pasangan|match)_?([1-9]|1[0-2])|dropdown_?([1-8])_?(opsi|option|pilihan)_?([1-9]|1[0-2])|dropdown_?([1-8])_?(jawaban|answer|correct|kunci)|(kategori|category)_?([1-8])|item_?([1-9]|1[0-9]|2[0-4])|(kunci|answer|correct)_?([1-9]|1[0-9]|2[0-4])|table_?(rows|cols|columns)|cell_?([a-f][1-8])_?(type|text|jawaban|answer|opsi_[1-6]|option_[1-6])|[a-l])$/i',
+                '/^(jenis_soal|question_type|type|soal|question|pertanyaan|subject_code|kode_mapel|exam_title|judul_exam|ujian|point|points|poin|nilai|pembahasan|explanation|jawaban|answer|correct_answer|jawaban_ke|answer_option|correct_text|rubrik|rubric|rubric_text|(pilihan|opsi|option)_?([1-9]|1[0-2])|(pernyataan|statement|item)_?([1-9]|1[0-2])|(kunci|truth|tf)_?([1-9]|10)|(jawaban|answer|correct)_?([1-9]|10|[a-h])|(kiri|left|prompt)_?([1-9]|1[0-2])|(kanan|right|pasangan|match)_?([1-9]|1[0-2])|dropdown_?([1-8])_?(opsi|option|pilihan)_?([1-6])|dropdown_?([1-8])_?(jawaban|answer|correct|kunci)|(kategori|category)_?([1-8])|item_?([1-9]|1[0-9]|2[0-4])|(kunci|answer|correct)_?([1-9]|1[0-9]|2[0-4])|table_?(rows|cols|columns)|cell_?([a-f][1-8])_?(type|text|jawaban|answer|opsi_[1-6]|option_[1-6])|[a-l])$/i',
                 $line
             );
         }

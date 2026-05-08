@@ -13,6 +13,9 @@
     --cbt-font-scale: 1.05;
     --cbt-question-font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
     --cbt-question-font-weight: 500;
+    --cbt-question-content-size: calc(16px * var(--cbt-font-scale));
+    --cbt-question-content-line-height: 1.62;
+    --cbt-question-content-weight: 600;
     font-family: 'Source Sans 3', 'Segoe UI', Tahoma, sans-serif;
     font-size: 16px;
     line-height: 1.62;
@@ -26,13 +29,23 @@
 .cbt-web-shell .cbt-question-stem,
 .cbt-web-shell .cbt-option-label,
 .cbt-web-shell .cbt-tf-matrix-statement,
+.cbt-web-shell .cbt-matching-prompt-text,
+.cbt-web-shell .cbt-table-completion-static,
+.cbt-web-shell .cbt-table-completion-cell-label,
+.cbt-web-shell .cbt-answer-select-button,
+.cbt-web-shell .cbt-answer-select-option,
 .cbt-web-shell .cbt-review-question {
     font-family: var(--cbt-question-font-family);
-    font-weight: var(--cbt-question-font-weight);
+    font-weight: var(--cbt-question-content-weight);
+    line-height: var(--cbt-question-content-line-height);
 }
 
 .cbt-web-shell .cbt-question-stem :where(*),
-.cbt-web-shell .cbt-option-label :where(*) {
+.cbt-web-shell .cbt-option-label :where(*),
+.cbt-web-shell .cbt-tf-matrix-statement :where(*),
+.cbt-web-shell .cbt-matching-prompt-text :where(*),
+.cbt-web-shell .cbt-table-completion-static :where(*),
+.cbt-web-shell .cbt-table-completion-cell-label :where(*) {
     font-family: inherit !important;
 }
 
@@ -77,11 +90,23 @@
     border-radius: 8px;
 }
 
-/* Keep question stem and option text at identical size across breakpoints. */
+/* Keep question and answer content at one typography scale across question types. */
 .cbt-web-shell .cbt-question-stem,
 .cbt-web-shell .cbt-option-label,
-.cbt-web-shell .cbt-option-label :where(p, ul, ol, li, span) {
-    font-size: calc(16px * var(--cbt-font-scale)) !important;
+.cbt-web-shell .cbt-tf-matrix-statement,
+.cbt-web-shell .cbt-matching-prompt-text,
+.cbt-web-shell .cbt-table-completion-static,
+.cbt-web-shell .cbt-table-completion-cell-label,
+.cbt-web-shell .cbt-answer-select-button,
+.cbt-web-shell .cbt-answer-select-option,
+.cbt-web-shell .cbt-option-label :where(p, ul, ol, li, span),
+.cbt-web-shell .cbt-tf-matrix-statement :where(p, ul, ol, li, span),
+.cbt-web-shell .cbt-matching-prompt-text :where(p, ul, ol, li, span),
+.cbt-web-shell .cbt-table-completion-static :where(p, ul, ol, li, span),
+.cbt-web-shell .cbt-table-completion-cell-label :where(p, ul, ol, li, span) {
+    font-size: var(--cbt-question-content-size) !important;
+    font-weight: var(--cbt-question-content-weight) !important;
+    line-height: var(--cbt-question-content-line-height) !important;
 }
 
 .cbt-card h3,

@@ -352,30 +352,96 @@ export function createQuestionRenderManager(deps) {
         ].join('');
     }
 
+    function getDropdownOptionLabel(option, index) {
+        var label = htmlToPlainText(option && option.option_text ? option.option_text : '');
+        if (label === '') {
+            label = questionOptionKey(option, index);
+        }
+        return label;
+    }
+
+    function renderAnswerSelect(config) {
+        config = config || {};
+        var options = Array.isArray(config.options) ? config.options : [];
+        var selectedOptionId = Number(config.selectedOptionId) || 0;
+        var selectedLabel = '';
+        var validOptions = [];
+        options.forEach(function (option, index) {
+            var optionId = Number(option && option.id) || 0;
+            if (optionId <= 0) {
+                return;
+            }
+            var label = getDropdownOptionLabel(option, index);
+            if (optionId === selectedOptionId) {
+                selectedLabel = label;
+            }
+            validOptions.push({
+                id: optionId,
+                label: label
+            });
+        });
+
+        var disabledAttr = config.disabled ? ' disabled' : '';
+        var nativeClass = 'cbt-input cbt-answer-select cbt-answer-select-native ' + String(config.selectClass || '');
+        var buttonClass = 'cbt-answer-select-button' + (selectedLabel === '' ? ' is-empty' : '');
+        var selectAttributes = [
+            ' class="' + escapeHtml(nativeClass.trim()) + '"',
+            ' data-action="' + escapeHtml(config.action || '') + '"',
+            ' data-qid="' + escapeHtml(Number(config.questionId) || 0) + '"'
+        ];
+        if (config.keyAttr && config.keyValue !== undefined) {
+            selectAttributes.push(' ' + escapeHtml(config.keyAttr) + '="' + escapeHtml(config.keyValue) + '"');
+        }
+        if (config.ariaLabel) {
+            selectAttributes.push(' aria-label="' + escapeHtml(config.ariaLabel) + '"');
+        }
+
+        return [
+            '<span class="cbt-answer-select-ui" data-cbt-answer-select="1">',
+            '<select',
+            selectAttributes.join(''),
+            disabledAttr,
+            ' tabindex="-1" aria-hidden="true">',
+            renderDropdownOptionTags(options, selectedOptionId),
+            '</select>',
+            '<button type="button" class="' + escapeHtml(buttonClass) + '" data-action="answer-select-toggle" aria-haspopup="listbox" aria-expanded="false"' + disabledAttr + '>',
+            '<span class="cbt-answer-select-value">' + escapeHtml(selectedLabel || 'Pilih jawaban') + '</span>',
+            '<span class="cbt-answer-select-chevron" aria-hidden="true"></span>',
+            '</button>',
+            '<span class="cbt-answer-select-menu" role="listbox">',
+            '<button type="button" class="cbt-answer-select-option is-placeholder' + (selectedOptionId <= 0 ? ' is-selected' : '') + '" data-action="answer-select-option" data-option-id="" role="option" aria-selected="' + (selectedOptionId <= 0 ? 'true' : 'false') + '">Pilih jawaban</button>',
+            validOptions.map(function (option) {
+                var selected = option.id === selectedOptionId;
+                return '<button type="button" class="cbt-answer-select-option' + (selected ? ' is-selected' : '') + '" data-action="answer-select-option" data-option-id="' + escapeHtml(option.id) + '" role="option" aria-selected="' + (selected ? 'true' : 'false') + '">' + escapeHtml(option.label) + '</button>';
+            }).join(''),
+            '</span>',
+            '</span>'
+        ].join('');
+    }
+
     function renderClozeDropdownInlineField(questionId, blank, value, instance, isFallback) {
         var safeQuestionId = Number(questionId) || 0;
         var safeKey = String(blank && blank.key ? blank.key : '').trim();
         var safeInstance = Number(instance) || 1;
-        var selectId = 'cbt_cloze_' + safeQuestionId + '_' + safeKey + '_' + safeInstance;
         var wrapperClass = 'cbt-cloze-inline-field' + (isFallback ? ' is-fallback' : '');
         var keyChip = isFallback ? ('<span class="cbt-short-inline-key">' + escapeHtml(safeKey) + '</span>') : '';
-        var disabledAttr = isExamAnswerEditingLocked() ? ' disabled' : '';
         var selectedOptionId = Number(value) || 0;
         var options = Array.isArray(blank && blank.options) ? blank.options : [];
 
         return [
             '<span class="' + wrapperClass + '">',
             keyChip,
-            '<select',
-            ' id="' + escapeHtml(selectId) + '"',
-            ' class="cbt-input cbt-cloze-inline-select"',
-            ' data-action="answer-cloze-dropdown"',
-            ' data-qid="' + escapeHtml(safeQuestionId) + '"',
-            ' data-cloze-key="' + escapeHtml(safeKey) + '"',
-            disabledAttr,
-            '>',
-            renderDropdownOptionTags(options, selectedOptionId),
-            '</select>',
+            renderAnswerSelect({
+                action: 'answer-cloze-dropdown',
+                ariaLabel: 'Dropdown ' + safeKey,
+                disabled: isExamAnswerEditingLocked(),
+                keyAttr: 'data-cloze-key',
+                keyValue: safeKey,
+                options: options,
+                questionId: safeQuestionId,
+                selectClass: 'cbt-cloze-inline-select',
+                selectedOptionId: selectedOptionId
+            }),
             '</span>'
         ].join('');
     }
@@ -502,12 +568,16 @@ export function createQuestionRenderManager(deps) {
         if (question.question_type === 'multiple_answer') {
             var selected = Array.isArray(answer) ? answer.map(function (item) { return Number(item) || 0; }) : [];
             return [
-                '<div class="cbt-options">',
+                '<div class="cbt-choice-mode cbt-choice-mode--multi" role="note" aria-label="Instruksi multiple answer">',
+                '<span class="cbt-choice-mode-badge">Multi Answer</span>',
+                '<span class="cbt-choice-mode-text">Pilih satu atau lebih jawaban.</span>',
+                '</div>',
+                '<div class="cbt-options cbt-options--multi">',
                 (Array.isArray(question.options) ? question.options : []).map(function (option, index) {
                     var optionId = Number(option.id) || 0;
                     var checked = selected.indexOf(optionId) >= 0;
                     return [
-                        '<label class="cbt-option' + (checked ? ' is-selected' : '') + '">',
+                        '<label class="cbt-option cbt-option--multi' + (checked ? ' is-selected' : '') + '">',
                         '<div class="cbt-option-row">',
                         '<input type="checkbox" value="' + escapeHtml(optionId) + '" data-action="answer-multi" data-qid="' + escapeHtml(question.id) + '" data-option-id="' + escapeHtml(optionId) + '"' + (checked ? ' checked' : '') + disabledAttr + ' />',
                         '<span class="cbt-option-key">' + escapeHtml(questionOptionKey(option, index)) + '</span>',
@@ -566,21 +636,19 @@ export function createQuestionRenderManager(deps) {
                 orderedIds.map(function (optionId, positionIndex) {
                     var entry = optionLookup[optionId] || {};
                     var option = entry.option || {};
-                    var originalIndex = Number(entry.index) || 0;
                     var upDisabled = positionIndex <= 0 || isExamAnswerEditingLocked();
                     var downDisabled = positionIndex >= orderedIds.length - 1 || isExamAnswerEditingLocked();
                     return [
                         '<div class="cbt-ordering-item" data-option-id="' + escapeHtml(optionId) + '">',
                         '<div class="cbt-ordering-position">' + escapeHtml(positionIndex + 1) + '</div>',
                         '<div class="cbt-ordering-content">',
-                        '<span class="cbt-option-key">' + escapeHtml(questionOptionKey(option, originalIndex)) + '</span>',
                         '<div class="cbt-option-label">' + renderExamRichHtml(option.option_text || '', {
                             context: 'option'
                         }) + '</div>',
                         '</div>',
                         '<div class="cbt-ordering-controls">',
-                        '<button type="button" class="cbt-ordering-btn" data-action="answer-ordering-move" data-qid="' + escapeHtml(question.id) + '" data-option-id="' + escapeHtml(optionId) + '" data-direction="up" aria-label="Naikkan item" title="Naikkan item"' + (upDisabled ? ' disabled' : '') + '>&uarr;</button>',
-                        '<button type="button" class="cbt-ordering-btn" data-action="answer-ordering-move" data-qid="' + escapeHtml(question.id) + '" data-option-id="' + escapeHtml(optionId) + '" data-direction="down" aria-label="Turunkan item" title="Turunkan item"' + (downDisabled ? ' disabled' : '') + '>&darr;</button>',
+                        '<button type="button" class="cbt-ordering-btn" data-action="answer-ordering-move" data-qid="' + escapeHtml(question.id) + '" data-option-id="' + escapeHtml(optionId) + '" data-direction="up" aria-label="Naikkan item" title="Naikkan item"' + (upDisabled ? ' disabled' : '') + '><span class="cbt-ordering-btn-icon cbt-ordering-btn-icon-up" aria-hidden="true"></span><span class="cbt-visually-hidden">Naikkan item</span></button>',
+                        '<button type="button" class="cbt-ordering-btn" data-action="answer-ordering-move" data-qid="' + escapeHtml(question.id) + '" data-option-id="' + escapeHtml(optionId) + '" data-direction="down" aria-label="Turunkan item" title="Turunkan item"' + (downDisabled ? ' disabled' : '') + '><span class="cbt-ordering-btn-icon cbt-ordering-btn-icon-down" aria-hidden="true"></span><span class="cbt-visually-hidden">Turunkan item</span></button>',
                         '</div>',
                         '</div>'
                     ].join('');
@@ -599,25 +667,32 @@ export function createQuestionRenderManager(deps) {
 
             return [
                 '<div class="cbt-matching-wrap">',
-                '<table class="cbt-matching-table">',
-                '<tbody>',
                 matchingItems.map(function (item, index) {
                     var selectedOptionId = Number(matchingAnswer[item.key]) || 0;
                     return [
-                        '<tr>',
-                        '<td class="cbt-matching-prompt"><span class="cbt-option-key">' + escapeHtml(index + 1) + '.</span> <span>' + renderExamRichHtml(item.text || '', {
+                        '<div class="cbt-matching-row">',
+                        '<div class="cbt-matching-prompt">',
+                        '<span class="cbt-matching-index">' + escapeHtml(index + 1) + '</span>',
+                        '<div class="cbt-matching-prompt-text">' + renderExamRichHtml(item.text || '', {
                             context: 'question'
-                        }) + '</span></td>',
-                        '<td class="cbt-matching-choice">',
-                        '<select class="cbt-input cbt-matching-select" data-action="answer-matching" data-qid="' + escapeHtml(question.id) + '" data-matching-key="' + escapeHtml(item.key) + '"' + disabledAttr + '>',
-                        renderDropdownOptionTags(matchingOptions, selectedOptionId),
-                        '</select>',
-                        '</td>',
-                        '</tr>'
+                        }) + '</div>',
+                        '</div>',
+                        '<div class="cbt-matching-choice">',
+                        renderAnswerSelect({
+                            action: 'answer-matching',
+                            ariaLabel: 'Jawaban matching ' + String(index + 1),
+                            disabled: isExamAnswerEditingLocked(),
+                            keyAttr: 'data-matching-key',
+                            keyValue: item.key,
+                            options: matchingOptions,
+                            questionId: question.id,
+                            selectClass: 'cbt-matching-select',
+                            selectedOptionId: selectedOptionId
+                        }),
+                        '</div>',
+                        '</div>'
                     ].join('');
                 }).join(''),
-                '</tbody>',
-                '</table>',
                 '</div>'
             ].join('');
         }
@@ -642,9 +717,17 @@ export function createQuestionRenderManager(deps) {
                             context: 'question'
                         }) + '</span></td>',
                         '<td class="cbt-matching-choice">',
-                        '<select class="cbt-input cbt-matching-select" data-action="answer-categorization" data-qid="' + escapeHtml(question.id) + '" data-categorization-key="' + escapeHtml(item.key) + '"' + disabledAttr + '>',
-                        renderDropdownOptionTags(categorizationOptions, selectedOptionId),
-                        '</select>',
+                        renderAnswerSelect({
+                            action: 'answer-categorization',
+                            ariaLabel: 'Kategori item ' + String(index + 1),
+                            disabled: isExamAnswerEditingLocked(),
+                            keyAttr: 'data-categorization-key',
+                            keyValue: item.key,
+                            options: categorizationOptions,
+                            questionId: question.id,
+                            selectClass: 'cbt-matching-select',
+                            selectedOptionId: selectedOptionId
+                        }),
                         '</td>',
                         '</tr>'
                     ].join('');
@@ -683,19 +766,31 @@ export function createQuestionRenderManager(deps) {
                     if (cell.type === 'text') {
                         cellsMarkup.push([
                             '<td class="cbt-table-completion-cell is-answer is-text" data-table-cell-key="' + escapeHtml(cell.key) + '">',
+                            '<div class="cbt-table-completion-cell-head">',
                             '<span class="cbt-table-completion-cell-key">' + escapeHtml(cell.key || '') + '</span>',
                             cell.text ? '<div class="cbt-table-completion-cell-label">' + renderExamRichHtml(cell.text || '', { context: 'question' }) + '</div>' : '',
+                            '</div>',
                             '<input class="cbt-input cbt-table-completion-input" data-action="answer-table-completion-text" data-qid="' + escapeHtml(question.id) + '" data-table-key="' + escapeHtml(cell.key) + '" aria-label="Jawaban sel ' + escapeHtml(cell.key || '') + '" value="' + escapeHtml(String(tableAnswer[cell.key] || '')) + '"' + disabledAttr + ' />',
                             '</td>'
                         ].join(''));
                     } else if (cell.type === 'dropdown') {
                         cellsMarkup.push([
                             '<td class="cbt-table-completion-cell is-answer is-dropdown" data-table-cell-key="' + escapeHtml(cell.key) + '">',
+                            '<div class="cbt-table-completion-cell-head">',
                             '<span class="cbt-table-completion-cell-key">' + escapeHtml(cell.key || '') + '</span>',
                             cell.text ? '<div class="cbt-table-completion-cell-label">' + renderExamRichHtml(cell.text || '', { context: 'question' }) + '</div>' : '',
-                            '<select class="cbt-input cbt-table-completion-select" data-action="answer-table-completion-dropdown" data-qid="' + escapeHtml(question.id) + '" data-table-key="' + escapeHtml(cell.key) + '" aria-label="Jawaban sel ' + escapeHtml(cell.key || '') + '"' + disabledAttr + '>',
-                            renderDropdownOptionTags(cell.options || [], Number(tableAnswer[cell.key]) || 0),
-                            '</select>',
+                            '</div>',
+                            renderAnswerSelect({
+                                action: 'answer-table-completion-dropdown',
+                                ariaLabel: 'Jawaban sel ' + String(cell.key || ''),
+                                disabled: isExamAnswerEditingLocked(),
+                                keyAttr: 'data-table-key',
+                                keyValue: cell.key,
+                                options: cell.options || [],
+                                questionId: question.id,
+                                selectClass: 'cbt-table-completion-select',
+                                selectedOptionId: Number(tableAnswer[cell.key]) || 0
+                            }),
                             '</td>'
                         ].join(''));
                     } else {
@@ -760,7 +855,7 @@ export function createQuestionRenderManager(deps) {
             ].join('');
         }
 
-        if (question.question_type === 'short_answer') {
+        if (question.question_type === 'short_answer' || question.question_type === 'cloze_dropdown') {
             return '';
         }
 

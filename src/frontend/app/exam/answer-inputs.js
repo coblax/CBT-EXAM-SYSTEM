@@ -198,9 +198,90 @@ export function createAnswerInputManager(deps) {
         return ids;
     }
 
+    function closeAnswerSelectMenus(exceptShell) {
+        if (!(root instanceof HTMLElement)) {
+            return;
+        }
+        root.querySelectorAll('.cbt-answer-select-ui.is-open').forEach(function (node) {
+            if (!(node instanceof HTMLElement) || node === exceptShell) {
+                return;
+            }
+            node.classList.remove('is-open');
+            var toggle = node.querySelector('[data-action="answer-select-toggle"]');
+            if (toggle instanceof HTMLElement) {
+                toggle.setAttribute('aria-expanded', 'false');
+            }
+        });
+    }
+
+    function syncAnswerSelectUi(select) {
+        if (!(select instanceof HTMLSelectElement)) {
+            return;
+        }
+        var shell = select.closest('.cbt-answer-select-ui');
+        if (!(shell instanceof HTMLElement)) {
+            return;
+        }
+
+        var selectedValue = String(select.value || '');
+        var selectedOption = select.options[select.selectedIndex] || null;
+        var selectedLabel = selectedValue !== '' && selectedOption ? String(selectedOption.textContent || '').trim() : '';
+        var valueNode = shell.querySelector('.cbt-answer-select-value');
+        if (valueNode instanceof HTMLElement) {
+            valueNode.textContent = selectedLabel || 'Pilih jawaban';
+        }
+        var button = shell.querySelector('[data-action="answer-select-toggle"]');
+        if (button instanceof HTMLElement) {
+            button.classList.toggle('is-empty', selectedValue === '');
+            button.setAttribute('aria-expanded', 'false');
+        }
+        shell.querySelectorAll('.cbt-answer-select-option[data-option-id]').forEach(function (node) {
+            if (!(node instanceof HTMLElement)) {
+                return;
+            }
+            var isSelected = String(node.getAttribute('data-option-id') || '') === selectedValue;
+            node.classList.toggle('is-selected', isSelected);
+            node.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+        });
+        shell.classList.remove('is-open');
+    }
+
     function handleClickTarget(target) {
         var action = String(target.getAttribute('data-action') || '');
+        if (action === 'answer-select-toggle') {
+            var toggleShell = target.closest('.cbt-answer-select-ui');
+            if (!(toggleShell instanceof HTMLElement)) {
+                return true;
+            }
+            var select = toggleShell.querySelector('select.cbt-answer-select-native');
+            if (select instanceof HTMLSelectElement && select.disabled) {
+                return true;
+            }
+            var willOpen = !toggleShell.classList.contains('is-open');
+            closeAnswerSelectMenus(toggleShell);
+            toggleShell.classList.toggle('is-open', willOpen);
+            target.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+            return true;
+        }
+
+        if (action === 'answer-select-option') {
+            var optionShell = target.closest('.cbt-answer-select-ui');
+            if (!(optionShell instanceof HTMLElement)) {
+                return true;
+            }
+            var optionSelect = optionShell.querySelector('select.cbt-answer-select-native');
+            if (!(optionSelect instanceof HTMLSelectElement) || optionSelect.disabled) {
+                return true;
+            }
+            optionSelect.value = String(target.getAttribute('data-option-id') || '');
+            syncAnswerSelectUi(optionSelect);
+            handleChangeTarget(optionSelect);
+            closeAnswerSelectMenus();
+            return true;
+        }
+
         if (action !== 'answer-ordering-move') {
+            closeAnswerSelectMenus();
             return false;
         }
 

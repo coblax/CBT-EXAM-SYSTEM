@@ -200,6 +200,31 @@ describe('createQuestionStateManager', function () {
         });
     });
 
+    it('does not submit the default ordering display order before the student moves an item', function () {
+        var fixture = createFixture({
+            questionsById: {
+                6: createQuestion(6, 'ordering', {
+                    options: [
+                        { id: 61, option_key: 'A' },
+                        { id: 62, option_key: 'B' },
+                        { id: 63, option_key: 'C' }
+                    ]
+                })
+            },
+            state: {
+                answers: {},
+                answeredQuestionLookup: {}
+            }
+        });
+
+        expect(fixture.manager.questionAnswerPayload(fixture.questionsById[6])).toBeNull();
+
+        fixture.state.answers[6] = [62, 61, 63];
+        fixture.state.answeredQuestionLookup[6] = true;
+
+        expect(fixture.manager.questionAnswerPayload(fixture.questionsById[6])).toEqual([62, 61, 63]);
+    });
+
     it('restores revision-safe answers by option key when option ids change', function () {
         var fixture = createFixture({
             questionsById: {

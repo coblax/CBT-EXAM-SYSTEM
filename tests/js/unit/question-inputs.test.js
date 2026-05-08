@@ -337,6 +337,64 @@ describe('createAnswerInputManager', function () {
         ]);
     });
 
+    it('uses the custom answer select menu without relying on the native browser dropdown', function () {
+        var fixture = createFixture({
+            renderExamPartial: function () {
+                return true;
+            },
+            state: {
+                answers: {},
+                answeredQuestionLookup: {}
+            }
+        });
+        fixture.root.innerHTML = [
+            '<span class="cbt-answer-select-ui" data-cbt-answer-select="1">',
+            '<select class="cbt-input cbt-answer-select cbt-answer-select-native cbt-matching-select" data-action="answer-matching" data-qid="81" data-matching-key="1" tabindex="-1" aria-hidden="true">',
+            '<option value=""></option>',
+            '<option value="701">Tokyo</option>',
+            '<option value="702">Seoul</option>',
+            '</select>',
+            '<button type="button" class="cbt-answer-select-button is-empty" data-action="answer-select-toggle" aria-haspopup="listbox" aria-expanded="false"><span class="cbt-answer-select-value">Pilih jawaban</span></button>',
+            '<span class="cbt-answer-select-menu" role="listbox">',
+            '<button type="button" class="cbt-answer-select-option" data-action="answer-select-option" data-option-id="701" role="option" aria-selected="false">Tokyo</button>',
+            '</span>',
+            '</span>'
+        ].join('');
+
+        var toggle = fixture.root.querySelector('[data-action="answer-select-toggle"]');
+        var option = fixture.root.querySelector('[data-action="answer-select-option"]');
+        var shell = fixture.root.querySelector('.cbt-answer-select-ui');
+        var nativeSelect = fixture.root.querySelector('select');
+
+        expect(fixture.manager.handleClickTarget(toggle)).toBe(true);
+        expect(shell.classList.contains('is-open')).toBe(true);
+        expect(toggle.getAttribute('aria-expanded')).toBe('true');
+
+        expect(fixture.manager.handleClickTarget(option)).toBe(true);
+
+        expect(nativeSelect.value).toBe('701');
+        expect(shell.classList.contains('is-open')).toBe(false);
+        expect(toggle.getAttribute('aria-expanded')).toBe('false');
+        expect(toggle.classList.contains('is-empty')).toBe(false);
+        expect(fixture.root.querySelector('.cbt-answer-select-value').textContent).toBe('Tokyo');
+        expect(fixture.state.answers[81]).toEqual({
+            1: 701
+        });
+        expect(fixture.state.answeredQuestionLookup[81]).toBe(true);
+        expect(fixture.calls.renderExamPartial[0]).toEqual({
+            meta: {
+                inputType: 'matching',
+                questionId: 81
+            },
+            reason: 'answer-change',
+            regions: {
+                navigation: true,
+                questionFooterProgress: true,
+                questionSaveFeedback: true
+            }
+        });
+    });
+
     it('updates table completion mixed cell answers and keeps notice refresh scoped', function () {
         var fixture = createFixture({
             clearMessages: function (state) {

@@ -215,6 +215,28 @@ final class QuestionsHelperShortAnswerTest extends TestCase
         );
     }
 
+    public function test_normalize_cloze_dropdown_blanks_limits_options_to_six(): void
+    {
+        $normalized = \CBT_Admin_Questions_Helper::normalize_cloze_dropdown_blanks([
+            [
+                'blank_key' => '1',
+                'options' => [
+                    ['option_text' => 'Satu', 'is_correct' => 0],
+                    ['option_text' => 'Dua', 'is_correct' => 1],
+                    ['option_text' => 'Tiga', 'is_correct' => 0],
+                    ['option_text' => 'Empat', 'is_correct' => 0],
+                    ['option_text' => 'Lima', 'is_correct' => 0],
+                    ['option_text' => 'Enam', 'is_correct' => 0],
+                    ['option_text' => 'Tujuh', 'is_correct' => 0],
+                ],
+            ],
+        ]);
+
+        self::assertCount(1, $normalized);
+        self::assertCount(6, $normalized[0]['options']);
+        self::assertSame(['Satu', 'Dua', 'Tiga', 'Empat', 'Lima', 'Enam'], array_column($normalized[0]['options'], 'option_text'));
+    }
+
     public function test_validate_short_answer_definition_allows_duplicate_normalized_answers_for_different_inputs(): void
     {
         $message = \CBT_Admin_Questions_Helper::validate_short_answer_definition(

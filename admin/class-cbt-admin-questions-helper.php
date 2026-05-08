@@ -563,7 +563,7 @@ final class CBT_Admin_Questions_Helper
 
                 $options = [];
                 foreach ((array) ($row['options'] ?? []) as $option_index => $option_row) {
-                    if (count($options) >= 12 || !is_array($option_row)) {
+                    if (count($options) >= 6 || !is_array($option_row)) {
                         continue;
                     }
 

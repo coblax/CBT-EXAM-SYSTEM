@@ -387,6 +387,7 @@ public static function handle_generate_test_dataset(): void
             'seed_bank_question_offset' => 0,
             'seed_bank_question_created_count' => 0,
             'seed_bank_question_failed_count' => 0,
+            'seed_bank_question_failed_examples' => [],
             'seed_question_offset' => 0,
             'seed_question_created_count' => 0,
             'seed_question_failed_count' => 0,
@@ -469,6 +470,9 @@ public static function handle_generate_test_dataset(): void
         $seed_bank_question_offset = max(0, min((int) ($preset['questions'] ?? 0), (int) ($state['seed_bank_question_offset'] ?? ($state['seed_question_offset'] ?? 0))));
         $seed_bank_question_created_count = max(0, (int) ($state['seed_bank_question_created_count'] ?? ($state['seed_question_created_count'] ?? 0)));
         $seed_bank_question_failed_count = max(0, (int) ($state['seed_bank_question_failed_count'] ?? ($state['seed_question_failed_count'] ?? 0)));
+        $seed_bank_question_failed_examples = isset($state['seed_bank_question_failed_examples']) && is_array($state['seed_bank_question_failed_examples'])
+            ? array_values((array) $state['seed_bank_question_failed_examples'])
+            : [];
         $seed_question_offset = max(0, min((int) ($preset['questions'] ?? 0), (int) ($state['seed_question_offset'] ?? 0)));
         $seed_question_created_count = max(0, (int) ($state['seed_question_created_count'] ?? 0));
         $seed_question_failed_count = max(0, (int) ($state['seed_question_failed_count'] ?? 0));
@@ -844,6 +848,9 @@ public static function handle_generate_test_dataset(): void
                     $result = [
                         'status' => 'failed',
                         'question_id' => 0,
+                        'failure_reason' => $exception->getMessage() !== ''
+                            ? $exception->getMessage()
+                            : 'Terjadi exception saat membuat bank question.',
                     ];
                 }
 
@@ -878,6 +885,13 @@ public static function handle_generate_test_dataset(): void
                     }
                 } else {
                     $seed_bank_question_failed_count++;
+                    $seed_bank_question_failed_examples = self::append_test_data_seed_question_failure_example(
+                        $seed_bank_question_failed_examples,
+                        $seed_bank_question_offset,
+                        $question_row,
+                        (string) ($result['failure_reason'] ?? '')
+                    );
+                    break;
                 }
 
                 $seed_bank_question_offset++;
@@ -888,12 +902,23 @@ public static function handle_generate_test_dataset(): void
                 }
             }
 
+            if ($seed_bank_question_failed_count > 0) {
+                self::clear_seed_progress_transients($token);
+                CBT_Admin_Maintenance_Common::redirect_maintenance_page(
+                    null,
+                    'Generator data uji berhenti karena ada bank question yang gagal dibuat. '
+                    . self::format_test_data_seed_question_failure_examples($seed_bank_question_failed_examples),
+                    'seed'
+                );
+            }
+
             if ($seed_bank_question_offset >= $question_total) {
                 if ($seed_bank_question_failed_count > 0 || $seed_bank_question_created_count < $question_total) {
                     self::clear_seed_progress_transients($token);
                     CBT_Admin_Maintenance_Common::redirect_maintenance_page(
                         null,
-                        'Generator data uji berhenti karena ada bank question yang gagal dibuat.',
+                        'Generator data uji berhenti karena ada bank question yang gagal dibuat. '
+                        . self::format_test_data_seed_question_failure_examples($seed_bank_question_failed_examples),
                         'seed'
                     );
                 }
@@ -989,6 +1014,7 @@ public static function handle_generate_test_dataset(): void
         $state['seed_bank_question_offset'] = $seed_bank_question_offset;
         $state['seed_bank_question_created_count'] = $seed_bank_question_created_count;
         $state['seed_bank_question_failed_count'] = $seed_bank_question_failed_count;
+        $state['seed_bank_question_failed_examples'] = $seed_bank_question_failed_examples;
         $state['seed_question_offset'] = $seed_bank_question_offset;
         $state['seed_question_created_count'] = $seed_bank_question_created_count;
         $state['seed_question_failed_count'] = $seed_bank_question_failed_count;
@@ -4853,7 +4879,7 @@ public static function handle_generate_test_dataset(): void
     }
 
     /**
-     * @return array{status:string,question_id:int}
+     * @return array{status:string,question_id:int,failure_reason:string}
      */
     private static function insert_test_data_seed_question(array $row): array
     {
@@ -4867,6 +4893,7 @@ public static function handle_generate_test_dataset(): void
             return [
                 'status' => 'failed',
                 'question_id' => 0,
+                'failure_reason' => 'Row seed question tidak valid: tipe, stem, atau bank exam kosong.',
             ];
         }
 
@@ -4892,6 +4919,7 @@ public static function handle_generate_test_dataset(): void
                     return [
                         'status' => 'failed',
                         'question_id' => 0,
+                        'failure_reason' => 'Pilihan objektif gagal dibentuk dari payload import.',
                     ];
                 }
                 $options_raw = $built;
@@ -4907,6 +4935,7 @@ public static function handle_generate_test_dataset(): void
                 return [
                     'status' => 'failed',
                     'question_id' => 0,
+                    'failure_reason' => 'True/False Matrix minimal harus punya 2 pernyataan valid.',
                 ];
             }
             $options_raw = '';
@@ -4916,6 +4945,7 @@ public static function handle_generate_test_dataset(): void
                 return [
                     'status' => 'failed',
                     'question_id' => 0,
+                    'failure_reason' => 'Short Answer wajib punya minimal satu jawaban valid.',
                 ];
             }
             $options_raw = '';
@@ -4925,6 +4955,7 @@ public static function handle_generate_test_dataset(): void
                 return [
                     'status' => 'failed',
                     'question_id' => 0,
+                    'failure_reason' => 'Ordering wajib punya item urutan yang valid.',
                 ];
             }
             $correct_text = '';
@@ -4932,10 +4963,12 @@ public static function handle_generate_test_dataset(): void
             $matching_items = isset($row['matching_items']) && is_array($row['matching_items'])
                 ? CBT_Admin_Questions_Helper::normalize_matching_items($row['matching_items'])
                 : [];
-            if (CBT_Admin_Questions_Helper::validate_matching_items($matching_items) !== '') {
+            $validation_error = CBT_Admin_Questions_Helper::validate_matching_items($matching_items);
+            if ($validation_error !== '') {
                 return [
                     'status' => 'failed',
                     'question_id' => 0,
+                    'failure_reason' => $validation_error,
                 ];
             }
             $correct_text = CBT_Admin_Questions_Helper::build_matching_payload($matching_items);
@@ -4944,10 +4977,12 @@ public static function handle_generate_test_dataset(): void
             $cloze_blanks = isset($row['cloze_blanks']) && is_array($row['cloze_blanks'])
                 ? CBT_Admin_Questions_Helper::normalize_cloze_dropdown_blanks($row['cloze_blanks'])
                 : [];
-            if (CBT_Admin_Questions_Helper::validate_cloze_dropdown_definition($question_text, $cloze_blanks) !== '') {
+            $validation_error = CBT_Admin_Questions_Helper::validate_cloze_dropdown_definition($question_text, $cloze_blanks);
+            if ($validation_error !== '') {
                 return [
                     'status' => 'failed',
                     'question_id' => 0,
+                    'failure_reason' => $validation_error,
                 ];
             }
             $correct_text = CBT_Admin_Questions_Helper::build_cloze_dropdown_payload($cloze_blanks);
@@ -4959,10 +4994,12 @@ public static function handle_generate_test_dataset(): void
             $categorization_items = isset($row['categorization_items']) && is_array($row['categorization_items'])
                 ? CBT_Admin_Questions_Helper::normalize_categorization_items($row['categorization_items'])
                 : [];
-            if (CBT_Admin_Questions_Helper::validate_categorization_definition($categorization_categories, $categorization_items) !== '') {
+            $validation_error = CBT_Admin_Questions_Helper::validate_categorization_definition($categorization_categories, $categorization_items);
+            if ($validation_error !== '') {
                 return [
                     'status' => 'failed',
                     'question_id' => 0,
+                    'failure_reason' => $validation_error,
                 ];
             }
             $correct_text = CBT_Admin_Questions_Helper::build_categorization_payload($categorization_categories, $categorization_items);
@@ -4971,10 +5008,12 @@ public static function handle_generate_test_dataset(): void
             $table_completion_definition = isset($row['table_completion']) && is_array($row['table_completion'])
                 ? CBT_Admin_Questions_Helper::normalize_table_completion_definition($row['table_completion'])
                 : [];
-            if (CBT_Admin_Questions_Helper::validate_table_completion_definition($table_completion_definition) !== '') {
+            $validation_error = CBT_Admin_Questions_Helper::validate_table_completion_definition($table_completion_definition);
+            if ($validation_error !== '') {
                 return [
                     'status' => 'failed',
                     'question_id' => 0,
+                    'failure_reason' => $validation_error,
                 ];
             }
             $correct_text = CBT_Admin_Questions_Helper::build_table_completion_payload($table_completion_definition);
@@ -4985,6 +5024,7 @@ public static function handle_generate_test_dataset(): void
                 return [
                     'status' => 'failed',
                     'question_id' => 0,
+                    'failure_reason' => 'Essay wajib punya rubrik atau kunci pembahasan.',
                 ];
             }
             $options_raw = '';
@@ -5008,6 +5048,7 @@ public static function handle_generate_test_dataset(): void
             return [
                 'status' => 'failed',
                 'question_id' => 0,
+                'failure_reason' => 'Insert root question gagal: ' . trim((string) ($wpdb->last_error ?? 'tidak ada detail error database.')),
             ];
         }
 
@@ -5105,7 +5146,62 @@ public static function handle_generate_test_dataset(): void
         return [
             'status' => 'created',
             'question_id' => $question_id,
+            'failure_reason' => '',
         ];
+    }
+
+    /**
+     * @param array<int,string> $examples
+     * @param array<string,mixed> $row
+     * @return array<int,string>
+     */
+    private static function append_test_data_seed_question_failure_example(
+        array $examples,
+        int $offset,
+        array $row,
+        string $failure_reason = ''
+    ): array {
+        if (count($examples) >= 5) {
+            return array_values($examples);
+        }
+
+        $question_number = $offset + 1;
+        $question_type = sanitize_key((string) ($row['question_type'] ?? ''));
+        $labels = self::get_test_data_seed_question_type_labels();
+        $question_type_label = isset($labels[$question_type])
+            ? (string) $labels[$question_type]
+            : ($question_type !== '' ? ucwords(str_replace('_', ' ', $question_type)) : 'Unknown');
+        $reason = trim(sanitize_text_field($failure_reason));
+        if ($reason === '') {
+            $reason = 'Tidak ada detail error yang tersedia.';
+        }
+
+        $examples[] = sprintf(
+            '#%d %s: %s',
+            $question_number,
+            $question_type_label,
+            $reason
+        );
+
+        return array_values(array_unique($examples));
+    }
+
+    /**
+     * @param array<int,string> $examples
+     */
+    private static function format_test_data_seed_question_failure_examples(array $examples): string
+    {
+        $examples = array_values(array_filter(array_map(static function ($example): string {
+            return sanitize_text_field((string) $example);
+        }, $examples), static function (string $example): bool {
+            return $example !== '';
+        }));
+
+        if (empty($examples)) {
+            return 'Detail kegagalan belum tersedia.';
+        }
+
+        return 'Contoh kegagalan: ' . implode(' | ', array_slice($examples, 0, 3));
     }
 
     /**

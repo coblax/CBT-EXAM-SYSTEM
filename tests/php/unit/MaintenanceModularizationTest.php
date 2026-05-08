@@ -518,6 +518,34 @@ final class MaintenanceModularizationTest extends TestCase
     }
 
     #[RunInSeparateProcess]
+    public function test_seed_service_returns_failure_reason_for_invalid_structured_seed_row(): void
+    {
+        $service = new \ReflectionClass(\CBT_Admin_Maintenance_Seed_Service::class);
+        $method = $service->getMethod('insert_test_data_seed_question');
+        $method->setAccessible(true);
+
+        $result = $method->invoke(null, [
+            'exam_id' => 301,
+            'question_type' => 'matching',
+            'question_text' => 'Cocokkan pasangan berikut.',
+            'points' => 2,
+            'matching_items' => [
+                [
+                    'position' => 1,
+                    'item_key' => '1',
+                    'prompt_text' => 'Kiri 1',
+                    'option_text' => 'Kanan 1',
+                ],
+            ],
+        ]);
+
+        self::assertIsArray($result);
+        self::assertSame('failed', $result['status']);
+        self::assertSame(0, $result['question_id']);
+        self::assertSame('Matching minimal harus punya 2 pasangan.', $result['failure_reason']);
+    }
+
+    #[RunInSeparateProcess]
     public function test_seed_service_cycles_size_variants_for_bulk_question_types(): void
     {
         $service = new \ReflectionClass(\CBT_Admin_Maintenance_Seed_Service::class);
@@ -1021,6 +1049,16 @@ final class MaintenanceModularizationTest extends TestCase
         self::assertStringNotContainsString('window.location.reload', $html);
         self::assertStringNotContainsString('window.location.href =', $html);
         self::assertStringNotContainsString('__cbtMaintenanceAutoContinue', $html);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_maintenance_page_legacy_seed_copy_matches_current_bulk_exam_topology(): void
+    {
+        $source = (string) file_get_contents(dirname(__DIR__, 3) . '/admin/views/maintenance/page.php');
+
+        self::assertStringContainsString('5 subject dan 22 exam uji', $source);
+        self::assertStringContainsString('11 exam khusus tipe soal dan 1 exam Mixed 50%', $source);
+        self::assertStringNotContainsString('17 exam uji', $source);
     }
 
     #[RunInSeparateProcess]

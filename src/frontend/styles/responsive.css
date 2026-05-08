@@ -334,7 +334,19 @@
         width: min(72vw, 210px);
         min-width: 112px;
         min-height: 32px;
-        padding: 5px 28px 5px 8px;
+        padding: 5px 40px 5px 10px;
+        --cbt-answer-select-arrow-a: 21px;
+        --cbt-answer-select-arrow-b: 15px;
+    }
+
+    .cbt-cloze-inline-field .cbt-answer-select-ui {
+        width: min(72vw, 210px);
+        min-width: 112px;
+    }
+
+    .cbt-cloze-inline-field .cbt-answer-select-button {
+        min-height: 32px;
+        padding: 5px 10px;
     }
 
     .cbt-short-inline-fallback {
@@ -385,16 +397,19 @@
         min-width: 138px;
     }
 
+    .cbt-table-completion-cell-head {
+        gap: 6px;
+        margin-bottom: 6px;
+    }
+
     .cbt-table-completion-cell-key {
         min-width: 24px;
         height: 20px;
-        margin-bottom: 5px;
         padding: 0 6px;
         font-size: 10px;
     }
 
     .cbt-table-completion-cell-label {
-        margin-bottom: 5px;
         font-size: calc(11px * var(--cbt-font-scale));
     }
 
@@ -407,7 +422,16 @@
     }
 
     .cbt-table-completion-select.cbt-input {
-        padding-right: 28px;
+        --cbt-answer-select-arrow-a: 21px;
+        --cbt-answer-select-arrow-b: 15px;
+        padding-right: 40px;
+    }
+
+    .cbt-table-completion-cell .cbt-answer-select-button {
+        min-height: 32px;
+        padding-top: 4px;
+        padding-bottom: 4px;
+        font-size: calc(12px * var(--cbt-font-scale));
     }
 
     .cbt-review-table-completion {

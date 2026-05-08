@@ -65,6 +65,36 @@ describe('createQuestionRenderManager', function () {
         expect(html).toContain('data-action="open-rich-zoom"');
     });
 
+    it('renders multiple answer with dedicated multi-select affordance', function () {
+        var manager = createManager({
+            resolveStoredAnswerValueForQuestion: function () {
+                return [201];
+            }
+        });
+        var html = manager.renderQuestionInput({
+            id: 21,
+            question_type: 'multiple_answer',
+            options: [
+                {
+                    id: 201,
+                    option_key: 'A',
+                    option_text: 'Pilihan A'
+                },
+                {
+                    id: 202,
+                    option_key: 'B',
+                    option_text: 'Pilihan B'
+                }
+            ]
+        });
+
+        expect(html).toContain('class="cbt-choice-mode cbt-choice-mode--multi"');
+        expect(html).toContain('Pilih satu atau lebih jawaban.');
+        expect(html).toContain('class="cbt-options cbt-options--multi"');
+        expect(html).toContain('class="cbt-option cbt-option--multi is-selected"');
+        expect(html).toContain('data-action="answer-multi"');
+    });
+
     it('renders ordering items with rich content and up down controls', function () {
         var manager = createManager();
         var html = manager.renderQuestionInput({
@@ -89,6 +119,10 @@ describe('createQuestionRenderManager', function () {
         expect(html).toContain('data-action="answer-ordering-move"');
         expect(html).toContain('data-direction="up"');
         expect(html).toContain('data-direction="down"');
+        expect(html).toContain('cbt-ordering-btn-icon-up');
+        expect(html).toContain('cbt-ordering-btn-icon-down');
+        expect(html).toContain('<div class="cbt-ordering-position">1</div>');
+        expect(html).not.toContain('<span class="cbt-option-key">');
         expect(html).toContain('<div class="rendered-option"><table>');
     });
 
@@ -124,7 +158,14 @@ describe('createQuestionRenderManager', function () {
         });
 
         expect(html).toContain('data-action="answer-matching"');
+        expect(html).toContain('data-action="answer-select-toggle"');
+        expect(html).toContain('data-action="answer-select-option"');
+        expect(html).toContain('cbt-answer-select-ui');
         expect(html).toContain('data-matching-key="1"');
+        expect(html).toContain('class="cbt-matching-row"');
+        expect(html).toContain('class="cbt-matching-index">1</span>');
+        expect(html).toContain('class="cbt-matching-prompt-text"');
+        expect(html).not.toContain('class="cbt-matching-table"');
         expect(html).toContain('<option value="202" selected>Tokyo</option>');
     });
 
@@ -161,8 +202,35 @@ describe('createQuestionRenderManager', function () {
         });
 
         expect(html).toContain('data-action="answer-cloze-dropdown"');
+        expect(html).toContain('data-action="answer-select-toggle"');
+        expect(html).toContain('data-action="answer-select-option"');
+        expect(html).toContain('cbt-answer-select-ui');
         expect(html).toContain('data-cloze-key="1"');
         expect(html).toContain('<option value="302" selected>Tokyo</option>');
+    });
+
+    it('does not render a separate essay box for cloze dropdown questions', function () {
+        var manager = createManager();
+        var html = manager.renderQuestionInput({
+            id: 520,
+            question_type: 'cloze_dropdown',
+            question_text: 'Nilai [DROPDOWN_1]',
+            cloze_dropdown_meta: {
+                blanks: [
+                    {
+                        key: '1',
+                        options: [
+                            { id: 301, option_key: 'A', option_text: 'Satu' },
+                            { id: 302, option_key: 'B', option_text: 'Dua' }
+                        ]
+                    }
+                ]
+            }
+        });
+
+        expect(html).toBe('');
+        expect(html).not.toContain('data-action="answer-text"');
+        expect(html).not.toContain('cbt-textarea');
     });
 
     it('restores selected categorization dropdown answers', function () {
@@ -197,6 +265,7 @@ describe('createQuestionRenderManager', function () {
         });
 
         expect(html).toContain('data-action="answer-categorization"');
+        expect(html).toContain('cbt-answer-select-ui');
         expect(html).toContain('data-categorization-key="1"');
         expect(html).toContain('<option value="502" selected>Mamalia</option>');
     });
@@ -243,7 +312,10 @@ describe('createQuestionRenderManager', function () {
         });
 
         expect(html).toContain('cbt-table-completion-cell is-answer is-text');
+        expect(html).toContain('cbt-table-completion-cell-head');
         expect(html).toContain('cbt-table-completion-cell-key">A1</span>');
+        expect(html).toContain('cbt-table-completion-cell-label');
+        expect(html).toContain('cbt-answer-select-ui');
         expect(html).toContain('aria-label="Jawaban sel A1"');
         expect(html).toContain('value="Tokyo"');
         expect(html).toContain('<option value="402" selected>Jepang</option>');
@@ -283,7 +355,7 @@ describe('createQuestionRenderManager', function () {
                 type: 'multiple_choice'
             },
             {
-                expected: ['data-action="answer-multi"', 'checked'],
+                expected: ['data-action="answer-multi"', 'checked', 'cbt-options--multi', 'cbt-option--multi'],
                 input: {
                     id: 102,
                     question_type: 'multiple_answer',

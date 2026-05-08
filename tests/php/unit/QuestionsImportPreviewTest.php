@@ -1104,6 +1104,39 @@ XML;
         self::assertSame(1, $cloze['cloze_blanks'][0]['options'][1]['is_correct']);
     }
 
+    public function test_parse_docx_cloze_dropdown_ignores_options_beyond_template_limit(): void
+    {
+        $cloze = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Pilih nilai [DROPDOWN_1].',
+            'QUESTION_TYPE: cloze_dropdown',
+            'DROPDOWN_1_OPSI_1: Satu',
+            'DROPDOWN_1_OPSI_2: Dua',
+            'DROPDOWN_1_OPSI_3: Tiga',
+            'DROPDOWN_1_OPSI_4: Empat',
+            'DROPDOWN_1_OPSI_5: Lima',
+            'DROPDOWN_1_OPSI_6: Enam',
+            'DROPDOWN_1_OPSI_7: Tujuh',
+            'DROPDOWN_1_JAWABAN: 2',
+        ]]);
+        $invalidCorrect = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'QUESTION: Pilih nilai [DROPDOWN_1].',
+            'QUESTION_TYPE: cloze_dropdown',
+            'DROPDOWN_1_OPSI_1: Satu',
+            'DROPDOWN_1_OPSI_2: Dua',
+            'DROPDOWN_1_OPSI_3: Tiga',
+            'DROPDOWN_1_OPSI_4: Empat',
+            'DROPDOWN_1_OPSI_5: Lima',
+            'DROPDOWN_1_OPSI_6: Enam',
+            'DROPDOWN_1_OPSI_7: Tujuh',
+            'DROPDOWN_1_JAWABAN: 7',
+        ]]);
+
+        self::assertIsArray($cloze);
+        self::assertCount(6, $cloze['cloze_blanks'][0]['options']);
+        self::assertSame(['Satu', 'Dua', 'Tiga', 'Empat', 'Lima', 'Enam'], array_column($cloze['cloze_blanks'][0]['options'], 'option_text'));
+        self::assertNull($invalidCorrect);
+    }
+
     public function test_parse_docx_categorization_and_table_completion_structured_blocks(): void
     {
         $categorization = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[

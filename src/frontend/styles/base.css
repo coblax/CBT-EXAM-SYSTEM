@@ -348,7 +348,6 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login::-webkit-s
 .cbt-web-shell .cbt-input,
 .cbt-web-shell .cbt-select,
 .cbt-web-shell .cbt-textarea,
-.cbt-web-shell .cbt-option-label,
 .cbt-web-shell .cbt-review-text,
 .cbt-web-shell .cbt-loading,
 .cbt-web-shell .cbt-exam-title,
@@ -357,6 +356,7 @@ body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login::-webkit-s
 }
 
 .cbt-web-shell .cbt-question-stem,
+.cbt-web-shell .cbt-option-label,
 .cbt-web-shell .cbt-review-question,
 .cbt-web-shell .cbt-review-item-head h4 {
     font-size: calc(16px * var(--cbt-font-scale));

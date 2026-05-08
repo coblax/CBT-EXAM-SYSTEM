@@ -161,6 +161,58 @@
     color: var(--cbt-text);
 }
 
+.cbt-web-shell.cbt-theme-dark .cbt-answer-select.cbt-input {
+    background-color: var(--cbt-dark-surface-2);
+    background-image:
+        linear-gradient(45deg, transparent 50%, #bfdbfe 50%),
+        linear-gradient(135deg, #bfdbfe 50%, transparent 50%);
+    background-position:
+        calc(100% - var(--cbt-answer-select-arrow-a, 24px)) 50%,
+        calc(100% - var(--cbt-answer-select-arrow-b, 18px)) 50%;
+    background-size: 6px 6px, 6px 6px;
+    background-repeat: no-repeat;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-answer-select-button {
+    background: linear-gradient(180deg, #17233a 0%, #111c2f 100%);
+    border-color: #3a4f6b;
+    color: var(--cbt-text);
+    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-answer-select-button.is-empty .cbt-answer-select-value {
+    color: #94a3b8;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-answer-select-chevron {
+    border-color: #bfdbfe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-answer-select-menu {
+    background: #0f172a;
+    border-color: #3a4f6b;
+    box-shadow: 0 18px 38px rgba(0, 0, 0, 0.34);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-answer-select-option {
+    color: #d7e4f5;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-answer-select-option:hover,
+.cbt-web-shell.cbt-theme-dark .cbt-answer-select-option:focus-visible {
+    background: rgba(96, 165, 250, 0.14);
+    color: #bfdbfe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-answer-select-option.is-selected {
+    background: #2563eb;
+    color: #fff;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-answer-select-option.is-placeholder {
+    color: #94a3b8;
+}
+
 .cbt-web-shell.cbt-theme-dark .cbt-question-head .cbt-chip,
 .cbt-web-shell.cbt-theme-dark .cbt-question-font-controls,
 .cbt-web-shell.cbt-theme-dark .cbt-nav-position-group,
@@ -966,6 +1018,18 @@
     background: #fff;
     border-color: #cfd8e4;
     color: var(--cbt-text);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-answer-select.cbt-input {
+    background-color: #fff;
+    background-image:
+        linear-gradient(45deg, transparent 50%, #0f4c81 50%),
+        linear-gradient(135deg, #0f4c81 50%, transparent 50%);
+    background-position:
+        calc(100% - var(--cbt-answer-select-arrow-a, 24px)) 50%,
+        calc(100% - var(--cbt-answer-select-arrow-b, 18px)) 50%;
+    background-size: 6px 6px, 6px 6px;
+    background-repeat: no-repeat;
 }
 
 .cbt-web-shell.cbt-theme-light .cbt-question-head .cbt-nav-toggle:hover:not(:disabled),

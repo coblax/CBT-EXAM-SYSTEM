@@ -91,6 +91,16 @@
     color: var(--cbt-text);
 }
 
+.cbt-web-shell.cbt-theme-dark .cbt-choice-mode-text {
+    color: #b6c7dc;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-choice-mode--multi .cbt-choice-mode-badge {
+    border-color: rgba(52, 211, 153, 0.32);
+    background: rgba(16, 185, 129, 0.14);
+    color: #86efac;
+}
+
 .cbt-web-shell.cbt-theme-dark :is(.cbt-question-stem, .cbt-option-label, .cbt-review-question, .cbt-review-text, .cbt-review-explanation) :where(table) {
     background: #111c2f;
     border-color: #3a4f6b;
@@ -111,6 +121,57 @@
 .cbt-web-shell.cbt-theme-dark .cbt-review-table-completion {
     background: #111c2f;
     border-color: #3a4f6b;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-option--multi:hover {
+    border-color: rgba(52, 211, 153, 0.38);
+    background: rgba(16, 185, 129, 0.08);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-option--multi.is-selected {
+    border-color: rgba(52, 211, 153, 0.62);
+    background: linear-gradient(180deg, rgba(6, 95, 70, 0.32), rgba(6, 95, 70, 0.16));
+    box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.16);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-option--multi .cbt-option-key {
+    background: rgba(16, 185, 129, 0.12);
+    border-color: rgba(52, 211, 153, 0.28);
+    color: #a7f3d0;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-option--multi .cbt-option-row input:checked + .cbt-option-key,
+.cbt-web-shell.cbt-theme-dark .cbt-option--multi.is-selected .cbt-option-key {
+    background: #047857;
+    border-color: #34d399;
+    color: transparent;
+    box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.14);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-matching-row {
+    background: #0f172a;
+    border-color: var(--cbt-border);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-matching-index {
+    background: rgba(96, 165, 250, 0.12);
+    color: #bfdbfe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-matching-prompt-text {
+    color: var(--cbt-text);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-matching-select.cbt-input {
+    background-image:
+        linear-gradient(45deg, transparent 50%, #bfdbfe 50%),
+        linear-gradient(135deg, #bfdbfe 50%, transparent 50%);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-cloze-inline-select.cbt-input {
+    background-image:
+        linear-gradient(45deg, transparent 50%, #bfdbfe 50%),
+        linear-gradient(135deg, #bfdbfe 50%, transparent 50%);
 }
 
 .cbt-web-shell.cbt-theme-dark .cbt-table-completion-table,
@@ -198,6 +259,58 @@
     background: #111c2f;
     border-color: var(--cbt-border);
     color: var(--cbt-text);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-answer-select.cbt-input {
+    background-color: #111c2f;
+    background-image:
+        linear-gradient(45deg, transparent 50%, #bfdbfe 50%),
+        linear-gradient(135deg, #bfdbfe 50%, transparent 50%);
+    background-position:
+        calc(100% - var(--cbt-answer-select-arrow-a, 24px)) 50%,
+        calc(100% - var(--cbt-answer-select-arrow-b, 18px)) 50%;
+    background-size: 6px 6px, 6px 6px;
+    background-repeat: no-repeat;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-answer-select-button {
+    background: linear-gradient(180deg, #17233a 0%, #111c2f 100%);
+    border-color: #3a4f6b;
+    color: var(--cbt-text);
+    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-answer-select-button.is-empty .cbt-answer-select-value {
+    color: #94a3b8;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-answer-select-chevron {
+    border-color: #bfdbfe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-answer-select-menu {
+    background: #0f172a;
+    border-color: #3a4f6b;
+    box-shadow: 0 18px 38px rgba(0, 0, 0, 0.34);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-answer-select-option {
+    color: #d7e4f5;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-answer-select-option:hover,
+.cbt-web-shell.cbt-theme-dark .cbt-answer-select-option:focus-visible {
+    background: rgba(96, 165, 250, 0.14);
+    color: #bfdbfe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-answer-select-option.is-selected {
+    background: #2563eb;
+    color: #fff;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-answer-select-option.is-placeholder {
+    color: #94a3b8;
 }
 
 .cbt-web-shell.cbt-theme-dark .cbt-button-secondary {

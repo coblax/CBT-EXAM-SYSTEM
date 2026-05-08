@@ -183,6 +183,20 @@
     color: #111827;
 }
 
+.cbt-choice-mode {
+    margin-top: 12px;
+}
+
+.cbt-choice-mode--multi .cbt-choice-mode-badge {
+    border-color: #b9dfcb;
+    background: #eefaf3;
+    color: #0f766e;
+}
+
+.cbt-choice-mode--multi .cbt-choice-mode-text {
+    color: #4f6479;
+}
+
 .cbt-option,
 .cbt-review-option {
     border-width: 2px;
@@ -200,6 +214,16 @@
     border-color: #60a5fa;
     background: #eff6ff;
     box-shadow: none;
+}
+
+.cbt-option--multi:hover {
+    border-color: #7dd3b3;
+    background: #f6fdf9;
+}
+
+.cbt-option--multi.is-selected {
+    border-color: #34d399;
+    background: #effcf5;
 }
 
 .cbt-option .cbt-option-row {
@@ -247,6 +271,40 @@
 .cbt-option .cbt-option-row input:focus-visible + .cbt-option-key {
     outline: none;
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+}
+
+.cbt-option--multi .cbt-option-key {
+    border-color: #b8ddca;
+    border-radius: 10px;
+    background: #f5fcf8;
+    color: #0f766e;
+}
+
+.cbt-option--multi .cbt-option-row input:checked + .cbt-option-key,
+.cbt-option--multi.is-selected .cbt-option-key {
+    border-color: #0f766e;
+    background: #0f766e;
+    color: transparent;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.16);
+    position: relative;
+}
+
+.cbt-option--multi .cbt-option-row input:checked + .cbt-option-key::before,
+.cbt-option--multi.is-selected .cbt-option-key::before {
+    content: '✓';
+    position: absolute;
+    inset: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #ffffff;
+    font-size: 15px;
+    font-weight: 900;
+    line-height: 1;
+}
+
+.cbt-option--multi .cbt-option-row input:focus-visible + .cbt-option-key {
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18);
 }
 
 .cbt-option-key {
@@ -1280,4 +1338,89 @@
         min-height: 22px;
         height: 22px;
     }
+}
+
+/* Final pass: student-facing question text and answer text share one readable style. */
+.cbt-web-shell {
+    --cbt-question-content-size: clamp(16px, calc(16px * var(--cbt-font-scale, 1)), 18px);
+    --cbt-question-content-line-height: 1.62;
+    --cbt-question-content-weight: 600;
+}
+
+.cbt-web-shell :is(
+    .cbt-question-stem,
+    .cbt-option-label,
+    .cbt-tf-matrix-statement,
+    .cbt-matching-prompt-text,
+    .cbt-table-completion-static,
+    .cbt-table-completion-cell-label,
+    .cbt-answer-select-button,
+    .cbt-answer-select-option
+) {
+    color: var(--cbt-text, #0f172a);
+    font-family: var(--cbt-question-font-family, 'Segoe UI', Tahoma, Arial, sans-serif) !important;
+    font-size: var(--cbt-question-content-size) !important;
+    font-weight: var(--cbt-question-content-weight) !important;
+    line-height: var(--cbt-question-content-line-height) !important;
+}
+
+.cbt-web-shell :is(
+    .cbt-question-stem,
+    .cbt-option-label,
+    .cbt-tf-matrix-statement,
+    .cbt-matching-prompt-text,
+    .cbt-table-completion-static,
+    .cbt-table-completion-cell-label
+) :where(p, ul, ol, li, span) {
+    font-family: inherit !important;
+    font-size: inherit !important;
+    font-weight: inherit;
+    line-height: inherit;
+}
+
+@media (max-width: 620px) {
+    .cbt-web-shell {
+        --cbt-question-content-size: clamp(15px, calc(15px * var(--cbt-font-scale, 1)), 17px);
+        --cbt-question-content-line-height: 1.58;
+    }
+}
+
+@media (max-width: 420px) {
+    .cbt-web-shell {
+        --cbt-question-content-size: clamp(14px, calc(14px * var(--cbt-font-scale, 1)), 16px);
+    }
+}
+
+@media (max-width: 360px) {
+    .cbt-web-shell {
+        --cbt-question-content-size: clamp(13px, calc(13px * var(--cbt-font-scale, 1)), 15px);
+        --cbt-question-content-line-height: 1.54;
+    }
+}
+
+.cbt-web-shell .cbt-answer-select-option:hover,
+.cbt-web-shell .cbt-answer-select-option:focus-visible {
+    color: #0f4c81;
+}
+
+.cbt-web-shell .cbt-answer-select-option.is-selected {
+    color: #fff;
+}
+
+.cbt-web-shell .cbt-answer-select-option.is-placeholder {
+    color: #64748b;
+    font-weight: 600 !important;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-answer-select-option:hover,
+.cbt-web-shell.cbt-theme-dark .cbt-answer-select-option:focus-visible {
+    color: #bfdbfe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-answer-select-option.is-selected {
+    color: #fff;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-answer-select-option.is-placeholder {
+    color: #94a3b8;
 }
