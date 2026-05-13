@@ -52,7 +52,7 @@ final class AdminResultsHelperObjectMapProgressTest extends TestCase
     public function test_table_completion_zero_text_value_counts_as_answered(): void
     {
         $item = $this->buildProgressItem(
-            ['id' => 12, 'question_type' => 'table_completion', 'points' => 4],
+            ['id' => 12, 'question_type' => 'table_completion', 'points' => 4, 'table_completion_answer_cell_count' => 1],
             ['answer_text' => '{"A1":"0"}', 'is_correct' => 1, 'score_awarded' => 4]
         );
 

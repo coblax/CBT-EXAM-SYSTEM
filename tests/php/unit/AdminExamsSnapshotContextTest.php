@@ -1975,6 +1975,15 @@ final class AdminExamsSnapshotContextFakeWpdb
 
     /**
      * @param string $prepared
+     * @return array<string,mixed>|null
+     */
+    public function get_row($prepared, $output = ARRAY_A): ?array
+    {
+        return null;
+    }
+
+    /**
+     * @param string $prepared
      * @return array<int,string>
      */
     public function get_col($prepared): array

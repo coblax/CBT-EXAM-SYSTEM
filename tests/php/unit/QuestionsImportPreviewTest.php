@@ -753,6 +753,67 @@ XML;
         self::assertStringContainsString('margin-right:0', $html);
     }
 
+    public function test_extract_docx_image_html_fragments_accepts_valid_png_image(): void
+    {
+        $fragments = $this->extractDocxImageFragmentsForTarget(
+            'word/media/diagram.png',
+            $this->validDocxPngBinary()
+        );
+
+        self::assertCount(1, $fragments);
+        self::assertStringContainsString('<img src="data:image/png;base64,', $fragments[0]);
+    }
+
+    public function test_extract_docx_image_html_fragments_rejects_php_image_relationship_target(): void
+    {
+        $fragments = $this->extractDocxImageFragmentsForTarget(
+            'word/media/payload.php',
+            "<?php echo 'owned';"
+        );
+
+        self::assertSame([], $fragments);
+    }
+
+    public function test_extract_docx_image_html_fragments_rejects_svg_image_relationship_target(): void
+    {
+        $fragments = $this->extractDocxImageFragmentsForTarget(
+            'word/media/vector.svg',
+            '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><script>alert(1)</script></svg>'
+        );
+
+        self::assertSame([], $fragments);
+    }
+
+    public function test_extract_docx_image_html_fragments_rejects_fake_png_binary(): void
+    {
+        $fragments = $this->extractDocxImageFragmentsForTarget(
+            'word/media/fake.png',
+            'not actually an image'
+        );
+
+        self::assertSame([], $fragments);
+    }
+
+    public function test_extract_docx_image_html_fragments_rejects_extension_mime_mismatch(): void
+    {
+        $fragments = $this->extractDocxImageFragmentsForTarget(
+            'word/media/diagram.jpg',
+            $this->validDocxPngBinary()
+        );
+
+        self::assertSame([], $fragments);
+    }
+
+    public function test_extract_docx_image_html_fragments_rejects_missing_extension(): void
+    {
+        $fragments = $this->extractDocxImageFragmentsForTarget(
+            'word/media/diagram',
+            $this->validDocxPngBinary()
+        );
+
+        self::assertSame([], $fragments);
+    }
+
     public function test_build_docx_question_text_renders_internal_newline_as_br(): void
     {
         $html = $this->invokeImportHelper('build_docx_question_text', [[
@@ -2500,6 +2561,70 @@ XML;
         }
 
         self::assertTrue($seenAnswerLine, 'Expected at least one DROPDOWN_n_JAWABAN line in generated cloze template.');
+    }
+
+    /**
+     * @return string[]
+     */
+    private function extractDocxImageFragmentsForTarget(string $target, string $binary): array
+    {
+        if (!class_exists(\ZipArchive::class)) {
+            self::markTestSkipped('ZipArchive tidak tersedia.');
+        }
+
+        $xml = <<<'XML'
+<w:p xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <w:r>
+    <w:drawing>
+      <wp:inline>
+        <wp:extent cx="952500" cy="952500"/>
+        <wp:docPr id="1" name="Diagram"/>
+        <a:graphic>
+          <a:graphicData>
+            <pic:pic>
+              <pic:blipFill>
+                <a:blip r:embed="rIdImage"/>
+              </pic:blipFill>
+            </pic:pic>
+          </a:graphicData>
+        </a:graphic>
+      </wp:inline>
+    </w:drawing>
+  </w:r>
+</w:p>
+XML;
+
+        $tmpPath = tempnam(sys_get_temp_dir(), 'cbt-docx-image-hardening-');
+        self::assertIsString($tmpPath);
+        self::assertNotSame('', $tmpPath);
+
+        $zip = new \ZipArchive();
+        self::assertTrue($zip->open($tmpPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE));
+        self::assertTrue($zip->addFromString($target, $binary));
+        $zip->close();
+
+        $zipRead = new \ZipArchive();
+        self::assertNotSame(false, $zipRead->open($tmpPath));
+
+        try {
+            return $this->invokeImportHelper('extract_docx_image_html_fragments_from_xml', [
+                $xml,
+                ['rIdImage' => $target],
+                $zipRead,
+                'left',
+            ]);
+        } finally {
+            $zipRead->close();
+            @unlink($tmpPath);
+        }
+    }
+
+    private function validDocxPngBinary(): string
+    {
+        $binary = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=', true);
+        self::assertIsString($binary);
+
+        return $binary;
     }
 
     private function invokeImportHelper(string $method, array $args): mixed

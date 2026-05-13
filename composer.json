@@ -16,6 +16,9 @@
       "CbtExamSystem\\": "includes/"
     }
   },
+  "config": {
+    "process-timeout": 900
+  },
   "scripts": {
     "test:php": "vendor/bin/phpunit -c phpunit.xml.dist"
   }

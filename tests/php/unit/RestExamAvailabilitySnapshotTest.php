@@ -599,6 +599,8 @@ PHP);
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-student-profile-cache.php';
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-exam-availability-cache.php';
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
+
+        $this->setStudentProfileRedisUnavailable();
     }
 
     private function registerStudentFixture(): void
@@ -648,6 +650,23 @@ PHP);
         $attemptedProperty->setValue(null, true);
 
         $errorProperty = $reflection->getProperty('snapshot_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, 'disabled in test');
+    }
+
+    private function setStudentProfileRedisUnavailable(): void
+    {
+        $reflection = new ReflectionClass(CBT_Student_Profile_Cache::class);
+
+        $redisProperty = $reflection->getProperty('profile_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, false);
+
+        $attemptedProperty = $reflection->getProperty('profile_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('profile_redis_last_connection_error');
         $errorProperty->setAccessible(true);
         $errorProperty->setValue(null, 'disabled in test');
     }

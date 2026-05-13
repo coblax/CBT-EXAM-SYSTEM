@@ -11,6 +11,13 @@ final class CBT_Admin_Questions_Import_Helper
     private const DOCX_HTML_MARKER_PREFIX = '__HTML__:';
     private const DOCX_DIAGNOSTIC_MARKER_PREFIX = '__DIAG__:';
     private const QUESTION_IMPORT_DIAGNOSTIC_ENTRY_LIMIT = 200;
+    private const DOCX_IMAGE_MIME_BY_EXTENSION = [
+        'jpg' => 'image/jpeg',
+        'jpeg' => 'image/jpeg',
+        'png' => 'image/png',
+        'gif' => 'image/gif',
+        'webp' => 'image/webp',
+    ];
 
     private static function prepare_runtime_for_bulk_user_import(): void
     {
@@ -6812,14 +6819,14 @@ final class CBT_Admin_Questions_Import_Helper
                 return '';
             }
 
-            $ext = strtolower((string) pathinfo($filename, PATHINFO_EXTENSION));
-            if ($ext === '') {
-                $ext = 'png';
+            $safe_ext = self::normalize_docx_image_extension($filename);
+            if ($safe_ext === '') {
+                return '';
             }
 
-            $safe_ext = preg_replace('/[^a-z0-9]/', '', $ext);
-            if ($safe_ext === '') {
-                $safe_ext = 'png';
+            $detected_mime = self::detect_docx_image_mime($binary);
+            if ($detected_mime === '' || !self::docx_image_mime_matches_extension($safe_ext, $detected_mime)) {
+                return '';
             }
 
             $upload_name = 'cbt-question-' . wp_generate_password(10, false, false) . '.' . $safe_ext;
@@ -6830,6 +6837,66 @@ final class CBT_Admin_Questions_Import_Helper
 
             $mime = self::guess_mime_from_extension($safe_ext);
             return 'data:' . $mime . ';base64,' . base64_encode($binary);
+        }
+
+        private static function normalize_docx_image_extension(string $filename): string
+        {
+            $ext = strtolower((string) pathinfo($filename, PATHINFO_EXTENSION));
+            $safe_ext = preg_replace('/[^a-z0-9]/', '', $ext);
+            if (!is_string($safe_ext) || $safe_ext === '') {
+                return '';
+            }
+
+            return isset(self::DOCX_IMAGE_MIME_BY_EXTENSION[$safe_ext]) ? $safe_ext : '';
+        }
+
+        private static function detect_docx_image_mime(string $binary): string
+        {
+            if ($binary === '') {
+                return '';
+            }
+
+            if (function_exists('getimagesizefromstring')) {
+                $image_info = @getimagesizefromstring($binary);
+                if (
+                    is_array($image_info) &&
+                    !empty($image_info['mime']) &&
+                    (int) ($image_info[0] ?? 0) > 0 &&
+                    (int) ($image_info[1] ?? 0) > 0
+                ) {
+                    return strtolower(trim((string) $image_info['mime']));
+                }
+
+                return '';
+            }
+
+            if (function_exists('finfo_open') && function_exists('finfo_buffer')) {
+                $finfo = @finfo_open(FILEINFO_MIME_TYPE);
+                if ($finfo !== false) {
+                    $mime = @finfo_buffer($finfo, $binary);
+                    @finfo_close($finfo);
+                    if (is_string($mime) && trim($mime) !== '') {
+                        return strtolower(trim($mime));
+                    }
+                }
+            }
+
+            return '';
+        }
+
+        private static function docx_image_mime_matches_extension(string $ext, string $mime): bool
+        {
+            $ext = strtolower($ext);
+            $mime = strtolower(trim($mime));
+            if ($ext === '' || $mime === '' || !isset(self::DOCX_IMAGE_MIME_BY_EXTENSION[$ext])) {
+                return false;
+            }
+
+            if (self::DOCX_IMAGE_MIME_BY_EXTENSION[$ext] === $mime) {
+                return true;
+            }
+
+            return in_array($ext, ['jpg', 'jpeg'], true) && $mime === 'image/pjpeg';
         }
 
         private static function is_docx_key_only_line(string $line): bool
@@ -8002,22 +8069,9 @@ final class CBT_Admin_Questions_Import_Helper
 
         private static function guess_mime_from_extension(string $ext): string
         {
-            switch (strtolower($ext)) {
-                case 'jpg':
-                case 'jpeg':
-                    return 'image/jpeg';
-                case 'gif':
-                    return 'image/gif';
-                case 'webp':
-                    return 'image/webp';
-                case 'bmp':
-                    return 'image/bmp';
-                case 'svg':
-                    return 'image/svg+xml';
-                case 'png':
-                default:
-                    return 'image/png';
-            }
+            $ext = strtolower($ext);
+
+            return self::DOCX_IMAGE_MIME_BY_EXTENSION[$ext] ?? '';
         }
 
 }
