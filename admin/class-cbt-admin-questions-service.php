@@ -75,6 +75,40 @@ final class CBT_Admin_Questions_Service
     }
 
     /**
+     * @param array<int,int> $exam_ids
+     * @param array<int,array<int,int>> $partial_question_ids_by_exam
+     */
+    private static function refresh_exam_question_delivery_snapshots_after_question_updates(array $exam_ids, array $partial_question_ids_by_exam): void
+    {
+        $exam_ids = array_values(array_unique(array_filter(array_map('intval', $exam_ids), static function (int $exam_id): bool {
+            return $exam_id > 0;
+        })));
+        if (empty($exam_ids)) {
+            return;
+        }
+
+        foreach ($exam_ids as $exam_id) {
+            $question_ids = isset($partial_question_ids_by_exam[$exam_id]) && is_array($partial_question_ids_by_exam[$exam_id])
+                ? array_values(array_unique(array_filter(array_map('intval', $partial_question_ids_by_exam[$exam_id]), static function (int $question_id): bool {
+                    return $question_id > 0;
+                })))
+                : [];
+
+            if (
+                !empty($question_ids)
+                && class_exists('CBT_REST')
+                && method_exists('CBT_REST', 'refresh_exam_question_snapshots_after_question_updates')
+            ) {
+                CBT_REST::refresh_exam_question_snapshots_after_question_updates($exam_id, $question_ids);
+                continue;
+            }
+
+            CBT_Cache::invalidate_exam($exam_id);
+            self::warm_exam_question_delivery_snapshots([$exam_id]);
+        }
+    }
+
+    /**
      * @param array<int,int> $question_ids
      * @return array<int,int>
      */
@@ -1931,6 +1965,11 @@ final class CBT_Admin_Questions_Service
             if ($previous_exam_id > 0 && $previous_exam_id !== $exam_id) {
                 $affected_exam_ids[$previous_exam_id] = $previous_exam_id;
             }
+
+            $partial_snapshot_question_ids_by_exam = [];
+            if ($id > 0 && $question_id > 0 && $exam_id > 0 && $previous_exam_id === $exam_id) {
+                $partial_snapshot_question_ids_by_exam[$exam_id][$question_id] = $question_id;
+            }
     
             if ($question_id > 0) {
                 $current_question_snapshot = CBT_Admin_Questions_Sync_Helper::get_question_sync_snapshot($question_id);
@@ -1939,19 +1978,24 @@ final class CBT_Admin_Questions_Service
                     CBT_Admin_Questions_Sync_Helper::is_bank_question_snapshot($previous_question_snapshot) &&
                     !empty($current_question_snapshot)
                 ) {
-                    foreach (CBT_Admin_Questions_Sync_Helper::propagate_bank_question_update($question_id, $previous_question_snapshot, $current_question_snapshot) as $affected_exam_id) {
-                        $affected_exam_id = (int) $affected_exam_id;
+                    $bank_update_targets = CBT_Admin_Questions_Sync_Helper::propagate_bank_question_update_with_targets($question_id, $previous_question_snapshot, $current_question_snapshot);
+                    foreach ($bank_update_targets as $bank_update_target) {
+                        $affected_exam_id = (int) ($bank_update_target['exam_id'] ?? 0);
+                        $affected_question_id = (int) ($bank_update_target['question_id'] ?? 0);
                         if ($affected_exam_id > 0) {
                             $affected_exam_ids[$affected_exam_id] = $affected_exam_id;
+                        }
+                        if ($affected_exam_id > 0 && $affected_question_id > 0) {
+                            $partial_snapshot_question_ids_by_exam[$affected_exam_id][$affected_question_id] = $affected_question_id;
                         }
                     }
                 }
             }
     
-            foreach ($affected_exam_ids as $affected_exam_id) {
-                CBT_Cache::invalidate_exam((int) $affected_exam_id);
-            }
-            self::warm_exam_question_delivery_snapshots(array_values($affected_exam_ids));
+            self::refresh_exam_question_delivery_snapshots_after_question_updates(
+                array_values($affected_exam_ids),
+                $partial_snapshot_question_ids_by_exam
+            );
     
             $success_message = $id > 0 ? 'Question updated' : 'Question saved to Bank Soal';
             wp_safe_redirect(add_query_arg(

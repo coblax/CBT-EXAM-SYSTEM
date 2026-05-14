@@ -467,6 +467,391 @@ trait CBT_REST_Question_Snapshot_Helpers
     }
 
     /**
+     * @param array<int,int> $question_ids
+     * @return array{success:bool,mode:string,reason:string,exam_id:int,question_ids:array<int,int>}
+     */
+    public static function refresh_exam_question_snapshots_after_question_updates(int $exam_id, array $question_ids): array
+    {
+        $exam_id = absint($exam_id);
+        $question_ids = self::normalize_partial_snapshot_question_ids($question_ids);
+        $default = [
+            'success' => false,
+            'mode' => 'skipped',
+            'reason' => $exam_id > 0 ? 'empty_question_ids' : 'invalid_exam',
+            'exam_id' => $exam_id,
+            'question_ids' => $question_ids,
+        ];
+        if ($exam_id <= 0 || empty($question_ids)) {
+            return $default;
+        }
+
+        if (
+            !class_exists('CBT_Exam_Question_Delivery_Cache')
+            || !class_exists('CBT_Exam_Start_Attempt_Snapshot_Cache')
+        ) {
+            return self::rebuild_exam_question_snapshots_after_partial_failure($exam_id, $question_ids, 'snapshot_cache_unavailable');
+        }
+
+        $lock_key = 'partial_question_snapshot:exam:' . $exam_id;
+        if (!CBT_Cache::acquire_lock($lock_key, 15, [
+            'type' => 'partial_question_snapshot',
+            'exam_id' => $exam_id,
+            'question_ids' => $question_ids,
+        ])) {
+            return self::rebuild_exam_question_snapshots_after_partial_failure($exam_id, $question_ids, 'lock_busy');
+        }
+
+        $fallback_reason = '';
+        $partial_result = $default;
+
+        try {
+            $delivery_envelope = CBT_Exam_Question_Delivery_Cache::read_current_exam_payload_envelope($exam_id);
+            if (empty($delivery_envelope['success'])) {
+                $fallback_reason = 'delivery_' . sanitize_key((string) ($delivery_envelope['reason'] ?? 'snapshot_unavailable'));
+            }
+
+            $start_envelope = [];
+            if ($fallback_reason === '') {
+                $start_envelope = CBT_Exam_Start_Attempt_Snapshot_Cache::read_current_exam_snapshot_envelope($exam_id);
+                if (empty($start_envelope['success'])) {
+                    $fallback_reason = 'start_' . sanitize_key((string) ($start_envelope['reason'] ?? 'snapshot_unavailable'));
+                }
+            }
+
+            $fragments = [];
+            if ($fallback_reason === '') {
+                $fragments = self::build_partial_question_snapshot_fragments($exam_id, $question_ids);
+                if (empty($fragments['success'])) {
+                    $fallback_reason = sanitize_key((string) ($fragments['reason'] ?? 'question_fragment_unavailable'));
+                }
+            }
+
+            $patched_delivery = [];
+            if ($fallback_reason === '') {
+                $patched_delivery = self::patch_partial_delivery_snapshot_items(
+                    (array) ($delivery_envelope['items'] ?? []),
+                    (array) ($fragments['delivery_items_by_id'] ?? []),
+                    $question_ids
+                );
+                if (empty($patched_delivery['success'])) {
+                    $fallback_reason = sanitize_key((string) ($patched_delivery['reason'] ?? 'delivery_patch_failed'));
+                }
+            }
+
+            $patched_start = [];
+            if ($fallback_reason === '') {
+                $patched_start = self::patch_partial_start_attempt_snapshot_payload(
+                    (array) ($start_envelope['payload'] ?? []),
+                    (array) ($fragments['start_fragments_by_id'] ?? []),
+                    $question_ids
+                );
+                if (empty($patched_start['success'])) {
+                    $fallback_reason = sanitize_key((string) ($patched_start['reason'] ?? 'start_patch_failed'));
+                }
+            }
+
+            if ($fallback_reason === '') {
+                CBT_Cache::invalidate_exam($exam_id);
+
+                $delivery_written = CBT_Exam_Question_Delivery_Cache::write_current_exam_payload(
+                    $exam_id,
+                    (array) ($patched_delivery['items'] ?? []),
+                    (int) ($delivery_envelope['ttl_seconds'] ?? 0)
+                );
+                if (!$delivery_written) {
+                    $fallback_reason = 'delivery_write_failed';
+                }
+            }
+
+            if ($fallback_reason === '') {
+                $start_written = CBT_Exam_Start_Attempt_Snapshot_Cache::write_current_exam_snapshot(
+                    $exam_id,
+                    (array) ($patched_start['payload'] ?? []),
+                    (int) ($start_envelope['ttl_seconds'] ?? 0)
+                );
+                if (!$start_written) {
+                    $fallback_reason = 'start_write_failed';
+                }
+            }
+
+            if ($fallback_reason === '') {
+                $partial_result = [
+                    'success' => true,
+                    'mode' => 'partial',
+                    'reason' => 'patched',
+                    'exam_id' => $exam_id,
+                    'question_ids' => $question_ids,
+                ];
+            }
+        } catch (Throwable $throwable) {
+            $fallback_reason = 'partial_exception';
+        } finally {
+            CBT_Cache::release_lock($lock_key);
+        }
+
+        if ($fallback_reason !== '') {
+            return self::rebuild_exam_question_snapshots_after_partial_failure($exam_id, $question_ids, $fallback_reason);
+        }
+
+        return $partial_result;
+    }
+
+    /**
+     * @param array<int,int> $question_ids
+     * @return array{success:bool,mode:string,reason:string,exam_id:int,question_ids:array<int,int>}
+     */
+    private static function rebuild_exam_question_snapshots_after_partial_failure(int $exam_id, array $question_ids, string $reason): array
+    {
+        $exam_id = absint($exam_id);
+        $question_ids = self::normalize_partial_snapshot_question_ids($question_ids);
+        if ($exam_id <= 0) {
+            return [
+                'success' => false,
+                'mode' => 'skipped',
+                'reason' => 'invalid_exam',
+                'exam_id' => 0,
+                'question_ids' => $question_ids,
+            ];
+        }
+
+        CBT_Cache::invalidate_exam($exam_id);
+        self::warm_exam_question_delivery_snapshot($exam_id);
+        self::warm_exam_start_attempt_snapshot($exam_id);
+
+        return [
+            'success' => true,
+            'mode' => 'full_rebuild',
+            'reason' => sanitize_key($reason) ?: 'partial_unavailable',
+            'exam_id' => $exam_id,
+            'question_ids' => $question_ids,
+        ];
+    }
+
+    /**
+     * @param array<int,int> $question_ids
+     * @return array{
+     *   success:bool,
+     *   reason:string,
+     *   delivery_items_by_id:array<int,array<string,mixed>>,
+     *   start_fragments_by_id:array<int,array{manifest:array<string,mixed>,option_tokens:array<int,string>,force_shuffle:bool}>
+     * }
+     */
+    private static function build_partial_question_snapshot_fragments(int $exam_id, array $question_ids): array
+    {
+        $question_ids = self::normalize_partial_snapshot_question_ids($question_ids);
+        $default = [
+            'success' => false,
+            'reason' => empty($question_ids) ? 'empty_question_ids' : 'question_not_found',
+            'delivery_items_by_id' => [],
+            'start_fragments_by_id' => [],
+        ];
+        if ($exam_id <= 0 || empty($question_ids)) {
+            return $default;
+        }
+
+        $questions = self::get_question_payload_by_ids($exam_id, $question_ids);
+        if (empty($questions)) {
+            return $default;
+        }
+
+        $questions_by_id = [];
+        foreach ($questions as $question_row) {
+            $question = (array) $question_row;
+            $question_id = (int) ($question['id'] ?? 0);
+            if ($question_id <= 0) {
+                continue;
+            }
+            if ((int) ($question['is_active'] ?? 1) !== 1) {
+                $default['reason'] = 'question_inactive';
+                return $default;
+            }
+            $questions_by_id[$question_id] = $question;
+        }
+
+        foreach ($question_ids as $question_id) {
+            if (!isset($questions_by_id[$question_id])) {
+                $default['reason'] = 'question_not_found';
+                return $default;
+            }
+        }
+
+        $delivery_items_by_id = [];
+        foreach (self::sanitize_question_delivery_payload(array_values($questions_by_id)) as $delivery_item) {
+            $question_id = (int) ($delivery_item['id'] ?? 0);
+            if ($question_id > 0) {
+                $delivery_items_by_id[$question_id] = $delivery_item;
+            }
+        }
+
+        $start_fragments_by_id = [];
+        foreach ($questions_by_id as $question_id => $question) {
+            $manifest_item = [
+                'id' => $question_id,
+                'question_type' => (string) ($question['question_type'] ?? ''),
+                'updated_at' => (string) ($question['updated_at'] ?? ''),
+                'points' => (float) ($question['points'] ?? 0),
+            ];
+            $option_tokens = self::question_supports_option_randomization($question)
+                ? self::extract_randomizable_question_item_keys($question)
+                : [];
+            $question_type = (string) ($question['question_type'] ?? '');
+            $force_shuffle = $question_type === 'matching';
+            if ($question_type === 'ordering') {
+                $ordering_meta = isset($question['ordering_meta']) && is_array($question['ordering_meta'])
+                    ? $question['ordering_meta']
+                    : [];
+                $force_shuffle = ((int) ($ordering_meta['shuffle_items'] ?? 1) !== 0);
+            }
+
+            $start_fragments_by_id[$question_id] = [
+                'manifest' => $manifest_item,
+                'option_tokens' => $option_tokens,
+                'force_shuffle' => $force_shuffle,
+            ];
+        }
+
+        if (count($delivery_items_by_id) !== count($question_ids) || count($start_fragments_by_id) !== count($question_ids)) {
+            $default['reason'] = 'fragment_incomplete';
+            return $default;
+        }
+
+        return [
+            'success' => true,
+            'reason' => 'ready',
+            'delivery_items_by_id' => $delivery_items_by_id,
+            'start_fragments_by_id' => $start_fragments_by_id,
+        ];
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $current_items
+     * @param array<int,array<string,mixed>> $replacement_items_by_id
+     * @param array<int,int> $question_ids
+     * @return array{success:bool,reason:string,items:array<int,array<string,mixed>>}
+     */
+    private static function patch_partial_delivery_snapshot_items(array $current_items, array $replacement_items_by_id, array $question_ids): array
+    {
+        $question_ids = self::normalize_partial_snapshot_question_ids($question_ids);
+        $remaining = array_fill_keys($question_ids, true);
+        $patched_items = [];
+
+        foreach ($current_items as $item) {
+            $question = (array) $item;
+            $question_id = (int) ($question['id'] ?? 0);
+            if ($question_id > 0 && isset($replacement_items_by_id[$question_id])) {
+                $patched_items[] = (array) $replacement_items_by_id[$question_id];
+                unset($remaining[$question_id]);
+                continue;
+            }
+
+            $patched_items[] = $question;
+        }
+
+        if (!empty($remaining)) {
+            return [
+                'success' => false,
+                'reason' => 'delivery_question_missing',
+                'items' => [],
+            ];
+        }
+
+        return [
+            'success' => true,
+            'reason' => 'patched',
+            'items' => array_values($patched_items),
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $payload
+     * @param array<int,array{manifest:array<string,mixed>,option_tokens:array<int,string>,force_shuffle:bool}> $fragments_by_id
+     * @param array<int,int> $question_ids
+     * @return array{success:bool,reason:string,payload:array<string,mixed>}
+     */
+    private static function patch_partial_start_attempt_snapshot_payload(array $payload, array $fragments_by_id, array $question_ids): array
+    {
+        $question_ids = self::normalize_partial_snapshot_question_ids($question_ids);
+        $snapshot_question_ids = self::normalize_question_order_ids($payload['question_ids'] ?? []);
+        $snapshot_question_lookup = array_fill_keys($snapshot_question_ids, true);
+        foreach ($question_ids as $question_id) {
+            if (!isset($snapshot_question_lookup[$question_id])) {
+                return [
+                    'success' => false,
+                    'reason' => 'start_question_missing',
+                    'payload' => [],
+                ];
+            }
+        }
+
+        $manifest = is_array($payload['question_manifest'] ?? null)
+            ? array_values(array_filter((array) $payload['question_manifest'], 'is_array'))
+            : [];
+        $remaining_manifest = array_fill_keys($question_ids, true);
+        foreach ($manifest as $index => $item) {
+            $manifest_item = (array) $item;
+            $question_id = (int) ($manifest_item['id'] ?? 0);
+            if ($question_id > 0 && isset($fragments_by_id[$question_id])) {
+                $manifest[$index] = (array) ($fragments_by_id[$question_id]['manifest'] ?? []);
+                unset($remaining_manifest[$question_id]);
+            }
+        }
+        if (!empty($remaining_manifest)) {
+            return [
+                'success' => false,
+                'reason' => 'start_manifest_missing',
+                'payload' => [],
+            ];
+        }
+
+        $option_tokens_by_question = self::normalize_attempt_option_order_map($payload['option_randomization_tokens_by_question'] ?? []);
+        $force_shuffle_lookup = array_fill_keys(self::normalize_question_order_ids($payload['force_option_shuffle_question_ids'] ?? []), true);
+
+        foreach ($question_ids as $question_id) {
+            $fragment = (array) ($fragments_by_id[$question_id] ?? []);
+            $option_tokens = array_values(array_filter(array_map('strval', (array) ($fragment['option_tokens'] ?? [])), static function (string $token): bool {
+                return trim($token) !== '';
+            }));
+            if (!empty($option_tokens)) {
+                $option_tokens_by_question[$question_id] = $option_tokens;
+            } else {
+                unset($option_tokens_by_question[$question_id]);
+            }
+
+            if (!empty($fragment['force_shuffle'])) {
+                $force_shuffle_lookup[$question_id] = true;
+            } else {
+                unset($force_shuffle_lookup[$question_id]);
+            }
+        }
+
+        $force_shuffle_question_ids = array_values(array_filter(array_map('intval', array_keys($force_shuffle_lookup)), static function (int $question_id): bool {
+            return $question_id > 0;
+        }));
+        sort($force_shuffle_question_ids, SORT_NUMERIC);
+
+        $payload['question_manifest'] = array_values($manifest);
+        $payload['option_randomization_tokens_by_question'] = self::normalize_attempt_option_order_map($option_tokens_by_question);
+        $payload['force_option_shuffle_question_ids'] = $force_shuffle_question_ids;
+
+        return [
+            'success' => true,
+            'reason' => 'patched',
+            'payload' => $payload,
+        ];
+    }
+
+    /**
+     * @param array<int,int> $question_ids
+     * @return array<int,int>
+     */
+    private static function normalize_partial_snapshot_question_ids(array $question_ids): array
+    {
+        return array_values(array_unique(array_filter(array_map('intval', $question_ids), static function (int $question_id): bool {
+            return $question_id > 0;
+        })));
+    }
+
+    /**
      * @return array{
      *   ok:bool,
      *   attempt_id:int,

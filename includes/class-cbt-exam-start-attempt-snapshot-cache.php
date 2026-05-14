@@ -348,6 +348,111 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
         self::write_exam_snapshot($exam_id, $payload);
     }
 
+    /**
+     * @return array{
+     *   success:bool,
+     *   reason:string,
+     *   exam_id:int,
+     *   revision_meta:array{exam_id:int,version:int,invalidated_at:string,signature:string},
+     *   revision_signature:string,
+     *   storage_key:string,
+     *   ttl_seconds:int,
+     *   payload:array<string,mixed>
+     * }
+     */
+    public static function read_current_exam_snapshot_envelope(int $exam_id): array
+    {
+        $exam_id = absint($exam_id);
+        $empty_revision = [
+            'exam_id' => $exam_id,
+            'version' => 0,
+            'invalidated_at' => '',
+            'signature' => '',
+        ];
+        $default = [
+            'success' => false,
+            'reason' => $exam_id > 0 ? 'snapshot_miss' : 'invalid_exam',
+            'exam_id' => $exam_id,
+            'revision_meta' => $empty_revision,
+            'revision_signature' => '',
+            'storage_key' => '',
+            'ttl_seconds' => -2,
+            'payload' => [],
+        ];
+        if ($exam_id <= 0) {
+            return $default;
+        }
+
+        $redis = self::start_snapshot_redis();
+        if (!$redis instanceof Redis) {
+            $default['reason'] = 'redis_unavailable';
+            return $default;
+        }
+
+        $revision_meta = self::exam_revision_meta($exam_id);
+        $revision_signature = self::revision_signature($revision_meta);
+        $default['revision_meta'] = $revision_meta;
+        $default['revision_signature'] = $revision_signature;
+        if ((int) ($revision_meta['exam_id'] ?? 0) !== $exam_id) {
+            $default['reason'] = 'revision_unavailable';
+            return $default;
+        }
+
+        $storage_key = self::storage_key($exam_id, $revision_meta);
+        $default['storage_key'] = $storage_key;
+        $raw_payload = $redis->get($storage_key);
+        if (method_exists($redis, 'ttl')) {
+            $default['ttl_seconds'] = (int) $redis->ttl($storage_key);
+        }
+        if (!is_string($raw_payload) || trim($raw_payload) === '') {
+            $default['reason'] = 'snapshot_miss';
+            return $default;
+        }
+
+        $decoded = json_decode($raw_payload, true);
+        if (!is_array($decoded)) {
+            $redis->del($storage_key);
+            self::write_start_event_marker($exam_id, 'invalid_payload');
+            $default['reason'] = 'invalid_payload';
+            return $default;
+        }
+
+        $stored_exam_id = absint($decoded['exam_id'] ?? 0);
+        $stored_signature = is_scalar($decoded['revision_signature'] ?? null)
+            ? (string) $decoded['revision_signature']
+            : '';
+        $stored_payload_version = max(0, (int) ($decoded['snapshot_payload_version'] ?? 0));
+        if (
+            $stored_exam_id !== $exam_id
+            || $stored_signature !== $revision_signature
+            || $stored_payload_version !== self::SNAPSHOT_PAYLOAD_VERSION
+        ) {
+            if ($stored_payload_version !== self::SNAPSHOT_PAYLOAD_VERSION) {
+                self::write_start_event_marker($exam_id, 'invalid_payload');
+            }
+            $default['reason'] = 'snapshot_invalid';
+            return $default;
+        }
+
+        $default['success'] = true;
+        $default['reason'] = 'ready';
+        $default['payload'] = self::normalize_snapshot_payload($decoded);
+
+        return $default;
+    }
+
+    /**
+     * @param array<string,mixed> $payload
+     */
+    public static function write_current_exam_snapshot(int $exam_id, array $payload, int $ttl_seconds = 0): bool
+    {
+        return self::write_exam_snapshot_with_ttl(
+            $exam_id,
+            self::normalize_snapshot_payload($payload),
+            $ttl_seconds > 0 ? $ttl_seconds : self::START_REDIS_TTL_SECONDS
+        );
+    }
+
     public static function clear_exam_snapshot(int $exam_id): int
     {
         $exam_id = absint($exam_id);
@@ -431,14 +536,22 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
      */
     private static function write_exam_snapshot(int $exam_id, array $payload): void
     {
+        self::write_exam_snapshot_with_ttl($exam_id, $payload, self::START_REDIS_TTL_SECONDS);
+    }
+
+    /**
+     * @param array<string,mixed> $payload
+     */
+    private static function write_exam_snapshot_with_ttl(int $exam_id, array $payload, int $ttl_seconds): bool
+    {
         $redis = self::start_snapshot_redis();
         if (!$redis instanceof Redis) {
-            return;
+            return false;
         }
 
         $revision_meta = self::exam_revision_meta($exam_id);
         if ((int) ($revision_meta['exam_id'] ?? 0) !== $exam_id) {
-            return;
+            return false;
         }
 
         $storage_key = self::storage_key($exam_id, $revision_meta);
@@ -448,11 +561,15 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
             'revision_signature' => self::revision_signature($revision_meta),
         ]));
         if (!is_string($encoded_payload) || $encoded_payload === '') {
-            return;
+            return false;
         }
 
-        $redis->setEx($storage_key, self::START_REDIS_TTL_SECONDS, $encoded_payload);
-        self::write_start_event_marker($exam_id, 'written');
+        $written = (bool) $redis->setEx($storage_key, max(1, $ttl_seconds), $encoded_payload);
+        if ($written) {
+            self::write_start_event_marker($exam_id, 'written');
+        }
+
+        return $written;
     }
 
     /**

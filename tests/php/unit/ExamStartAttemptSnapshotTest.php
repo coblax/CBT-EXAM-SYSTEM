@@ -105,6 +105,58 @@ final class ExamStartAttemptSnapshotTest extends TestCase
         self::assertGreaterThanOrEqual(2, count($this->storedRedisKeys()));
     }
 
+    public function test_write_current_exam_snapshot_supports_partial_manifest_patch_with_preserved_ttl(): void
+    {
+        CBT_Exam_Start_Attempt_Snapshot_Cache::get_exam_snapshot(55, static function (int $examId): array {
+            return [
+                'exam_id' => $examId,
+                'question_ids' => [201, 202],
+                'question_count' => 2,
+                'question_number_map' => [201 => 1, 202 => 2],
+                'question_manifest' => [
+                    ['id' => 201, 'question_type' => 'multiple_choice', 'updated_at' => '2026-04-03 05:01:00', 'points' => 5],
+                    ['id' => 202, 'question_type' => 'essay', 'updated_at' => '2026-04-03 05:02:00', 'points' => 3],
+                ],
+                'randomize_questions' => 0,
+                'randomize_options' => 1,
+                'duration_minutes' => 90,
+                'show_student_result' => 1,
+                'enable_calculator' => 1,
+                'option_randomization_tokens_by_question' => [
+                    201 => ['9001', '9002'],
+                    202 => ['legacy'],
+                ],
+                'force_option_shuffle_question_ids' => [201, 202],
+            ];
+        });
+
+        $envelope = CBT_Exam_Start_Attempt_Snapshot_Cache::read_current_exam_snapshot_envelope(55);
+        self::assertTrue($envelope['success']);
+        $originalTtl = (int) $envelope['ttl_seconds'];
+        $payload = (array) $envelope['payload'];
+        $payload['question_manifest'][0] = [
+            'id' => 201,
+            'question_type' => 'multiple_choice',
+            'updated_at' => '2026-04-03 05:05:00',
+            'points' => 7,
+        ];
+        $payload['option_randomization_tokens_by_question'][201] = ['9010', '9011'];
+        $payload['force_option_shuffle_question_ids'] = [202];
+
+        CBT_Cache::invalidate_exam(55);
+        self::assertTrue(CBT_Exam_Start_Attempt_Snapshot_Cache::write_current_exam_snapshot(55, $payload, $originalTtl));
+
+        $patchedEnvelope = CBT_Exam_Start_Attempt_Snapshot_Cache::read_current_exam_snapshot_envelope(55);
+        self::assertTrue($patchedEnvelope['success']);
+        self::assertSame($originalTtl, (int) $patchedEnvelope['ttl_seconds']);
+        self::assertSame([201, 202], $patchedEnvelope['payload']['question_ids']);
+        self::assertSame(2, $patchedEnvelope['payload']['question_count']);
+        self::assertSame([201 => 1, 202 => 2], $patchedEnvelope['payload']['question_number_map']);
+        self::assertSame(7.0, $patchedEnvelope['payload']['question_manifest'][0]['points']);
+        self::assertSame(['9010', '9011'], $patchedEnvelope['payload']['option_randomization_tokens_by_question'][201]);
+        self::assertSame([202], $patchedEnvelope['payload']['force_option_shuffle_question_ids']);
+    }
+
     public function test_get_exam_snapshot_discards_stale_payload_version(): void
     {
         $producerCalls = 0;

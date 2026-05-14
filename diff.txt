@@ -1,0 +1,1378 @@
+diff --git a/admin/class-cbt-admin-questions-service.php b/admin/class-cbt-admin-questions-service.php
+index 2c94b19..a8b3236 100644
+--- a/admin/class-cbt-admin-questions-service.php
++++ b/admin/class-cbt-admin-questions-service.php
+@@ -74,6 +74,40 @@ final class CBT_Admin_Questions_Service
+         }
+     }
+ 
++    /**
++     * @param array<int,int> $exam_ids
++     * @param array<int,array<int,int>> $partial_question_ids_by_exam
++     */
++    private static function refresh_exam_question_delivery_snapshots_after_question_updates(array $exam_ids, array $partial_question_ids_by_exam): void
++    {
++        $exam_ids = array_values(array_unique(array_filter(array_map('intval', $exam_ids), static function (int $exam_id): bool {
++            return $exam_id > 0;
++        })));
++        if (empty($exam_ids)) {
++            return;
++        }
++
++        foreach ($exam_ids as $exam_id) {
++            $question_ids = isset($partial_question_ids_by_exam[$exam_id]) && is_array($partial_question_ids_by_exam[$exam_id])
++                ? array_values(array_unique(array_filter(array_map('intval', $partial_question_ids_by_exam[$exam_id]), static function (int $question_id): bool {
++                    return $question_id > 0;
++                })))
++                : [];
++
++            if (
++                !empty($question_ids)
++                && class_exists('CBT_REST')
++                && method_exists('CBT_REST', 'refresh_exam_question_snapshots_after_question_updates')
++            ) {
++                CBT_REST::refresh_exam_question_snapshots_after_question_updates($exam_id, $question_ids);
++                continue;
++            }
++
++            CBT_Cache::invalidate_exam($exam_id);
++            self::warm_exam_question_delivery_snapshots([$exam_id]);
++        }
++    }
++
+     /**
+      * @param array<int,int> $question_ids
+      * @return array<int,int>
+@@ -1931,6 +1965,11 @@ final class CBT_Admin_Questions_Service
+             if ($previous_exam_id > 0 && $previous_exam_id !== $exam_id) {
+                 $affected_exam_ids[$previous_exam_id] = $previous_exam_id;
+             }
++
++            $partial_snapshot_question_ids_by_exam = [];
++            if ($id > 0 && $question_id > 0 && $exam_id > 0 && $previous_exam_id === $exam_id) {
++                $partial_snapshot_question_ids_by_exam[$exam_id][$question_id] = $question_id;
++            }
+     
+             if ($question_id > 0) {
+                 $current_question_snapshot = CBT_Admin_Questions_Sync_Helper::get_question_sync_snapshot($question_id);
+@@ -1939,19 +1978,24 @@ final class CBT_Admin_Questions_Service
+                     CBT_Admin_Questions_Sync_Helper::is_bank_question_snapshot($previous_question_snapshot) &&
+                     !empty($current_question_snapshot)
+                 ) {
+-                    foreach (CBT_Admin_Questions_Sync_Helper::propagate_bank_question_update($question_id, $previous_question_snapshot, $current_question_snapshot) as $affected_exam_id) {
+-                        $affected_exam_id = (int) $affected_exam_id;
++                    $bank_update_targets = CBT_Admin_Questions_Sync_Helper::propagate_bank_question_update_with_targets($question_id, $previous_question_snapshot, $current_question_snapshot);
++                    foreach ($bank_update_targets as $bank_update_target) {
++                        $affected_exam_id = (int) ($bank_update_target['exam_id'] ?? 0);
++                        $affected_question_id = (int) ($bank_update_target['question_id'] ?? 0);
+                         if ($affected_exam_id > 0) {
+                             $affected_exam_ids[$affected_exam_id] = $affected_exam_id;
+                         }
++                        if ($affected_exam_id > 0 && $affected_question_id > 0) {
++                            $partial_snapshot_question_ids_by_exam[$affected_exam_id][$affected_question_id] = $affected_question_id;
++                        }
+                     }
+                 }
+             }
+     
+-            foreach ($affected_exam_ids as $affected_exam_id) {
+-                CBT_Cache::invalidate_exam((int) $affected_exam_id);
+-            }
+-            self::warm_exam_question_delivery_snapshots(array_values($affected_exam_ids));
++            self::refresh_exam_question_delivery_snapshots_after_question_updates(
++                array_values($affected_exam_ids),
++                $partial_snapshot_question_ids_by_exam
++            );
+     
+             $success_message = $id > 0 ? 'Question updated' : 'Question saved to Bank Soal';
+             wp_safe_redirect(add_query_arg(
+diff --git a/admin/class-cbt-admin-questions-sync-helper.php b/admin/class-cbt-admin-questions-sync-helper.php
+index 61a3d4a..c2cc911 100644
+--- a/admin/class-cbt-admin-questions-sync-helper.php
++++ b/admin/class-cbt-admin-questions-sync-helper.php
+@@ -255,19 +255,40 @@ final class CBT_Admin_Questions_Sync_Helper
+ 
+         public static function propagate_bank_question_update(int $source_question_id, array $before_snapshot, array $after_snapshot): array
+         {
+-            global $wpdb;
++            $affected_exam_ids = [];
++            foreach (self::propagate_bank_question_update_with_targets($source_question_id, $before_snapshot, $after_snapshot) as $target) {
++                $affected_exam_id = (int) ($target['exam_id'] ?? 0);
++                if ($affected_exam_id <= 0) {
++                    continue;
++                }
++
++                $affected_exam_ids[$affected_exam_id] = $affected_exam_id;
++            }
+     
++            return array_values($affected_exam_ids);
++        }
++
++        /**
++         * @return array<int,array{exam_id:int,question_id:int}>
++         */
++        public static function propagate_bank_question_update_with_targets(int $source_question_id, array $before_snapshot, array $after_snapshot): array
++        {
+             if ($source_question_id <= 0 || empty($before_snapshot) || empty($after_snapshot)) {
+                 return [];
+             }
+-    
+-            $affected_exam_ids = [];
++
++            $targets = [];
+             foreach (self::collect_descendant_question_ids_for_source($source_question_id, $before_snapshot) as $target_question_id) {
++                $target_question_id = (int) $target_question_id;
++                if ($target_question_id <= 0) {
++                    continue;
++                }
++
+                 $target_snapshot = self::get_question_sync_snapshot($target_question_id);
+                 if (empty($target_snapshot)) {
+                     continue;
+                 }
+-    
++
+                 $affected_exam_id = self::apply_source_snapshot_to_question(
+                     $target_question_id,
+                     $source_question_id,
+@@ -275,11 +296,14 @@ final class CBT_Admin_Questions_Sync_Helper
+                     $target_snapshot
+                 );
+                 if ($affected_exam_id > 0) {
+-                    $affected_exam_ids[$affected_exam_id] = $affected_exam_id;
++                    $targets[] = [
++                        'exam_id' => $affected_exam_id,
++                        'question_id' => $target_question_id,
++                    ];
+                 }
+             }
+-    
+-            return array_values($affected_exam_ids);
++
++            return $targets;
+         }
+ 
+         public static function run_question_source_backfill(): array
+diff --git a/admin/views/exam-cards/page.php b/admin/views/exam-cards/page.php
+index 2a6b65b..64a295f 100644
+--- a/admin/views/exam-cards/page.php
++++ b/admin/views/exam-cards/page.php
+@@ -774,6 +774,86 @@
+                                     <p id="cbt-card-seat-settings-note" class="description">Nomor meja dibentuk otomatis dari hasil filter siswa dengan urutan existing `kelas -> nama -> username`, lalu dimulai dari angka awal yang Anda tentukan.</p>
+                                 </td>
+                             </tr>
++                            <?php $minutes_fields = is_array($minutes_fields ?? null) ? $minutes_fields : []; ?>
++                            <tr id="cbt-card-minutes-row"<?php echo !$is_minutes_mode ? ' class="cbt-exam-cards-row-hidden"' : ''; ?>>
++                                <th><label for="cbt-minutes-subject">Detail Berita Acara</label></th>
++                                <td>
++                                    <div class="cbt-exam-cards-minutes-grid">
++                                        <div class="cbt-exam-cards-minutes-field">
++                                            <label for="cbt-minutes-subject">Mata Pelajaran</label>
++                                            <input
++                                                type="text"
++                                                id="cbt-minutes-subject"
++                                                name="cbt_minutes_subject"
++                                                value="<?php echo esc_attr((string) ($minutes_fields['subject'] ?? '')); ?>"
++                                            />
++                                        </div>
++                                        <div class="cbt-exam-cards-minutes-field">
++                                            <label for="cbt-minutes-date">Tanggal</label>
++                                            <input
++                                                type="date"
++                                                id="cbt-minutes-date"
++                                                name="cbt_minutes_date"
++                                                value="<?php echo esc_attr((string) ($minutes_fields['date'] ?? '')); ?>"
++                                            />
++                                        </div>
++                                        <div class="cbt-exam-cards-minutes-field">
++                                            <label for="cbt-minutes-start-time">Waktu Mulai</label>
++                                            <input
++                                                type="time"
++                                                id="cbt-minutes-start-time"
++                                                name="cbt_minutes_start_time"
++                                                value="<?php echo esc_attr((string) ($minutes_fields['start_time'] ?? '')); ?>"
++                                            />
++                                        </div>
++                                        <div class="cbt-exam-cards-minutes-field">
++                                            <label for="cbt-minutes-end-time">Waktu Selesai</label>
++                                            <input
++                                                type="time"
++                                                id="cbt-minutes-end-time"
++                                                name="cbt_minutes_end_time"
++                                                value="<?php echo esc_attr((string) ($minutes_fields['end_time'] ?? '')); ?>"
++                                            />
++                                        </div>
++                                        <div class="cbt-exam-cards-minutes-field">
++                                            <label for="cbt-minutes-room">Ruang</label>
++                                            <input
++                                                type="text"
++                                                id="cbt-minutes-room"
++                                                name="cbt_minutes_room"
++                                                value="<?php echo esc_attr((string) ($minutes_fields['room'] ?? '')); ?>"
++                                            />
++                                        </div>
++                                        <div class="cbt-exam-cards-minutes-field">
++                                            <label for="cbt-minutes-proctor-name">Proktor</label>
++                                            <input
++                                                type="text"
++                                                id="cbt-minutes-proctor-name"
++                                                name="cbt_minutes_proctor_name"
++                                                value="<?php echo esc_attr((string) ($minutes_fields['proctor_name'] ?? '')); ?>"
++                                            />
++                                        </div>
++                                        <div class="cbt-exam-cards-minutes-field">
++                                            <label for="cbt-minutes-supervisor-name">Pengawas</label>
++                                            <input
++                                                type="text"
++                                                id="cbt-minutes-supervisor-name"
++                                                name="cbt_minutes_supervisor_name"
++                                                value="<?php echo esc_attr((string) ($minutes_fields['supervisor_name'] ?? '')); ?>"
++                                            />
++                                        </div>
++                                        <div class="cbt-exam-cards-minutes-field is-wide">
++                                            <label for="cbt-minutes-notes">Catatan Pelaksanaan</label>
++                                            <textarea
++                                                id="cbt-minutes-notes"
++                                                name="cbt_minutes_notes"
++                                                rows="4"
++                                            ><?php echo esc_textarea((string) ($minutes_fields['notes'] ?? '')); ?></textarea>
++                                        </div>
++                                    </div>
++                                    <p class="description">Field ini hanya digunakan saat mode Berita Acara aktif dan akan ikut dipertahankan ketika halaman print kembali ke form.</p>
++                                </td>
++                            </tr>
+                             <tr id="cbt-card-fields-row"<?php echo !$is_participant_mode ? ' class="cbt-exam-cards-row-hidden"' : ''; ?>>
+                                 <th>Informasi Kartu</th>
+                                 <td>
+diff --git a/includes/class-cbt-exam-question-delivery-cache.php b/includes/class-cbt-exam-question-delivery-cache.php
+index 81f51f3..baebee3 100644
+--- a/includes/class-cbt-exam-question-delivery-cache.php
++++ b/includes/class-cbt-exam-question-delivery-cache.php
+@@ -418,6 +418,111 @@ class CBT_Exam_Question_Delivery_Cache
+         self::write_exam_payload($exam_id, $payload);
+     }
+ 
++    /**
++     * @return array{
++     *   success:bool,
++     *   reason:string,
++     *   exam_id:int,
++     *   revision_meta:array{exam_id:int,version:int,invalidated_at:string,signature:string},
++     *   revision_signature:string,
++     *   storage_key:string,
++     *   ttl_seconds:int,
++     *   items:array<int,array<string,mixed>>
++     * }
++     */
++    public static function read_current_exam_payload_envelope(int $exam_id): array
++    {
++        $exam_id = absint($exam_id);
++        $empty_revision = [
++            'exam_id' => $exam_id,
++            'version' => 0,
++            'invalidated_at' => '',
++            'signature' => '',
++        ];
++        $default = [
++            'success' => false,
++            'reason' => $exam_id > 0 ? 'snapshot_miss' : 'invalid_exam',
++            'exam_id' => $exam_id,
++            'revision_meta' => $empty_revision,
++            'revision_signature' => '',
++            'storage_key' => '',
++            'ttl_seconds' => -2,
++            'items' => [],
++        ];
++        if ($exam_id <= 0) {
++            return $default;
++        }
++
++        $redis = self::delivery_redis();
++        if (!$redis instanceof Redis) {
++            $default['reason'] = 'redis_unavailable';
++            return $default;
++        }
++
++        $revision_meta = self::exam_revision_meta($exam_id);
++        $revision_signature = self::revision_signature($revision_meta);
++        $default['revision_meta'] = $revision_meta;
++        $default['revision_signature'] = $revision_signature;
++        if ((int) ($revision_meta['exam_id'] ?? 0) !== $exam_id) {
++            $default['reason'] = 'revision_unavailable';
++            return $default;
++        }
++
++        $storage_key = self::storage_key($exam_id, $revision_meta);
++        $default['storage_key'] = $storage_key;
++        $raw_payload = $redis->get($storage_key);
++        if (method_exists($redis, 'ttl')) {
++            $default['ttl_seconds'] = (int) $redis->ttl($storage_key);
++        }
++        if (!is_string($raw_payload) || trim($raw_payload) === '') {
++            $default['reason'] = 'snapshot_miss';
++            return $default;
++        }
++
++        $decoded = json_decode($raw_payload, true);
++        if (!is_array($decoded)) {
++            $redis->del($storage_key);
++            self::write_delivery_event_marker($exam_id, 'invalid_payload');
++            $default['reason'] = 'invalid_payload';
++            return $default;
++        }
++
++        $stored_exam_id = absint($decoded['exam_id'] ?? 0);
++        $stored_signature = is_scalar($decoded['revision_signature'] ?? null)
++            ? (string) $decoded['revision_signature']
++            : '';
++        $stored_payload_version = max(0, (int) ($decoded['snapshot_payload_version'] ?? 0));
++        if (
++            $stored_exam_id !== $exam_id
++            || $stored_signature !== $revision_signature
++            || $stored_payload_version !== self::SNAPSHOT_PAYLOAD_VERSION
++        ) {
++            if ($stored_payload_version !== self::SNAPSHOT_PAYLOAD_VERSION) {
++                self::write_delivery_event_marker($exam_id, 'invalid_payload');
++            }
++            $default['reason'] = 'snapshot_invalid';
++            return $default;
++        }
++
++        $default['success'] = true;
++        $default['reason'] = 'ready';
++        $default['items'] = self::normalize_items($decoded['items'] ?? []);
++
++        return $default;
++    }
++
++    /**
++     * @param array<int,array<string,mixed>> $items
++     */
++    public static function write_current_exam_payload(int $exam_id, array $items, int $ttl_seconds = 0): bool
++    {
++        return self::write_exam_payload_with_ttl(
++            $exam_id,
++            self::normalize_items($items),
++            $ttl_seconds > 0 ? $ttl_seconds : self::DELIVERY_REDIS_TTL_SECONDS
++        );
++    }
++
+     public static function clear_exam_payload(int $exam_id): int
+     {
+         $exam_id = absint($exam_id);
+@@ -498,15 +603,23 @@ class CBT_Exam_Question_Delivery_Cache
+      * @param array<int,array<string,mixed>> $items
+      */
+     private static function write_exam_payload(int $exam_id, array $items): void
++    {
++        self::write_exam_payload_with_ttl($exam_id, $items, self::DELIVERY_REDIS_TTL_SECONDS);
++    }
++
++    /**
++     * @param array<int,array<string,mixed>> $items
++     */
++    private static function write_exam_payload_with_ttl(int $exam_id, array $items, int $ttl_seconds): bool
+     {
+         $redis = self::delivery_redis();
+         if (!$redis instanceof Redis) {
+-            return;
++            return false;
+         }
+ 
+         $revision_meta = self::exam_revision_meta($exam_id);
+         if ((int) ($revision_meta['exam_id'] ?? 0) !== $exam_id) {
+-            return;
++            return false;
+         }
+ 
+         $storage_key = self::storage_key($exam_id, $revision_meta);
+@@ -517,11 +630,15 @@ class CBT_Exam_Question_Delivery_Cache
+             'items' => array_values($items),
+         ]);
+         if (!is_string($encoded_payload) || $encoded_payload === '') {
+-            return;
++            return false;
++        }
++
++        $written = (bool) $redis->setEx($storage_key, max(1, $ttl_seconds), $encoded_payload);
++        if ($written) {
++            self::write_delivery_event_marker($exam_id, 'written');
+         }
+ 
+-        $redis->setEx($storage_key, self::DELIVERY_REDIS_TTL_SECONDS, $encoded_payload);
+-        self::write_delivery_event_marker($exam_id, 'written');
++        return $written;
+     }
+ 
+     /**
+diff --git a/includes/class-cbt-exam-start-attempt-snapshot-cache.php b/includes/class-cbt-exam-start-attempt-snapshot-cache.php
+index 94c75ef..4c893bd 100644
+--- a/includes/class-cbt-exam-start-attempt-snapshot-cache.php
++++ b/includes/class-cbt-exam-start-attempt-snapshot-cache.php
+@@ -348,6 +348,111 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
+         self::write_exam_snapshot($exam_id, $payload);
+     }
+ 
++    /**
++     * @return array{
++     *   success:bool,
++     *   reason:string,
++     *   exam_id:int,
++     *   revision_meta:array{exam_id:int,version:int,invalidated_at:string,signature:string},
++     *   revision_signature:string,
++     *   storage_key:string,
++     *   ttl_seconds:int,
++     *   payload:array<string,mixed>
++     * }
++     */
++    public static function read_current_exam_snapshot_envelope(int $exam_id): array
++    {
++        $exam_id = absint($exam_id);
++        $empty_revision = [
++            'exam_id' => $exam_id,
++            'version' => 0,
++            'invalidated_at' => '',
++            'signature' => '',
++        ];
++        $default = [
++            'success' => false,
++            'reason' => $exam_id > 0 ? 'snapshot_miss' : 'invalid_exam',
++            'exam_id' => $exam_id,
++            'revision_meta' => $empty_revision,
++            'revision_signature' => '',
++            'storage_key' => '',
++            'ttl_seconds' => -2,
++            'payload' => [],
++        ];
++        if ($exam_id <= 0) {
++            return $default;
++        }
++
++        $redis = self::start_snapshot_redis();
++        if (!$redis instanceof Redis) {
++            $default['reason'] = 'redis_unavailable';
++            return $default;
++        }
++
++        $revision_meta = self::exam_revision_meta($exam_id);
++        $revision_signature = self::revision_signature($revision_meta);
++        $default['revision_meta'] = $revision_meta;
++        $default['revision_signature'] = $revision_signature;
++        if ((int) ($revision_meta['exam_id'] ?? 0) !== $exam_id) {
++            $default['reason'] = 'revision_unavailable';
++            return $default;
++        }
++
++        $storage_key = self::storage_key($exam_id, $revision_meta);
++        $default['storage_key'] = $storage_key;
++        $raw_payload = $redis->get($storage_key);
++        if (method_exists($redis, 'ttl')) {
++            $default['ttl_seconds'] = (int) $redis->ttl($storage_key);
++        }
++        if (!is_string($raw_payload) || trim($raw_payload) === '') {
++            $default['reason'] = 'snapshot_miss';
++            return $default;
++        }
++
++        $decoded = json_decode($raw_payload, true);
++        if (!is_array($decoded)) {
++            $redis->del($storage_key);
++            self::write_start_event_marker($exam_id, 'invalid_payload');
++            $default['reason'] = 'invalid_payload';
++            return $default;
++        }
++
++        $stored_exam_id = absint($decoded['exam_id'] ?? 0);
++        $stored_signature = is_scalar($decoded['revision_signature'] ?? null)
++            ? (string) $decoded['revision_signature']
++            : '';
++        $stored_payload_version = max(0, (int) ($decoded['snapshot_payload_version'] ?? 0));
++        if (
++            $stored_exam_id !== $exam_id
++            || $stored_signature !== $revision_signature
++            || $stored_payload_version !== self::SNAPSHOT_PAYLOAD_VERSION
++        ) {
++            if ($stored_payload_version !== self::SNAPSHOT_PAYLOAD_VERSION) {
++                self::write_start_event_marker($exam_id, 'invalid_payload');
++            }
++            $default['reason'] = 'snapshot_invalid';
++            return $default;
++        }
++
++        $default['success'] = true;
++        $default['reason'] = 'ready';
++        $default['payload'] = self::normalize_snapshot_payload($decoded);
++
++        return $default;
++    }
++
++    /**
++     * @param array<string,mixed> $payload
++     */
++    public static function write_current_exam_snapshot(int $exam_id, array $payload, int $ttl_seconds = 0): bool
++    {
++        return self::write_exam_snapshot_with_ttl(
++            $exam_id,
++            self::normalize_snapshot_payload($payload),
++            $ttl_seconds > 0 ? $ttl_seconds : self::START_REDIS_TTL_SECONDS
++        );
++    }
++
+     public static function clear_exam_snapshot(int $exam_id): int
+     {
+         $exam_id = absint($exam_id);
+@@ -430,15 +535,23 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
+      * @param array<string,mixed> $payload
+      */
+     private static function write_exam_snapshot(int $exam_id, array $payload): void
++    {
++        self::write_exam_snapshot_with_ttl($exam_id, $payload, self::START_REDIS_TTL_SECONDS);
++    }
++
++    /**
++     * @param array<string,mixed> $payload
++     */
++    private static function write_exam_snapshot_with_ttl(int $exam_id, array $payload, int $ttl_seconds): bool
+     {
+         $redis = self::start_snapshot_redis();
+         if (!$redis instanceof Redis) {
+-            return;
++            return false;
+         }
+ 
+         $revision_meta = self::exam_revision_meta($exam_id);
+         if ((int) ($revision_meta['exam_id'] ?? 0) !== $exam_id) {
+-            return;
++            return false;
+         }
+ 
+         $storage_key = self::storage_key($exam_id, $revision_meta);
+@@ -448,11 +561,15 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
+             'revision_signature' => self::revision_signature($revision_meta),
+         ]));
+         if (!is_string($encoded_payload) || $encoded_payload === '') {
+-            return;
++            return false;
++        }
++
++        $written = (bool) $redis->setEx($storage_key, max(1, $ttl_seconds), $encoded_payload);
++        if ($written) {
++            self::write_start_event_marker($exam_id, 'written');
+         }
+ 
+-        $redis->setEx($storage_key, self::START_REDIS_TTL_SECONDS, $encoded_payload);
+-        self::write_start_event_marker($exam_id, 'written');
++        return $written;
+     }
+ 
+     /**
+diff --git a/includes/class-cbt-rest-question-snapshots.php b/includes/class-cbt-rest-question-snapshots.php
+index ba89b43..2905112 100644
+--- a/includes/class-cbt-rest-question-snapshots.php
++++ b/includes/class-cbt-rest-question-snapshots.php
+@@ -466,6 +466,391 @@ trait CBT_REST_Question_Snapshot_Helpers
+         CBT_Question_Submission_Context_Cache::warm_exam_snapshots($exam_id);
+     }
+ 
++    /**
++     * @param array<int,int> $question_ids
++     * @return array{success:bool,mode:string,reason:string,exam_id:int,question_ids:array<int,int>}
++     */
++    public static function refresh_exam_question_snapshots_after_question_updates(int $exam_id, array $question_ids): array
++    {
++        $exam_id = absint($exam_id);
++        $question_ids = self::normalize_partial_snapshot_question_ids($question_ids);
++        $default = [
++            'success' => false,
++            'mode' => 'skipped',
++            'reason' => $exam_id > 0 ? 'empty_question_ids' : 'invalid_exam',
++            'exam_id' => $exam_id,
++            'question_ids' => $question_ids,
++        ];
++        if ($exam_id <= 0 || empty($question_ids)) {
++            return $default;
++        }
++
++        if (
++            !class_exists('CBT_Exam_Question_Delivery_Cache')
++            || !class_exists('CBT_Exam_Start_Attempt_Snapshot_Cache')
++        ) {
++            return self::rebuild_exam_question_snapshots_after_partial_failure($exam_id, $question_ids, 'snapshot_cache_unavailable');
++        }
++
++        $lock_key = 'partial_question_snapshot:exam:' . $exam_id;
++        if (!CBT_Cache::acquire_lock($lock_key, 15, [
++            'type' => 'partial_question_snapshot',
++            'exam_id' => $exam_id,
++            'question_ids' => $question_ids,
++        ])) {
++            return self::rebuild_exam_question_snapshots_after_partial_failure($exam_id, $question_ids, 'lock_busy');
++        }
++
++        $fallback_reason = '';
++        $partial_result = $default;
++
++        try {
++            $delivery_envelope = CBT_Exam_Question_Delivery_Cache::read_current_exam_payload_envelope($exam_id);
++            if (empty($delivery_envelope['success'])) {
++                $fallback_reason = 'delivery_' . sanitize_key((string) ($delivery_envelope['reason'] ?? 'snapshot_unavailable'));
++            }
++
++            $start_envelope = [];
++            if ($fallback_reason === '') {
++                $start_envelope = CBT_Exam_Start_Attempt_Snapshot_Cache::read_current_exam_snapshot_envelope($exam_id);
++                if (empty($start_envelope['success'])) {
++                    $fallback_reason = 'start_' . sanitize_key((string) ($start_envelope['reason'] ?? 'snapshot_unavailable'));
++                }
++            }
++
++            $fragments = [];
++            if ($fallback_reason === '') {
++                $fragments = self::build_partial_question_snapshot_fragments($exam_id, $question_ids);
++                if (empty($fragments['success'])) {
++                    $fallback_reason = sanitize_key((string) ($fragments['reason'] ?? 'question_fragment_unavailable'));
++                }
++            }
++
++            $patched_delivery = [];
++            if ($fallback_reason === '') {
++                $patched_delivery = self::patch_partial_delivery_snapshot_items(
++                    (array) ($delivery_envelope['items'] ?? []),
++                    (array) ($fragments['delivery_items_by_id'] ?? []),
++                    $question_ids
++                );
++                if (empty($patched_delivery['success'])) {
++                    $fallback_reason = sanitize_key((string) ($patched_delivery['reason'] ?? 'delivery_patch_failed'));
++                }
++            }
++
++            $patched_start = [];
++            if ($fallback_reason === '') {
++                $patched_start = self::patch_partial_start_attempt_snapshot_payload(
++                    (array) ($start_envelope['payload'] ?? []),
++                    (array) ($fragments['start_fragments_by_id'] ?? []),
++                    $question_ids
++                );
++                if (empty($patched_start['success'])) {
++                    $fallback_reason = sanitize_key((string) ($patched_start['reason'] ?? 'start_patch_failed'));
++                }
++            }
++
++            if ($fallback_reason === '') {
++                CBT_Cache::invalidate_exam($exam_id);
++
++                $delivery_written = CBT_Exam_Question_Delivery_Cache::write_current_exam_payload(
++                    $exam_id,
++                    (array) ($patched_delivery['items'] ?? []),
++                    (int) ($delivery_envelope['ttl_seconds'] ?? 0)
++                );
++                if (!$delivery_written) {
++                    $fallback_reason = 'delivery_write_failed';
++                }
++            }
++
++            if ($fallback_reason === '') {
++                $start_written = CBT_Exam_Start_Attempt_Snapshot_Cache::write_current_exam_snapshot(
++                    $exam_id,
++                    (array) ($patched_start['payload'] ?? []),
++                    (int) ($start_envelope['ttl_seconds'] ?? 0)
++                );
++                if (!$start_written) {
++                    $fallback_reason = 'start_write_failed';
++                }
++            }
++
++            if ($fallback_reason === '') {
++                $partial_result = [
++                    'success' => true,
++                    'mode' => 'partial',
++                    'reason' => 'patched',
++                    'exam_id' => $exam_id,
++                    'question_ids' => $question_ids,
++                ];
++            }
++        } catch (Throwable $throwable) {
++            $fallback_reason = 'partial_exception';
++        } finally {
++            CBT_Cache::release_lock($lock_key);
++        }
++
++        if ($fallback_reason !== '') {
++            return self::rebuild_exam_question_snapshots_after_partial_failure($exam_id, $question_ids, $fallback_reason);
++        }
++
++        return $partial_result;
++    }
++
++    /**
++     * @param array<int,int> $question_ids
++     * @return array{success:bool,mode:string,reason:string,exam_id:int,question_ids:array<int,int>}
++     */
++    private static function rebuild_exam_question_snapshots_after_partial_failure(int $exam_id, array $question_ids, string $reason): array
++    {
++        $exam_id = absint($exam_id);
++        $question_ids = self::normalize_partial_snapshot_question_ids($question_ids);
++        if ($exam_id <= 0) {
++            return [
++                'success' => false,
++                'mode' => 'skipped',
++                'reason' => 'invalid_exam',
++                'exam_id' => 0,
++                'question_ids' => $question_ids,
++            ];
++        }
++
++        CBT_Cache::invalidate_exam($exam_id);
++        self::warm_exam_question_delivery_snapshot($exam_id);
++        self::warm_exam_start_attempt_snapshot($exam_id);
++
++        return [
++            'success' => true,
++            'mode' => 'full_rebuild',
++            'reason' => sanitize_key($reason) ?: 'partial_unavailable',
++            'exam_id' => $exam_id,
++            'question_ids' => $question_ids,
++        ];
++    }
++
++    /**
++     * @param array<int,int> $question_ids
++     * @return array{
++     *   success:bool,
++     *   reason:string,
++     *   delivery_items_by_id:array<int,array<string,mixed>>,
++     *   start_fragments_by_id:array<int,array{manifest:array<string,mixed>,option_tokens:array<int,string>,force_shuffle:bool}>
++     * }
++     */
++    private static function build_partial_question_snapshot_fragments(int $exam_id, array $question_ids): array
++    {
++        $question_ids = self::normalize_partial_snapshot_question_ids($question_ids);
++        $default = [
++            'success' => false,
++            'reason' => empty($question_ids) ? 'empty_question_ids' : 'question_not_found',
++            'delivery_items_by_id' => [],
++            'start_fragments_by_id' => [],
++        ];
++        if ($exam_id <= 0 || empty($question_ids)) {
++            return $default;
++        }
++
++        $questions = self::get_question_payload_by_ids($exam_id, $question_ids);
++        if (empty($questions)) {
++            return $default;
++        }
++
++        $questions_by_id = [];
++        foreach ($questions as $question_row) {
++            $question = (array) $question_row;
++            $question_id = (int) ($question['id'] ?? 0);
++            if ($question_id <= 0) {
++                continue;
++            }
++            if ((int) ($question['is_active'] ?? 1) !== 1) {
++                $default['reason'] = 'question_inactive';
++                return $default;
++            }
++            $questions_by_id[$question_id] = $question;
++        }
++
++        foreach ($question_ids as $question_id) {
++            if (!isset($questions_by_id[$question_id])) {
++                $default['reason'] = 'question_not_found';
++                return $default;
++            }
++        }
++
++        $delivery_items_by_id = [];
++        foreach (self::sanitize_question_delivery_payload(array_values($questions_by_id)) as $delivery_item) {
++            $question_id = (int) ($delivery_item['id'] ?? 0);
++            if ($question_id > 0) {
++                $delivery_items_by_id[$question_id] = $delivery_item;
++            }
++        }
++
++        $start_fragments_by_id = [];
++        foreach ($questions_by_id as $question_id => $question) {
++            $manifest_item = [
++                'id' => $question_id,
++                'question_type' => (string) ($question['question_type'] ?? ''),
++                'updated_at' => (string) ($question['updated_at'] ?? ''),
++                'points' => (float) ($question['points'] ?? 0),
++            ];
++            $option_tokens = self::question_supports_option_randomization($question)
++                ? self::extract_randomizable_question_item_keys($question)
++                : [];
++            $question_type = (string) ($question['question_type'] ?? '');
++            $force_shuffle = $question_type === 'matching';
++            if ($question_type === 'ordering') {
++                $ordering_meta = isset($question['ordering_meta']) && is_array($question['ordering_meta'])
++                    ? $question['ordering_meta']
++                    : [];
++                $force_shuffle = ((int) ($ordering_meta['shuffle_items'] ?? 1) !== 0);
++            }
++
++            $start_fragments_by_id[$question_id] = [
++                'manifest' => $manifest_item,
++                'option_tokens' => $option_tokens,
++                'force_shuffle' => $force_shuffle,
++            ];
++        }
++
++        if (count($delivery_items_by_id) !== count($question_ids) || count($start_fragments_by_id) !== count($question_ids)) {
++            $default['reason'] = 'fragment_incomplete';
++            return $default;
++        }
++
++        return [
++            'success' => true,
++            'reason' => 'ready',
++            'delivery_items_by_id' => $delivery_items_by_id,
++            'start_fragments_by_id' => $start_fragments_by_id,
++        ];
++    }
++
++    /**
++     * @param array<int,array<string,mixed>> $current_items
++     * @param array<int,array<string,mixed>> $replacement_items_by_id
++     * @param array<int,int> $question_ids
++     * @return array{success:bool,reason:string,items:array<int,array<string,mixed>>}
++     */
++    private static function patch_partial_delivery_snapshot_items(array $current_items, array $replacement_items_by_id, array $question_ids): array
++    {
++        $question_ids = self::normalize_partial_snapshot_question_ids($question_ids);
++        $remaining = array_fill_keys($question_ids, true);
++        $patched_items = [];
++
++        foreach ($current_items as $item) {
++            $question = (array) $item;
++            $question_id = (int) ($question['id'] ?? 0);
++            if ($question_id > 0 && isset($replacement_items_by_id[$question_id])) {
++                $patched_items[] = (array) $replacement_items_by_id[$question_id];
++                unset($remaining[$question_id]);
++                continue;
++            }
++
++            $patched_items[] = $question;
++        }
++
++        if (!empty($remaining)) {
++            return [
++                'success' => false,
++                'reason' => 'delivery_question_missing',
++                'items' => [],
++            ];
++        }
++
++        return [
++            'success' => true,
++            'reason' => 'patched',
++            'items' => array_values($patched_items),
++        ];
++    }
++
++    /**
++     * @param array<string,mixed> $payload
++     * @param array<int,array{manifest:array<string,mixed>,option_tokens:array<int,string>,force_shuffle:bool}> $fragments_by_id
++     * @param array<int,int> $question_ids
++     * @return array{success:bool,reason:string,payload:array<string,mixed>}
++     */
++    private static function patch_partial_start_attempt_snapshot_payload(array $payload, array $fragments_by_id, array $question_ids): array
++    {
++        $question_ids = self::normalize_partial_snapshot_question_ids($question_ids);
++        $snapshot_question_ids = self::normalize_question_order_ids($payload['question_ids'] ?? []);
++        $snapshot_question_lookup = array_fill_keys($snapshot_question_ids, true);
++        foreach ($question_ids as $question_id) {
++            if (!isset($snapshot_question_lookup[$question_id])) {
++                return [
++                    'success' => false,
++                    'reason' => 'start_question_missing',
++                    'payload' => [],
++                ];
++            }
++        }
++
++        $manifest = is_array($payload['question_manifest'] ?? null)
++            ? array_values(array_filter((array) $payload['question_manifest'], 'is_array'))
++            : [];
++        $remaining_manifest = array_fill_keys($question_ids, true);
++        foreach ($manifest as $index => $item) {
++            $manifest_item = (array) $item;
++            $question_id = (int) ($manifest_item['id'] ?? 0);
++            if ($question_id > 0 && isset($fragments_by_id[$question_id])) {
++                $manifest[$index] = (array) ($fragments_by_id[$question_id]['manifest'] ?? []);
++                unset($remaining_manifest[$question_id]);
++            }
++        }
++        if (!empty($remaining_manifest)) {
++            return [
++                'success' => false,
++                'reason' => 'start_manifest_missing',
++                'payload' => [],
++            ];
++        }
++
++        $option_tokens_by_question = self::normalize_attempt_option_order_map($payload['option_randomization_tokens_by_question'] ?? []);
++        $force_shuffle_lookup = array_fill_keys(self::normalize_question_order_ids($payload['force_option_shuffle_question_ids'] ?? []), true);
++
++        foreach ($question_ids as $question_id) {
++            $fragment = (array) ($fragments_by_id[$question_id] ?? []);
++            $option_tokens = array_values(array_filter(array_map('strval', (array) ($fragment['option_tokens'] ?? [])), static function (string $token): bool {
++                return trim($token) !== '';
++            }));
++            if (!empty($option_tokens)) {
++                $option_tokens_by_question[$question_id] = $option_tokens;
++            } else {
++                unset($option_tokens_by_question[$question_id]);
++            }
++
++            if (!empty($fragment['force_shuffle'])) {
++                $force_shuffle_lookup[$question_id] = true;
++            } else {
++                unset($force_shuffle_lookup[$question_id]);
++            }
++        }
++
++        $force_shuffle_question_ids = array_values(array_filter(array_map('intval', array_keys($force_shuffle_lookup)), static function (int $question_id): bool {
++            return $question_id > 0;
++        }));
++        sort($force_shuffle_question_ids, SORT_NUMERIC);
++
++        $payload['question_manifest'] = array_values($manifest);
++        $payload['option_randomization_tokens_by_question'] = self::normalize_attempt_option_order_map($option_tokens_by_question);
++        $payload['force_option_shuffle_question_ids'] = $force_shuffle_question_ids;
++
++        return [
++            'success' => true,
++            'reason' => 'patched',
++            'payload' => $payload,
++        ];
++    }
++
++    /**
++     * @param array<int,int> $question_ids
++     * @return array<int,int>
++     */
++    private static function normalize_partial_snapshot_question_ids(array $question_ids): array
++    {
++        return array_values(array_unique(array_filter(array_map('intval', $question_ids), static function (int $question_id): bool {
++            return $question_id > 0;
++        })));
++    }
++
+     /**
+      * @return array{
+      *   ok:bool,
+diff --git a/tests/php/unit/ExamQuestionDeliverySnapshotTest.php b/tests/php/unit/ExamQuestionDeliverySnapshotTest.php
+index 204d400..86a7020 100644
+--- a/tests/php/unit/ExamQuestionDeliverySnapshotTest.php
++++ b/tests/php/unit/ExamQuestionDeliverySnapshotTest.php
+@@ -103,6 +103,59 @@ final class ExamQuestionDeliverySnapshotTest extends TestCase
+         self::assertGreaterThanOrEqual(2, count($this->storedRedisKeys()));
+     }
+ 
++    public function test_write_current_exam_payload_supports_partial_revision_patch_with_preserved_ttl(): void
++    {
++        CBT_Exam_Question_Delivery_Cache::get_exam_payload(55, static function (int $examId): array {
++            return [
++                [
++                    'id' => 201,
++                    'exam_id' => $examId,
++                    'question_text' => 'Soal lama',
++                    'question_type' => 'multiple_choice',
++                    'points' => 5,
++                    'options' => [
++                        ['id' => 9001, 'option_key' => 'A', 'option_text' => 'A lama'],
++                    ],
++                ],
++                [
++                    'id' => 202,
++                    'exam_id' => $examId,
++                    'question_text' => 'Tetap',
++                    'question_type' => 'essay',
++                    'points' => 3,
++                    'options' => [],
++                ],
++            ];
++        });
++
++        $envelope = CBT_Exam_Question_Delivery_Cache::read_current_exam_payload_envelope(55);
++        self::assertTrue($envelope['success']);
++        $originalTtl = (int) $envelope['ttl_seconds'];
++        $items = (array) $envelope['items'];
++        $items[0] = [
++            'id' => 201,
++            'exam_id' => 55,
++            'question_text' => 'Soal baru',
++            'question_type' => 'multiple_choice',
++            'points' => 5,
++            'is_correct' => 1,
++            'options' => [
++                ['id' => 9002, 'option_key' => 'A', 'option_text' => 'A baru', 'is_correct' => 1],
++            ],
++        ];
++
++        CBT_Cache::invalidate_exam(55);
++        self::assertTrue(CBT_Exam_Question_Delivery_Cache::write_current_exam_payload(55, $items, $originalTtl));
++
++        $patchedEnvelope = CBT_Exam_Question_Delivery_Cache::read_current_exam_payload_envelope(55);
++        self::assertTrue($patchedEnvelope['success']);
++        self::assertSame($originalTtl, (int) $patchedEnvelope['ttl_seconds']);
++        self::assertSame('Soal baru', $patchedEnvelope['items'][0]['question_text']);
++        self::assertSame('Tetap', $patchedEnvelope['items'][1]['question_text']);
++        self::assertArrayNotHasKey('is_correct', $patchedEnvelope['items'][0]);
++        self::assertArrayNotHasKey('is_correct', $patchedEnvelope['items'][0]['options'][0]);
++    }
++
+     public function test_get_exam_payload_discards_stale_payload_version(): void
+     {
+         $producerCalls = 0;
+diff --git a/tests/php/unit/ExamStartAttemptSnapshotTest.php b/tests/php/unit/ExamStartAttemptSnapshotTest.php
+index c220502..049b6ce 100644
+--- a/tests/php/unit/ExamStartAttemptSnapshotTest.php
++++ b/tests/php/unit/ExamStartAttemptSnapshotTest.php
+@@ -105,6 +105,58 @@ final class ExamStartAttemptSnapshotTest extends TestCase
+         self::assertGreaterThanOrEqual(2, count($this->storedRedisKeys()));
+     }
+ 
++    public function test_write_current_exam_snapshot_supports_partial_manifest_patch_with_preserved_ttl(): void
++    {
++        CBT_Exam_Start_Attempt_Snapshot_Cache::get_exam_snapshot(55, static function (int $examId): array {
++            return [
++                'exam_id' => $examId,
++                'question_ids' => [201, 202],
++                'question_count' => 2,
++                'question_number_map' => [201 => 1, 202 => 2],
++                'question_manifest' => [
++                    ['id' => 201, 'question_type' => 'multiple_choice', 'updated_at' => '2026-04-03 05:01:00', 'points' => 5],
++                    ['id' => 202, 'question_type' => 'essay', 'updated_at' => '2026-04-03 05:02:00', 'points' => 3],
++                ],
++                'randomize_questions' => 0,
++                'randomize_options' => 1,
++                'duration_minutes' => 90,
++                'show_student_result' => 1,
++                'enable_calculator' => 1,
++                'option_randomization_tokens_by_question' => [
++                    201 => ['9001', '9002'],
++                    202 => ['legacy'],
++                ],
++                'force_option_shuffle_question_ids' => [201, 202],
++            ];
++        });
++
++        $envelope = CBT_Exam_Start_Attempt_Snapshot_Cache::read_current_exam_snapshot_envelope(55);
++        self::assertTrue($envelope['success']);
++        $originalTtl = (int) $envelope['ttl_seconds'];
++        $payload = (array) $envelope['payload'];
++        $payload['question_manifest'][0] = [
++            'id' => 201,
++            'question_type' => 'multiple_choice',
++            'updated_at' => '2026-04-03 05:05:00',
++            'points' => 7,
++        ];
++        $payload['option_randomization_tokens_by_question'][201] = ['9010', '9011'];
++        $payload['force_option_shuffle_question_ids'] = [202];
++
++        CBT_Cache::invalidate_exam(55);
++        self::assertTrue(CBT_Exam_Start_Attempt_Snapshot_Cache::write_current_exam_snapshot(55, $payload, $originalTtl));
++
++        $patchedEnvelope = CBT_Exam_Start_Attempt_Snapshot_Cache::read_current_exam_snapshot_envelope(55);
++        self::assertTrue($patchedEnvelope['success']);
++        self::assertSame($originalTtl, (int) $patchedEnvelope['ttl_seconds']);
++        self::assertSame([201, 202], $patchedEnvelope['payload']['question_ids']);
++        self::assertSame(2, $patchedEnvelope['payload']['question_count']);
++        self::assertSame([201 => 1, 202 => 2], $patchedEnvelope['payload']['question_number_map']);
++        self::assertSame(7.0, $patchedEnvelope['payload']['question_manifest'][0]['points']);
++        self::assertSame(['9010', '9011'], $patchedEnvelope['payload']['option_randomization_tokens_by_question'][201]);
++        self::assertSame([202], $patchedEnvelope['payload']['force_option_shuffle_question_ids']);
++    }
++
+     public function test_get_exam_snapshot_discards_stale_payload_version(): void
+     {
+         $producerCalls = 0;
+diff --git a/tests/php/unit/RestQuestionDeliverySnapshotTest.php b/tests/php/unit/RestQuestionDeliverySnapshotTest.php
+index bb78250..93c3210 100644
+--- a/tests/php/unit/RestQuestionDeliverySnapshotTest.php
++++ b/tests/php/unit/RestQuestionDeliverySnapshotTest.php
+@@ -130,6 +130,155 @@ final class RestQuestionDeliverySnapshotTest extends TestCase
+         self::assertArrayHasKey('cbt_attempt_contract:attempt:77', (array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
+     }
+ 
++    #[RunInSeparateProcess]
++    public function test_refresh_exam_question_snapshots_after_question_updates_patches_ready_snapshots(): void
++    {
++        $this->bootstrapRestDeliverySnapshotScaffold();
++        $this->useDeliveryFakeRedis();
++        $this->useStartSnapshotFakeRedis();
++        $this->setRuntimeRedisUnavailable();
++
++        global $wpdb;
++        $wpdb = new RestQuestionDeliverySnapshotFakeWpdb();
++
++        CBT_REST::warm_exam_question_delivery_snapshot(55);
++        CBT_REST::warm_exam_start_attempt_snapshot(55);
++        self::assertSame(2, $wpdb->questionHydrateCalls);
++        self::assertSame(2, $wpdb->optionHydrateCalls);
++
++        $wpdb->questionText = 'Ibu Kota Nusantara?';
++        $wpdb->questionUpdatedAt = '2026-04-03 05:10:00';
++        $wpdb->optionBText = 'Nusantara';
++
++        $result = CBT_REST::refresh_exam_question_snapshots_after_question_updates(55, [201]);
++
++        self::assertTrue($result['success']);
++        self::assertSame('partial', $result['mode']);
++        self::assertSame('patched', $result['reason']);
++        self::assertSame([201], $result['question_ids']);
++        self::assertSame(3, $wpdb->questionHydrateCalls);
++        self::assertSame(3, $wpdb->optionHydrateCalls);
++
++        $deliveryProducerCalls = 0;
++        $items = CBT_Exam_Question_Delivery_Cache::get_exam_payload(55, static function () use (&$deliveryProducerCalls): array {
++            $deliveryProducerCalls++;
++            return [];
++        });
++        self::assertSame(0, $deliveryProducerCalls);
++        self::assertSame('Ibu Kota Nusantara?', $items[0]['question_text'] ?? '');
++        self::assertSame('Nusantara', $items[0]['options'][1]['option_text'] ?? '');
++
++        $startProducerCalls = 0;
++        $startSnapshot = CBT_Exam_Start_Attempt_Snapshot_Cache::get_exam_snapshot(55, static function () use (&$startProducerCalls): array {
++            $startProducerCalls++;
++            return [];
++        });
++        self::assertSame(0, $startProducerCalls);
++        self::assertSame([201], $startSnapshot['question_ids']);
++        self::assertSame(1, $startSnapshot['question_count']);
++        self::assertSame('2026-04-03 05:10:00', $startSnapshot['question_manifest'][0]['updated_at'] ?? '');
++        self::assertSame(['9001', '9002'], $startSnapshot['option_randomization_tokens_by_question'][201] ?? []);
++    }
++
++    #[RunInSeparateProcess]
++    public function test_refresh_exam_question_snapshots_after_question_updates_patches_multiple_questions_with_one_revision_bump(): void
++    {
++        $this->bootstrapRestDeliverySnapshotScaffold();
++        $this->useDeliveryFakeRedis();
++        $this->useStartSnapshotFakeRedis();
++        $this->setRuntimeRedisUnavailable();
++
++        global $wpdb;
++        $wpdb = new RestQuestionDeliverySnapshotFakeWpdb();
++        $wpdb->includeSecondQuestion = true;
++
++        CBT_REST::warm_exam_question_delivery_snapshot(55);
++        CBT_REST::warm_exam_start_attempt_snapshot(55);
++        $beforeRevision = CBT_Cache::get_exam_revision_meta(55);
++
++        $wpdb->questionText = 'Ibu Kota Nusantara?';
++        $wpdb->questionUpdatedAt = '2026-04-03 05:10:00';
++        $wpdb->optionBText = 'Nusantara';
++        $wpdb->secondQuestionText = 'Warna langit siang?';
++        $wpdb->secondQuestionUpdatedAt = '2026-04-03 05:11:00';
++        $wpdb->secondOptionBText = 'Biru';
++
++        $result = CBT_REST::refresh_exam_question_snapshots_after_question_updates(55, [201, 202]);
++
++        self::assertTrue($result['success']);
++        self::assertSame('partial', $result['mode']);
++        self::assertSame([201, 202], $result['question_ids']);
++        self::assertSame(3, $wpdb->questionHydrateCalls);
++        self::assertSame(3, $wpdb->optionHydrateCalls);
++
++        $afterRevision = CBT_Cache::get_exam_revision_meta(55);
++        self::assertSame(((int) $beforeRevision['version']) + 1, (int) $afterRevision['version']);
++
++        $items = CBT_Exam_Question_Delivery_Cache::get_exam_payload(55, static function (): array {
++            return [];
++        });
++        self::assertSame(['Ibu Kota Nusantara?', 'Warna langit siang?'], array_column($items, 'question_text'));
++        self::assertSame('Nusantara', $items[0]['options'][1]['option_text'] ?? '');
++        self::assertSame('Biru', $items[1]['options'][1]['option_text'] ?? '');
++
++        $startSnapshot = CBT_Exam_Start_Attempt_Snapshot_Cache::get_exam_snapshot(55, static function (): array {
++            return [];
++        });
++        self::assertSame([201, 202], $startSnapshot['question_ids']);
++        self::assertSame(2, $startSnapshot['question_count']);
++        self::assertSame([201 => 1, 202 => 2], $startSnapshot['question_number_map']);
++        self::assertSame(['2026-04-03 05:10:00', '2026-04-03 05:11:00'], array_column($startSnapshot['question_manifest'], 'updated_at'));
++        self::assertSame(['9001', '9002'], $startSnapshot['option_randomization_tokens_by_question'][201] ?? []);
++        self::assertSame(['9011', '9012'], $startSnapshot['option_randomization_tokens_by_question'][202] ?? []);
++    }
++
++    #[RunInSeparateProcess]
++    public function test_refresh_exam_question_snapshots_after_question_updates_falls_back_when_snapshot_missing(): void
++    {
++        $this->bootstrapRestDeliverySnapshotScaffold();
++        $this->useDeliveryFakeRedis();
++        $this->useStartSnapshotFakeRedis();
++        $this->setRuntimeRedisUnavailable();
++
++        global $wpdb;
++        $wpdb = new RestQuestionDeliverySnapshotFakeWpdb();
++
++        $result = CBT_REST::refresh_exam_question_snapshots_after_question_updates(55, [201]);
++
++        self::assertTrue($result['success']);
++        self::assertSame('full_rebuild', $result['mode']);
++        self::assertSame('delivery_snapshot_miss', $result['reason']);
++        self::assertSame(2, $wpdb->questionHydrateCalls);
++        self::assertSame(2, $wpdb->optionHydrateCalls);
++    }
++
++    #[RunInSeparateProcess]
++    public function test_refresh_exam_question_snapshots_after_question_updates_falls_back_when_lock_busy(): void
++    {
++        $this->bootstrapRestDeliverySnapshotScaffold();
++        $this->useDeliveryFakeRedis();
++        $this->useStartSnapshotFakeRedis();
++        $this->setRuntimeRedisUnavailable();
++
++        global $wpdb;
++        $wpdb = new RestQuestionDeliverySnapshotFakeWpdb();
++
++        self::assertTrue(CBT_Cache::acquire_lock('partial_question_snapshot:exam:55', 15, [
++            'type' => 'test_lock_busy',
++        ]));
++        try {
++            $result = CBT_REST::refresh_exam_question_snapshots_after_question_updates(55, [201]);
++        } finally {
++            CBT_Cache::release_lock('partial_question_snapshot:exam:55');
++        }
++
++        self::assertTrue($result['success']);
++        self::assertSame('full_rebuild', $result['mode']);
++        self::assertSame('lock_busy', $result['reason']);
++        self::assertSame(2, $wpdb->questionHydrateCalls);
++        self::assertSame(2, $wpdb->optionHydrateCalls);
++    }
++
+     #[RunInSeparateProcess]
+     public function test_get_questions_response_includes_etag_and_private_cache_headers(): void
+     {
+@@ -404,6 +553,23 @@ PHP);
+         $errorProperty->setValue(null, '');
+     }
+ 
++    private function useStartSnapshotFakeRedis(): void
++    {
++        $reflection = new ReflectionClass(CBT_Exam_Start_Attempt_Snapshot_Cache::class);
++
++        $redisProperty = $reflection->getProperty('start_snapshot_redis');
++        $redisProperty->setAccessible(true);
++        $redisProperty->setValue(null, new CBT_Test_Redis_Client());
++
++        $attemptedProperty = $reflection->getProperty('start_snapshot_redis_connection_attempted');
++        $attemptedProperty->setAccessible(true);
++        $attemptedProperty->setValue(null, true);
++
++        $errorProperty = $reflection->getProperty('start_snapshot_redis_last_connection_error');
++        $errorProperty->setAccessible(true);
++        $errorProperty->setValue(null, '');
++    }
++
+     private function setRuntimeRedisUnavailable(): void
+     {
+         $reflection = new ReflectionClass(CBT_Runtime::class);
+@@ -450,6 +616,15 @@ final class RestQuestionDeliverySnapshotFakeWpdb
+     public int $answerQueryCalls = 0;
+     public string $attemptStatus = 'in_progress';
+     public string $selectedOptionIds = '[9002]';
++    public string $questionText = 'Ibu Kota Indonesia?';
++    public string $questionUpdatedAt = '2026-04-03 05:01:00';
++    public string $optionAText = 'Bandung';
++    public string $optionBText = 'Jakarta';
++    public bool $includeSecondQuestion = false;
++    public string $secondQuestionText = 'Warna bendera Indonesia?';
++    public string $secondQuestionUpdatedAt = '2026-04-03 05:02:00';
++    public string $secondOptionAText = 'Merah Putih';
++    public string $secondOptionBText = 'Biru';
+ 
+     /** @return array<string,mixed> */
+     public function prepare(string $query, ...$args): array
+@@ -513,33 +688,80 @@ final class RestQuestionDeliverySnapshotFakeWpdb
+     public function get_results($prepared, $output = null): array
+     {
+         $query = is_array($prepared) ? (string) ($prepared['query'] ?? '') : (string) $prepared;
++        $args = is_array($prepared) ? (array) ($prepared['args'] ?? []) : [];
+ 
+         if (strpos($query, 'FROM wp_cbt_questions q') !== false) {
+             $this->questionHydrateCalls++;
+ 
+-            return [
++            $rows = [
+                 [
+                     'id' => 201,
+                     'exam_id' => 55,
+-                    'question_text' => 'Ibu Kota Indonesia?',
++                    'question_text' => $this->questionText,
+                     'question_type' => 'multiple_choice',
+                     'points' => 5,
+                     'correct_text' => 'Jakarta',
+                     'created_at' => '2026-04-03 05:00:00',
+-                    'updated_at' => '2026-04-03 05:01:00',
++                    'updated_at' => $this->questionUpdatedAt,
+                     'is_active' => 1,
+                     'short_answer_correct_text' => null,
+                 ],
+             ];
++            if ($this->includeSecondQuestion) {
++                $rows[] = [
++                    'id' => 202,
++                    'exam_id' => 55,
++                    'question_text' => $this->secondQuestionText,
++                    'question_type' => 'multiple_choice',
++                    'points' => 4,
++                    'correct_text' => 'Merah Putih',
++                    'created_at' => '2026-04-03 05:00:30',
++                    'updated_at' => $this->secondQuestionUpdatedAt,
++                    'is_active' => 1,
++                    'short_answer_correct_text' => null,
++                ];
++            }
++
++            if (strpos($query, 'q.id IN') !== false) {
++                $requestedQuestionIds = array_values(array_filter(array_map('intval', array_slice($args, 1)), static function (int $questionId): bool {
++                    return $questionId > 0;
++                }));
++                if (!empty($requestedQuestionIds)) {
++                    $requestedLookup = array_fill_keys($requestedQuestionIds, true);
++                    $rows = array_values(array_filter($rows, static function (array $row) use ($requestedLookup): bool {
++                        return isset($requestedLookup[(int) ($row['id'] ?? 0)]);
++                    }));
++                }
++            }
++
++            return $rows;
+         }
+ 
+         if (strpos($query, 'FROM wp_cbt_options') !== false) {
+             $this->optionHydrateCalls++;
+ 
+-            return [
+-                ['id' => 9001, 'question_id' => 201, 'option_key' => 'A', 'option_text' => 'Bandung'],
+-                ['id' => 9002, 'question_id' => 201, 'option_key' => 'B', 'option_text' => 'Jakarta'],
++            $rows = [
++                ['id' => 9001, 'question_id' => 201, 'option_key' => 'A', 'option_text' => $this->optionAText],
++                ['id' => 9002, 'question_id' => 201, 'option_key' => 'B', 'option_text' => $this->optionBText],
+             ];
++            if ($this->includeSecondQuestion) {
++                $rows[] = ['id' => 9011, 'question_id' => 202, 'option_key' => 'A', 'option_text' => $this->secondOptionAText];
++                $rows[] = ['id' => 9012, 'question_id' => 202, 'option_key' => 'B', 'option_text' => $this->secondOptionBText];
++            }
++
++            if (preg_match('/question_id IN \(([^)]+)\)/', $query, $matches) === 1) {
++                $requestedQuestionIds = array_values(array_filter(array_map('intval', explode(',', (string) $matches[1])), static function (int $questionId): bool {
++                    return $questionId > 0;
++                }));
++                if (!empty($requestedQuestionIds)) {
++                    $requestedLookup = array_fill_keys($requestedQuestionIds, true);
++                    $rows = array_values(array_filter($rows, static function (array $row) use ($requestedLookup): bool {
++                        return isset($requestedLookup[(int) ($row['question_id'] ?? 0)]);
++                    }));
++                }
++            }
++
++            return $rows;
+         }
+ 
+         if (strpos($query, 'FROM wp_cbt_answers') !== false) {

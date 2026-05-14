@@ -103,6 +103,59 @@ final class ExamQuestionDeliverySnapshotTest extends TestCase
         self::assertGreaterThanOrEqual(2, count($this->storedRedisKeys()));
     }
 
+    public function test_write_current_exam_payload_supports_partial_revision_patch_with_preserved_ttl(): void
+    {
+        CBT_Exam_Question_Delivery_Cache::get_exam_payload(55, static function (int $examId): array {
+            return [
+                [
+                    'id' => 201,
+                    'exam_id' => $examId,
+                    'question_text' => 'Soal lama',
+                    'question_type' => 'multiple_choice',
+                    'points' => 5,
+                    'options' => [
+                        ['id' => 9001, 'option_key' => 'A', 'option_text' => 'A lama'],
+                    ],
+                ],
+                [
+                    'id' => 202,
+                    'exam_id' => $examId,
+                    'question_text' => 'Tetap',
+                    'question_type' => 'essay',
+                    'points' => 3,
+                    'options' => [],
+                ],
+            ];
+        });
+
+        $envelope = CBT_Exam_Question_Delivery_Cache::read_current_exam_payload_envelope(55);
+        self::assertTrue($envelope['success']);
+        $originalTtl = (int) $envelope['ttl_seconds'];
+        $items = (array) $envelope['items'];
+        $items[0] = [
+            'id' => 201,
+            'exam_id' => 55,
+            'question_text' => 'Soal baru',
+            'question_type' => 'multiple_choice',
+            'points' => 5,
+            'is_correct' => 1,
+            'options' => [
+                ['id' => 9002, 'option_key' => 'A', 'option_text' => 'A baru', 'is_correct' => 1],
+            ],
+        ];
+
+        CBT_Cache::invalidate_exam(55);
+        self::assertTrue(CBT_Exam_Question_Delivery_Cache::write_current_exam_payload(55, $items, $originalTtl));
+
+        $patchedEnvelope = CBT_Exam_Question_Delivery_Cache::read_current_exam_payload_envelope(55);
+        self::assertTrue($patchedEnvelope['success']);
+        self::assertSame($originalTtl, (int) $patchedEnvelope['ttl_seconds']);
+        self::assertSame('Soal baru', $patchedEnvelope['items'][0]['question_text']);
+        self::assertSame('Tetap', $patchedEnvelope['items'][1]['question_text']);
+        self::assertArrayNotHasKey('is_correct', $patchedEnvelope['items'][0]);
+        self::assertArrayNotHasKey('is_correct', $patchedEnvelope['items'][0]['options'][0]);
+    }
+
     public function test_get_exam_payload_discards_stale_payload_version(): void
     {
         $producerCalls = 0;

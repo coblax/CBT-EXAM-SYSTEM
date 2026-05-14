@@ -255,19 +255,40 @@ final class CBT_Admin_Questions_Sync_Helper
 
         public static function propagate_bank_question_update(int $source_question_id, array $before_snapshot, array $after_snapshot): array
         {
-            global $wpdb;
+            $affected_exam_ids = [];
+            foreach (self::propagate_bank_question_update_with_targets($source_question_id, $before_snapshot, $after_snapshot) as $target) {
+                $affected_exam_id = (int) ($target['exam_id'] ?? 0);
+                if ($affected_exam_id <= 0) {
+                    continue;
+                }
+
+                $affected_exam_ids[$affected_exam_id] = $affected_exam_id;
+            }
     
+            return array_values($affected_exam_ids);
+        }
+
+        /**
+         * @return array<int,array{exam_id:int,question_id:int}>
+         */
+        public static function propagate_bank_question_update_with_targets(int $source_question_id, array $before_snapshot, array $after_snapshot): array
+        {
             if ($source_question_id <= 0 || empty($before_snapshot) || empty($after_snapshot)) {
                 return [];
             }
-    
-            $affected_exam_ids = [];
+
+            $targets = [];
             foreach (self::collect_descendant_question_ids_for_source($source_question_id, $before_snapshot) as $target_question_id) {
+                $target_question_id = (int) $target_question_id;
+                if ($target_question_id <= 0) {
+                    continue;
+                }
+
                 $target_snapshot = self::get_question_sync_snapshot($target_question_id);
                 if (empty($target_snapshot)) {
                     continue;
                 }
-    
+
                 $affected_exam_id = self::apply_source_snapshot_to_question(
                     $target_question_id,
                     $source_question_id,
@@ -275,11 +296,14 @@ final class CBT_Admin_Questions_Sync_Helper
                     $target_snapshot
                 );
                 if ($affected_exam_id > 0) {
-                    $affected_exam_ids[$affected_exam_id] = $affected_exam_id;
+                    $targets[] = [
+                        'exam_id' => $affected_exam_id,
+                        'question_id' => $target_question_id,
+                    ];
                 }
             }
-    
-            return array_values($affected_exam_ids);
+
+            return $targets;
         }
 
         public static function run_question_source_backfill(): array

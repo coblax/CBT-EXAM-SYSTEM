@@ -131,6 +131,155 @@ final class RestQuestionDeliverySnapshotTest extends TestCase
     }
 
     #[RunInSeparateProcess]
+    public function test_refresh_exam_question_snapshots_after_question_updates_patches_ready_snapshots(): void
+    {
+        $this->bootstrapRestDeliverySnapshotScaffold();
+        $this->useDeliveryFakeRedis();
+        $this->useStartSnapshotFakeRedis();
+        $this->setRuntimeRedisUnavailable();
+
+        global $wpdb;
+        $wpdb = new RestQuestionDeliverySnapshotFakeWpdb();
+
+        CBT_REST::warm_exam_question_delivery_snapshot(55);
+        CBT_REST::warm_exam_start_attempt_snapshot(55);
+        self::assertSame(2, $wpdb->questionHydrateCalls);
+        self::assertSame(2, $wpdb->optionHydrateCalls);
+
+        $wpdb->questionText = 'Ibu Kota Nusantara?';
+        $wpdb->questionUpdatedAt = '2026-04-03 05:10:00';
+        $wpdb->optionBText = 'Nusantara';
+
+        $result = CBT_REST::refresh_exam_question_snapshots_after_question_updates(55, [201]);
+
+        self::assertTrue($result['success']);
+        self::assertSame('partial', $result['mode']);
+        self::assertSame('patched', $result['reason']);
+        self::assertSame([201], $result['question_ids']);
+        self::assertSame(3, $wpdb->questionHydrateCalls);
+        self::assertSame(3, $wpdb->optionHydrateCalls);
+
+        $deliveryProducerCalls = 0;
+        $items = CBT_Exam_Question_Delivery_Cache::get_exam_payload(55, static function () use (&$deliveryProducerCalls): array {
+            $deliveryProducerCalls++;
+            return [];
+        });
+        self::assertSame(0, $deliveryProducerCalls);
+        self::assertSame('Ibu Kota Nusantara?', $items[0]['question_text'] ?? '');
+        self::assertSame('Nusantara', $items[0]['options'][1]['option_text'] ?? '');
+
+        $startProducerCalls = 0;
+        $startSnapshot = CBT_Exam_Start_Attempt_Snapshot_Cache::get_exam_snapshot(55, static function () use (&$startProducerCalls): array {
+            $startProducerCalls++;
+            return [];
+        });
+        self::assertSame(0, $startProducerCalls);
+        self::assertSame([201], $startSnapshot['question_ids']);
+        self::assertSame(1, $startSnapshot['question_count']);
+        self::assertSame('2026-04-03 05:10:00', $startSnapshot['question_manifest'][0]['updated_at'] ?? '');
+        self::assertSame(['9001', '9002'], $startSnapshot['option_randomization_tokens_by_question'][201] ?? []);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_refresh_exam_question_snapshots_after_question_updates_patches_multiple_questions_with_one_revision_bump(): void
+    {
+        $this->bootstrapRestDeliverySnapshotScaffold();
+        $this->useDeliveryFakeRedis();
+        $this->useStartSnapshotFakeRedis();
+        $this->setRuntimeRedisUnavailable();
+
+        global $wpdb;
+        $wpdb = new RestQuestionDeliverySnapshotFakeWpdb();
+        $wpdb->includeSecondQuestion = true;
+
+        CBT_REST::warm_exam_question_delivery_snapshot(55);
+        CBT_REST::warm_exam_start_attempt_snapshot(55);
+        $beforeRevision = CBT_Cache::get_exam_revision_meta(55);
+
+        $wpdb->questionText = 'Ibu Kota Nusantara?';
+        $wpdb->questionUpdatedAt = '2026-04-03 05:10:00';
+        $wpdb->optionBText = 'Nusantara';
+        $wpdb->secondQuestionText = 'Warna langit siang?';
+        $wpdb->secondQuestionUpdatedAt = '2026-04-03 05:11:00';
+        $wpdb->secondOptionBText = 'Biru';
+
+        $result = CBT_REST::refresh_exam_question_snapshots_after_question_updates(55, [201, 202]);
+
+        self::assertTrue($result['success']);
+        self::assertSame('partial', $result['mode']);
+        self::assertSame([201, 202], $result['question_ids']);
+        self::assertSame(3, $wpdb->questionHydrateCalls);
+        self::assertSame(3, $wpdb->optionHydrateCalls);
+
+        $afterRevision = CBT_Cache::get_exam_revision_meta(55);
+        self::assertSame(((int) $beforeRevision['version']) + 1, (int) $afterRevision['version']);
+
+        $items = CBT_Exam_Question_Delivery_Cache::get_exam_payload(55, static function (): array {
+            return [];
+        });
+        self::assertSame(['Ibu Kota Nusantara?', 'Warna langit siang?'], array_column($items, 'question_text'));
+        self::assertSame('Nusantara', $items[0]['options'][1]['option_text'] ?? '');
+        self::assertSame('Biru', $items[1]['options'][1]['option_text'] ?? '');
+
+        $startSnapshot = CBT_Exam_Start_Attempt_Snapshot_Cache::get_exam_snapshot(55, static function (): array {
+            return [];
+        });
+        self::assertSame([201, 202], $startSnapshot['question_ids']);
+        self::assertSame(2, $startSnapshot['question_count']);
+        self::assertSame([201 => 1, 202 => 2], $startSnapshot['question_number_map']);
+        self::assertSame(['2026-04-03 05:10:00', '2026-04-03 05:11:00'], array_column($startSnapshot['question_manifest'], 'updated_at'));
+        self::assertSame(['9001', '9002'], $startSnapshot['option_randomization_tokens_by_question'][201] ?? []);
+        self::assertSame(['9011', '9012'], $startSnapshot['option_randomization_tokens_by_question'][202] ?? []);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_refresh_exam_question_snapshots_after_question_updates_falls_back_when_snapshot_missing(): void
+    {
+        $this->bootstrapRestDeliverySnapshotScaffold();
+        $this->useDeliveryFakeRedis();
+        $this->useStartSnapshotFakeRedis();
+        $this->setRuntimeRedisUnavailable();
+
+        global $wpdb;
+        $wpdb = new RestQuestionDeliverySnapshotFakeWpdb();
+
+        $result = CBT_REST::refresh_exam_question_snapshots_after_question_updates(55, [201]);
+
+        self::assertTrue($result['success']);
+        self::assertSame('full_rebuild', $result['mode']);
+        self::assertSame('delivery_snapshot_miss', $result['reason']);
+        self::assertSame(2, $wpdb->questionHydrateCalls);
+        self::assertSame(2, $wpdb->optionHydrateCalls);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_refresh_exam_question_snapshots_after_question_updates_falls_back_when_lock_busy(): void
+    {
+        $this->bootstrapRestDeliverySnapshotScaffold();
+        $this->useDeliveryFakeRedis();
+        $this->useStartSnapshotFakeRedis();
+        $this->setRuntimeRedisUnavailable();
+
+        global $wpdb;
+        $wpdb = new RestQuestionDeliverySnapshotFakeWpdb();
+
+        self::assertTrue(CBT_Cache::acquire_lock('partial_question_snapshot:exam:55', 15, [
+            'type' => 'test_lock_busy',
+        ]));
+        try {
+            $result = CBT_REST::refresh_exam_question_snapshots_after_question_updates(55, [201]);
+        } finally {
+            CBT_Cache::release_lock('partial_question_snapshot:exam:55');
+        }
+
+        self::assertTrue($result['success']);
+        self::assertSame('full_rebuild', $result['mode']);
+        self::assertSame('lock_busy', $result['reason']);
+        self::assertSame(2, $wpdb->questionHydrateCalls);
+        self::assertSame(2, $wpdb->optionHydrateCalls);
+    }
+
+    #[RunInSeparateProcess]
     public function test_get_questions_response_includes_etag_and_private_cache_headers(): void
     {
         $this->bootstrapRestDeliverySnapshotScaffold();
@@ -404,6 +553,23 @@ PHP);
         $errorProperty->setValue(null, '');
     }
 
+    private function useStartSnapshotFakeRedis(): void
+    {
+        $reflection = new ReflectionClass(CBT_Exam_Start_Attempt_Snapshot_Cache::class);
+
+        $redisProperty = $reflection->getProperty('start_snapshot_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, new CBT_Test_Redis_Client());
+
+        $attemptedProperty = $reflection->getProperty('start_snapshot_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('start_snapshot_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, '');
+    }
+
     private function setRuntimeRedisUnavailable(): void
     {
         $reflection = new ReflectionClass(CBT_Runtime::class);
@@ -450,6 +616,15 @@ final class RestQuestionDeliverySnapshotFakeWpdb
     public int $answerQueryCalls = 0;
     public string $attemptStatus = 'in_progress';
     public string $selectedOptionIds = '[9002]';
+    public string $questionText = 'Ibu Kota Indonesia?';
+    public string $questionUpdatedAt = '2026-04-03 05:01:00';
+    public string $optionAText = 'Bandung';
+    public string $optionBText = 'Jakarta';
+    public bool $includeSecondQuestion = false;
+    public string $secondQuestionText = 'Warna bendera Indonesia?';
+    public string $secondQuestionUpdatedAt = '2026-04-03 05:02:00';
+    public string $secondOptionAText = 'Merah Putih';
+    public string $secondOptionBText = 'Biru';
 
     /** @return array<string,mixed> */
     public function prepare(string $query, ...$args): array
@@ -513,33 +688,80 @@ final class RestQuestionDeliverySnapshotFakeWpdb
     public function get_results($prepared, $output = null): array
     {
         $query = is_array($prepared) ? (string) ($prepared['query'] ?? '') : (string) $prepared;
+        $args = is_array($prepared) ? (array) ($prepared['args'] ?? []) : [];
 
         if (strpos($query, 'FROM wp_cbt_questions q') !== false) {
             $this->questionHydrateCalls++;
 
-            return [
+            $rows = [
                 [
                     'id' => 201,
                     'exam_id' => 55,
-                    'question_text' => 'Ibu Kota Indonesia?',
+                    'question_text' => $this->questionText,
                     'question_type' => 'multiple_choice',
                     'points' => 5,
                     'correct_text' => 'Jakarta',
                     'created_at' => '2026-04-03 05:00:00',
-                    'updated_at' => '2026-04-03 05:01:00',
+                    'updated_at' => $this->questionUpdatedAt,
                     'is_active' => 1,
                     'short_answer_correct_text' => null,
                 ],
             ];
+            if ($this->includeSecondQuestion) {
+                $rows[] = [
+                    'id' => 202,
+                    'exam_id' => 55,
+                    'question_text' => $this->secondQuestionText,
+                    'question_type' => 'multiple_choice',
+                    'points' => 4,
+                    'correct_text' => 'Merah Putih',
+                    'created_at' => '2026-04-03 05:00:30',
+                    'updated_at' => $this->secondQuestionUpdatedAt,
+                    'is_active' => 1,
+                    'short_answer_correct_text' => null,
+                ];
+            }
+
+            if (strpos($query, 'q.id IN') !== false) {
+                $requestedQuestionIds = array_values(array_filter(array_map('intval', array_slice($args, 1)), static function (int $questionId): bool {
+                    return $questionId > 0;
+                }));
+                if (!empty($requestedQuestionIds)) {
+                    $requestedLookup = array_fill_keys($requestedQuestionIds, true);
+                    $rows = array_values(array_filter($rows, static function (array $row) use ($requestedLookup): bool {
+                        return isset($requestedLookup[(int) ($row['id'] ?? 0)]);
+                    }));
+                }
+            }
+
+            return $rows;
         }
 
         if (strpos($query, 'FROM wp_cbt_options') !== false) {
             $this->optionHydrateCalls++;
 
-            return [
-                ['id' => 9001, 'question_id' => 201, 'option_key' => 'A', 'option_text' => 'Bandung'],
-                ['id' => 9002, 'question_id' => 201, 'option_key' => 'B', 'option_text' => 'Jakarta'],
+            $rows = [
+                ['id' => 9001, 'question_id' => 201, 'option_key' => 'A', 'option_text' => $this->optionAText],
+                ['id' => 9002, 'question_id' => 201, 'option_key' => 'B', 'option_text' => $this->optionBText],
             ];
+            if ($this->includeSecondQuestion) {
+                $rows[] = ['id' => 9011, 'question_id' => 202, 'option_key' => 'A', 'option_text' => $this->secondOptionAText];
+                $rows[] = ['id' => 9012, 'question_id' => 202, 'option_key' => 'B', 'option_text' => $this->secondOptionBText];
+            }
+
+            if (preg_match('/question_id IN \(([^)]+)\)/', $query, $matches) === 1) {
+                $requestedQuestionIds = array_values(array_filter(array_map('intval', explode(',', (string) $matches[1])), static function (int $questionId): bool {
+                    return $questionId > 0;
+                }));
+                if (!empty($requestedQuestionIds)) {
+                    $requestedLookup = array_fill_keys($requestedQuestionIds, true);
+                    $rows = array_values(array_filter($rows, static function (array $row) use ($requestedLookup): bool {
+                        return isset($requestedLookup[(int) ($row['question_id'] ?? 0)]);
+                    }));
+                }
+            }
+
+            return $rows;
         }
 
         if (strpos($query, 'FROM wp_cbt_answers') !== false) {
