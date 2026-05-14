@@ -3792,6 +3792,14 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                     }
                 }
 
+                var securityAjaxUrl = (typeof window.ajaxurl === 'string' && window.ajaxurl !== '')
+                    ? window.ajaxurl
+                    : <?php echo wp_json_encode(admin_url('admin-ajax.php')); ?>;
+
+                function getSecurityAsyncActionUrl(form) {
+                    return securityAjaxUrl || form.action;
+                }
+
                 function bindSecurityAsyncForms() {
                     var forms = document.querySelectorAll('[data-security-async-form]');
 
@@ -3835,7 +3843,7 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
 
                             startSecurityProgress(profile);
 
-                            fetch(form.action, {
+                            fetch(getSecurityAsyncActionUrl(form), {
                                 method: 'POST',
                                 body: formData,
                                 credentials: 'same-origin',

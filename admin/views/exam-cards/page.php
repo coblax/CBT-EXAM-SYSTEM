@@ -208,7 +208,10 @@
                 font-weight: inherit;
             }
             .cbt-exam-cards-panel input[type="text"],
+            .cbt-exam-cards-panel input[type="date"],
+            .cbt-exam-cards-panel input[type="time"],
             .cbt-exam-cards-panel input[type="number"],
+            .cbt-exam-cards-panel textarea,
             .cbt-exam-cards-panel select {
                 min-height: 48px;
                 padding: 0 15px;
@@ -220,9 +223,17 @@
                 transition: var(--cbt-transition);
             }
             .cbt-exam-cards-panel input[type="text"],
+            .cbt-exam-cards-panel input[type="date"],
+            .cbt-exam-cards-panel input[type="time"],
+            .cbt-exam-cards-panel textarea,
             .cbt-exam-cards-panel input[type="number"] {
                 width: min(100%, 720px);
                 max-width: none;
+            }
+            .cbt-exam-cards-panel textarea {
+                min-height: 96px;
+                padding-top: 13px;
+                resize: vertical;
             }
             .cbt-exam-cards-panel input[type="number"] {
                 width: min(100%, 220px);
@@ -323,6 +334,25 @@
                 gap: 7px;
             }
             .cbt-exam-cards-seat-field label {
+                font-size: 13px;
+                font-weight: 700;
+                color: #0f172a;
+            }
+            .cbt-exam-cards-minutes-grid {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 14px 16px;
+                max-width: 760px;
+            }
+            .cbt-exam-cards-minutes-field {
+                display: grid;
+                gap: 7px;
+                min-width: 0;
+            }
+            .cbt-exam-cards-minutes-field.is-wide {
+                grid-column: 1 / -1;
+            }
+            .cbt-exam-cards-minutes-field label {
                 font-size: 13px;
                 font-weight: 700;
                 color: #0f172a;
@@ -591,15 +621,18 @@
                 .cbt-exam-cards-field-grid {
                     grid-template-columns: 1fr;
                 }
+                .cbt-exam-cards-minutes-grid {
+                    grid-template-columns: 1fr;
+                }
             }
         </style>
         <div class="wrap cbt-exam-cards-page" data-cbt-exam-cards-root>
             <div class="cbt-exam-cards-shell">
                 <section class="cbt-exam-cards-hero">
                     <div class="cbt-exam-cards-hero-copy">
-                        <span class="cbt-exam-cards-kicker">Print</span>
-                        <h1>CBT Exam Cards</h1>
-                        <p>Generate kartu peserta ujian berdasarkan filter siswa dengan output siap cetak untuk PDF A4. Operator bisa pilih filter lalu atur informasi apa saja yang mau ikut tercetak di kartu.</p>
+                        <span class="cbt-exam-cards-kicker">Pre-Test Documents</span>
+                        <h1>CBT Administrative Documents</h1>
+                        <p>Siapkan dokumen administrasi sebelum pelaksanaan ujian, seperti kartu peserta dan nomor meja, dengan output PDF A4 siap cetak.</p>
                     </div>
                     <div class="cbt-exam-cards-overview" aria-hidden="true" data-cbt-exam-cards-refresh-area="overview">
                         <span class="cbt-exam-cards-pill"><?php echo esc_html(sprintf('%d kelas tersedia', count($kelas_options))); ?></span>
@@ -612,10 +645,10 @@
                 <section class="cbt-exam-cards-panel">
                     <div class="cbt-exam-cards-panel-header">
                         <div>
-                            <h2>Filter & Generate Cards</h2>
-                            <p>Pilih kelas, ruang, atau kata kunci siswa untuk membatasi kartu yang akan digenerate. Setelah itu, tentukan apakah outputnya berupa kartu peserta lengkap atau nomor meja besar siap cetak.</p>
+                            <h2>Filter & Generate Documents</h2>
+                            <p>Pilih kelas, ruang, atau kata kunci siswa untuk membatasi dokumen yang akan digenerate. Setelah itu, pilih tipe output: kartu peserta, nomor meja, daftar hadir, atau berita acara.</p>
                         </div>
-                        <span class="cbt-exam-cards-chip">PDF A4 • 6 kartu / halaman</span>
+                        <span class="cbt-exam-cards-chip">PDF A4 • dokumen siap cetak</span>
                     </div>
 
                     <div data-cbt-exam-cards-refresh-area="notices">
@@ -632,14 +665,20 @@
                         <span id="cbt-card-mode-summary" class="cbt-exam-cards-summary-item"><?php echo esc_html('Mode: ' . $selected_print_mode_label); ?></span>
                         <span class="cbt-exam-cards-summary-item"><?php echo esc_html('Kelas: ' . ($selected_kelas !== '' ? $selected_kelas : 'Semua kelas')); ?></span>
                         <span class="cbt-exam-cards-summary-item"><?php echo esc_html('Ruang: ' . ($selected_ruang !== '' ? $selected_ruang : 'Semua ruang')); ?></span>
-                        <span class="cbt-exam-cards-summary-item"><?php echo esc_html(sprintf('Jadwal publish: %d exam', $schedule_count)); ?></span>
-                        <span class="cbt-exam-cards-summary-item"><?php echo esc_html(sprintf('Info kartu: %d item', $display_field_count)); ?></span>
+                        <span class="cbt-exam-cards-summary-item"><?php echo esc_html(sprintf('Jadwal publish: %d jadwal', $schedule_count)); ?></span>
+                        <?php if ($is_participant_mode): ?>
+                            <span class="cbt-exam-cards-summary-item"><?php echo esc_html(sprintf('Info kartu: %d item', $display_field_count)); ?></span>
+                        <?php elseif ($is_minutes_mode): ?>
+                            <span class="cbt-exam-cards-summary-item">Detail berita acara siap diedit</span>
+                        <?php else: ?>
+                            <span class="cbt-exam-cards-summary-item">Print-only tanpa ubah data siswa</span>
+                        <?php endif; ?>
                     </div>
 
                     <div class="cbt-exam-cards-local-progress" data-cbt-exam-cards-progress role="status" aria-live="polite" aria-hidden="true">
                         <div class="cbt-exam-cards-progress-head">
                             <div class="cbt-exam-cards-progress-title">
-                                <strong data-cbt-exam-cards-progress-title>Siap memproses kartu ujian</strong>
+                                <strong data-cbt-exam-cards-progress-title>Siap memproses dokumen administrasi</strong>
                                 <span>Progress berjalan di area ini tanpa reload halaman global.</span>
                             </div>
                             <span class="cbt-exam-cards-progress-percent" data-cbt-exam-cards-progress-percent>0%</span>
@@ -647,7 +686,7 @@
                         <div class="cbt-exam-cards-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-cbt-exam-cards-progress-track>
                             <span class="cbt-exam-cards-progress-fill" data-cbt-exam-cards-progress-fill></span>
                         </div>
-                        <p class="cbt-exam-cards-progress-step" data-cbt-exam-cards-progress-step>Atur filter lalu generate kartu.</p>
+                        <p class="cbt-exam-cards-progress-step" data-cbt-exam-cards-progress-step>Atur filter lalu generate dokumen.</p>
                     </div>
 
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" data-cbt-exam-cards-refresh-area="form" data-cbt-exam-cards-print-form>
@@ -660,7 +699,7 @@
                                 <th>Mode Cetak</th>
                                 <td>
                                     <input type="hidden" id="cbt-card-print-mode" name="cbt_card_print_mode" value="<?php echo esc_attr($selected_print_mode); ?>" />
-                                    <div class="cbt-exam-cards-tabs" role="tablist" aria-label="Mode cetak exam cards">
+                                    <div class="cbt-exam-cards-tabs" role="tablist" aria-label="Mode cetak dokumen administrasi">
                                         <?php foreach ($print_mode_options as $mode_key => $mode_option): ?>
                                             <button
                                                 type="button"
@@ -695,7 +734,7 @@
                                             </option>
                                         <?php endforeach; ?>
                                     </select>
-                                    <p class="description">Opsional. Jika kosong, semua kelas akan diproses pada kartu ujian.</p>
+                                    <p class="description">Opsional. Jika kosong, semua kelas akan diproses pada dokumen administrasi.</p>
                                 </td>
                             </tr>
                             <tr>
@@ -716,7 +755,7 @@
                                 <th><label for="cbt-card-q">Cari Siswa</label></th>
                                 <td>
                                     <input type="text" id="cbt-card-q" name="cbt_card_q" class="regular-text" value="<?php echo esc_attr($search); ?>" placeholder="Cari username / nama / email" />
-                                    <p class="description">Opsional untuk mempersempit hasil siswa yang akan masuk ke kartu.</p>
+                                    <p class="description">Opsional untuk mempersempit hasil siswa yang akan masuk ke dokumen.</p>
                                 </td>
                             </tr>
                             <tr>
@@ -735,7 +774,7 @@
                                     <p id="cbt-card-seat-settings-note" class="description<?php echo !$is_desk_number_mode ? ' cbt-exam-cards-row-hidden' : ''; ?>">Nomor meja dibentuk otomatis dari hasil filter siswa dengan urutan existing `kelas -> nama -> username`, lalu dimulai dari angka awal yang Anda tentukan.</p>
                                 </td>
                             </tr>
-                            <tr id="cbt-card-fields-row"<?php echo $is_desk_number_mode ? ' class="cbt-exam-cards-row-hidden"' : ''; ?>>
+                            <tr id="cbt-card-fields-row"<?php echo !$is_participant_mode ? ' class="cbt-exam-cards-row-hidden"' : ''; ?>>
                                 <th>Informasi Kartu</th>
                                 <td>
                                     <div class="cbt-exam-cards-field-grid">
@@ -763,17 +802,63 @@
                                     </p>
                                 </td>
                             </tr>
+                            <tr id="cbt-card-minutes-row"<?php echo !$is_minutes_mode ? ' class="cbt-exam-cards-row-hidden"' : ''; ?>>
+                                <th>Detail Berita Acara</th>
+                                <td>
+                                    <div class="cbt-exam-cards-minutes-grid">
+                                        <div class="cbt-exam-cards-minutes-field is-wide">
+                                            <label for="cbt-minutes-subject">Mata Pelajaran / Kegiatan</label>
+                                            <input type="text" id="cbt-minutes-subject" name="cbt_minutes_subject" value="<?php echo esc_attr((string) ($minutes_fields['subject'] ?? '')); ?>" placeholder="Contoh: Matematika" />
+                                        </div>
+                                        <div class="cbt-exam-cards-minutes-field">
+                                            <label for="cbt-minutes-date">Tanggal Pelaksanaan</label>
+                                            <input type="date" id="cbt-minutes-date" name="cbt_minutes_date" value="<?php echo esc_attr((string) ($minutes_fields['date'] ?? '')); ?>" />
+                                        </div>
+                                        <div class="cbt-exam-cards-minutes-field">
+                                            <label for="cbt-minutes-room">Ruang</label>
+                                            <input type="text" id="cbt-minutes-room" name="cbt_minutes_room" value="<?php echo esc_attr((string) ($minutes_fields['room'] ?? '')); ?>" />
+                                        </div>
+                                        <div class="cbt-exam-cards-minutes-field">
+                                            <label for="cbt-minutes-start-time">Jam Mulai</label>
+                                            <input type="time" id="cbt-minutes-start-time" name="cbt_minutes_start_time" value="<?php echo esc_attr((string) ($minutes_fields['start_time'] ?? '')); ?>" />
+                                        </div>
+                                        <div class="cbt-exam-cards-minutes-field">
+                                            <label for="cbt-minutes-end-time">Jam Selesai</label>
+                                            <input type="time" id="cbt-minutes-end-time" name="cbt_minutes_end_time" value="<?php echo esc_attr((string) ($minutes_fields['end_time'] ?? '')); ?>" />
+                                        </div>
+                                        <div class="cbt-exam-cards-minutes-field">
+                                            <label for="cbt-minutes-proctor-name">Nama Proktor</label>
+                                            <input type="text" id="cbt-minutes-proctor-name" name="cbt_minutes_proctor_name" value="<?php echo esc_attr((string) ($minutes_fields['proctor_name'] ?? '')); ?>" />
+                                        </div>
+                                        <div class="cbt-exam-cards-minutes-field">
+                                            <label for="cbt-minutes-supervisor-name">Nama Pengawas</label>
+                                            <input type="text" id="cbt-minutes-supervisor-name" name="cbt_minutes_supervisor_name" value="<?php echo esc_attr((string) ($minutes_fields['supervisor_name'] ?? '')); ?>" />
+                                        </div>
+                                        <div class="cbt-exam-cards-minutes-field is-wide">
+                                            <label for="cbt-minutes-notes">Catatan Pelaksanaan</label>
+                                            <textarea id="cbt-minutes-notes" name="cbt_minutes_notes" rows="4" placeholder="Catatan kejadian, kendala, atau keterangan tambahan."><?php echo esc_textarea((string) ($minutes_fields['notes'] ?? '')); ?></textarea>
+                                        </div>
+                                    </div>
+                                    <p class="description">Default diambil dari jadwal publish yang cocok dengan filter kelas. Semua field ini hanya dipakai untuk dokumen cetak.</p>
+                                </td>
+                            </tr>
                             </tbody>
                         </table>
-                        <p id="cbt-card-participant-note" class="cbt-exam-cards-note<?php echo $is_desk_number_mode ? ' cbt-exam-cards-row-hidden' : ''; ?>">
+                        <p id="cbt-card-participant-note" class="cbt-exam-cards-note<?php echo !$is_participant_mode ? ' cbt-exam-cards-row-hidden' : ''; ?>">
                             Password pada kartu akan memakai nilai tersimpan. Jika masih kosong, sistem akan membuat password 6 digit otomatis untuk siswa tersebut saat proses generate berjalan. Opsi tampilan di atas hanya mengatur field yang dicetak, bukan mengubah data siswa.
                         </p>
                         <p id="cbt-card-desk-note" class="cbt-exam-cards-note<?php echo !$is_desk_number_mode ? ' cbt-exam-cards-row-hidden' : ''; ?>">
                             Mode nomor meja hanya membuat urutan angka print-only untuk hasil filter saat ini. Tidak ada password, foto, atau data profil siswa yang diubah saat generate berlangsung.
                         </p>
+                        <p id="cbt-card-attendance-note" class="cbt-exam-cards-note<?php echo !$is_attendance_mode ? ' cbt-exam-cards-row-hidden' : ''; ?>">
+                            Daftar hadir hanya mencetak identitas peserta dan kolom tanda tangan sesuai filter saat ini. Tidak ada password, foto, atau data profil siswa yang diubah saat generate berlangsung.
+                        </p>
+                        <p id="cbt-card-minutes-note" class="cbt-exam-cards-note<?php echo !$is_minutes_mode ? ' cbt-exam-cards-row-hidden' : ''; ?>">
+                            Berita acara memakai total peserta dari filter saat ini dan detail sesi dari field di atas. Data ini bersifat print-only.
+                        </p>
                         <div class="cbt-exam-cards-form-actions">
                             <button id="cbt-card-submit-button" class="button button-primary" type="submit">
-                                <?php echo esc_html($is_desk_number_mode ? 'Generate & Print Nomor Meja' : 'Generate & Print Kartu'); ?>
+                                <?php echo esc_html($selected_submit_label); ?>
                             </button>
                             <a href="<?php echo esc_url($reset_url); ?>" class="button button-secondary" data-cbt-exam-cards-async-link data-cbt-exam-cards-progress-profile="reset" data-cbt-exam-cards-refresh-areas="overview,notices,summary,form">Reset Filter</a>
                         </div>
@@ -783,7 +868,7 @@
                 <section class="cbt-exam-cards-insights" aria-hidden="true">
                     <div class="cbt-exam-cards-insight">
                         <strong>Output siap cetak</strong>
-                        <p>Layout dibuat untuk kertas A4 portrait dengan 6 kartu per halaman, jadi operator bisa langsung simpan atau print ke PDF.</p>
+                        <p>Layout dibuat untuk kertas A4 portrait, jadi operator bisa langsung simpan atau print ke PDF.</p>
                     </div>
                     <div class="cbt-exam-cards-insight">
                         <strong>Filter fleksibel</strong>
@@ -791,7 +876,7 @@
                     </div>
                     <div class="cbt-exam-cards-insight">
                         <strong>Tampilan fleksibel</strong>
-                        <p>Foto, identitas login, kelas, jenis kelamin, agama, ruangan, sampai jadwal ujian sekarang bisa dipilih sesuai kebutuhan kartu yang ingin dibagikan.</p>
+                        <p>Foto, identitas login, kelas, jenis kelamin, agama, ruangan, sampai jadwal ujian bisa dipilih sesuai kebutuhan dokumen yang ingin dibagikan.</p>
                     </div>
                 </section>
             </div>
@@ -801,23 +886,23 @@
                 const modeDescriptions = <?php echo wp_json_encode($print_mode_options); ?>;
                 const progressProfiles = {
                     generate: {
-                        title: 'Generate kartu sedang berjalan',
+                        title: 'Generate dokumen sedang berjalan',
                         steps: [
                             'Memvalidasi mode cetak, filter kelas, ruang, dan pencarian siswa.',
                             'Membuka tab cetak agar halaman admin tetap di tempat.',
-                            'Menyiapkan data peserta, password kosong, dan jadwal publish.',
+                            'Menyiapkan data peserta, jadwal publish, dan detail dokumen.',
                             'Membangun layout print A4. Tab cetak akan siap sebentar lagi.'
                         ],
                         wait: 'Menunggu halaman print selesai dimuat di tab baru.'
                     },
                     reset: {
-                        title: 'Mereset filter Exam Cards',
+                        title: 'Mereset filter Administrative Documents',
                         steps: [
                             'Mengambil ulang konfigurasi awal dari server.',
                             'Memperbarui ringkasan, filter, dan form di area ini.',
                             'Menyambungkan ulang kontrol mode cetak tanpa reload global.'
                         ],
-                        wait: 'Menunggu respons halaman Exam Cards.'
+                        wait: 'Menunggu respons halaman Administrative Documents.'
                     }
                 };
                 let progressTimer = null;
@@ -881,9 +966,9 @@
                     window.clearInterval(progressTimer);
                     progressValue = 8;
                     if (parts.title) {
-                        parts.title.textContent = profile.title || 'Memproses Exam Cards';
+                        parts.title.textContent = profile.title || 'Memproses Administrative Documents';
                     }
-                    setExamCardsProgress(progressValue, steps[0] || profile.wait || 'Memproses area Exam Cards.', 'active');
+                    setExamCardsProgress(progressValue, steps[0] || profile.wait || 'Memproses area Administrative Documents.', 'active');
 
                     progressTimer = window.setInterval(function () {
                         const ceiling = profileKey === 'generate' ? 92 : 88;
@@ -894,7 +979,7 @@
 
                         progressValue += progressValue < 45 ? 9 : 5;
                         stepIndex = Math.min(steps.length - 1, Math.floor((progressValue / 100) * Math.max(1, steps.length)));
-                        setExamCardsProgress(Math.min(progressValue, ceiling), steps[stepIndex] || profile.wait || 'Memproses area Exam Cards.', 'active');
+                        setExamCardsProgress(Math.min(progressValue, ceiling), steps[stepIndex] || profile.wait || 'Memproses area Administrative Documents.', 'active');
                     }, 420);
                 }
 
@@ -972,14 +1057,14 @@
 
                         const replaced = replaceExamCardsRefreshAreas(responseText, areas);
                         if (replaced === 0) {
-                            throw new Error('Respons server tidak berisi area Exam Cards yang bisa diganti.');
+                            throw new Error('Respons server tidak berisi area Administrative Documents yang bisa diganti.');
                         }
 
                         bindExamCardsUi();
-                        completeExamCardsProgress('Area Exam Cards sudah diperbarui', 'Filter, ringkasan, dan form berhasil disegarkan tanpa reload halaman global.', 'complete');
+                        completeExamCardsProgress('Area Administrative Documents sudah diperbarui', 'Filter, ringkasan, dan form berhasil disegarkan tanpa reload halaman global.', 'complete');
                     } catch (error) {
-                        const message = error && error.message ? error.message : 'Koneksi gagal saat memperbarui area Exam Cards.';
-                        showExamCardsLocalError('Gagal memperbarui area Exam Cards', message);
+                        const message = error && error.message ? error.message : 'Koneksi gagal saat memperbarui area Administrative Documents.';
+                        showExamCardsLocalError('Gagal memperbarui area Administrative Documents', message);
                     } finally {
                         source.removeAttribute('aria-busy');
                         source.classList.remove('is-loading');
@@ -988,7 +1073,7 @@
 
                 function validatePrintForm(form) {
                     const modeInput = form.querySelector('#cbt-card-print-mode');
-                    const activeMode = modeInput && modeInput.value === 'desk_number' ? 'desk_number' : 'participant';
+                    const activeMode = modeInput && modeDescriptions[modeInput.value] ? modeInput.value : 'participant';
 
                     if (activeMode !== 'participant') {
                         return true;
@@ -1120,16 +1205,21 @@
 
                     const modeInput = root.querySelector('#cbt-card-print-mode');
                     const fieldsRow = root.querySelector('#cbt-card-fields-row');
+                    const minutesRow = root.querySelector('#cbt-card-minutes-row');
                     const seatSettings = root.querySelector('#cbt-card-seat-settings');
                     const seatSettingsNote = root.querySelector('#cbt-card-seat-settings-note');
                     const participantNote = root.querySelector('#cbt-card-participant-note');
                     const deskNote = root.querySelector('#cbt-card-desk-note');
+                    const attendanceNote = root.querySelector('#cbt-card-attendance-note');
+                    const minutesNote = root.querySelector('#cbt-card-minutes-note');
                     const modeTitle = root.querySelector('#cbt-card-mode-title');
                     const modeCopy = root.querySelector('#cbt-card-mode-copy');
                     const modePill = root.querySelector('#cbt-card-mode-pill');
                     const modeSummary = root.querySelector('#cbt-card-mode-summary');
                     const submitButton = root.querySelector('#cbt-card-submit-button');
                     const fieldInputs = fieldsRow ? fieldsRow.querySelectorAll('input[type="checkbox"]') : [];
+                    const seatInputs = seatSettings ? seatSettings.querySelectorAll('input') : [];
+                    const minutesInputs = minutesRow ? minutesRow.querySelectorAll('input, textarea') : [];
                     const modeTabs = root.querySelectorAll('[data-print-mode-tab]');
                     const form = root.querySelector('[data-cbt-exam-cards-print-form]');
 
@@ -1138,12 +1228,18 @@
                     }
 
                     const syncPrintMode = function () {
-                        const activeMode = modeInput.value === 'desk_number' ? 'desk_number' : 'participant';
+                        const activeMode = modeDescriptions[modeInput.value] ? modeInput.value : 'participant';
                         const isDeskMode = activeMode === 'desk_number';
+                        const isParticipantMode = activeMode === 'participant';
+                        const isAttendanceMode = activeMode === 'attendance';
+                        const isMinutesMode = activeMode === 'minutes';
                         const activeModeDescription = modeDescriptions[activeMode] || {};
 
                         if (fieldsRow) {
-                            fieldsRow.classList.toggle('cbt-exam-cards-row-hidden', isDeskMode);
+                            fieldsRow.classList.toggle('cbt-exam-cards-row-hidden', !isParticipantMode);
+                        }
+                        if (minutesRow) {
+                            minutesRow.classList.toggle('cbt-exam-cards-row-hidden', !isMinutesMode);
                         }
                         if (seatSettings) {
                             seatSettings.classList.toggle('cbt-exam-cards-row-hidden', !isDeskMode);
@@ -1152,14 +1248,26 @@
                             seatSettingsNote.classList.toggle('cbt-exam-cards-row-hidden', !isDeskMode);
                         }
                         if (participantNote) {
-                            participantNote.classList.toggle('cbt-exam-cards-row-hidden', isDeskMode);
+                            participantNote.classList.toggle('cbt-exam-cards-row-hidden', !isParticipantMode);
                         }
                         if (deskNote) {
                             deskNote.classList.toggle('cbt-exam-cards-row-hidden', !isDeskMode);
                         }
+                        if (attendanceNote) {
+                            attendanceNote.classList.toggle('cbt-exam-cards-row-hidden', !isAttendanceMode);
+                        }
+                        if (minutesNote) {
+                            minutesNote.classList.toggle('cbt-exam-cards-row-hidden', !isMinutesMode);
+                        }
 
                         fieldInputs.forEach(function (input) {
-                            input.disabled = isDeskMode;
+                            input.disabled = !isParticipantMode;
+                        });
+                        seatInputs.forEach(function (input) {
+                            input.disabled = !isDeskMode;
+                        });
+                        minutesInputs.forEach(function (input) {
+                            input.disabled = !isMinutesMode;
                         });
 
                         if (modeTitle) {
@@ -1175,7 +1283,7 @@
                             modeSummary.textContent = 'Mode: ' + (activeModeDescription.label || activeMode);
                         }
                         if (submitButton) {
-                            submitButton.textContent = isDeskMode ? 'Generate & Print Nomor Meja' : 'Generate & Print Kartu';
+                            submitButton.textContent = activeModeDescription.submit_label || 'Generate & Print Dokumen';
                         }
 
                         modeTabs.forEach(function (tab) {

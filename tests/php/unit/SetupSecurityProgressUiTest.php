@@ -65,6 +65,8 @@ final class SetupSecurityProgressUiTest extends TestCase
         self::assertStringContainsString('parseSecurityFetchResponse', $html);
         self::assertStringContainsString('normalizeSecurityJsonPayload', $html);
         self::assertStringContainsString('application/json, text/html', $html);
+        self::assertStringContainsString('getSecurityAsyncActionUrl', $html);
+        self::assertStringContainsString('admin-ajax.php', $html);
         self::assertStringContainsString('cbt_security_local_refresh', $html);
         self::assertStringContainsString('replaceSecurityRefreshAreas', $html);
         self::assertStringContainsString('bindSecurityAsyncForms();', $html);
@@ -83,6 +85,15 @@ final class SetupSecurityProgressUiTest extends TestCase
         self::assertStringContainsString('send_security_refresh_json', $source);
         self::assertStringContainsString('wp_send_json_success', $source);
         self::assertStringContainsString('render_security_page_html', $source);
+    }
+
+    public function test_security_actions_are_registered_for_admin_ajax_local_refresh(): void
+    {
+        $source = (string) file_get_contents(dirname(__DIR__, 3) . '/admin/class-cbt-admin.php');
+
+        self::assertStringContainsString("add_action('wp_ajax_cbt_save_security_settings'", $source);
+        self::assertStringContainsString("add_action('wp_ajax_cbt_manage_security_logs'", $source);
+        self::assertStringContainsString("add_action('wp_ajax_cbt_simulate_native_security_event'", $source);
     }
 
     private function renderSecurityView(): string

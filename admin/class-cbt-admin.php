@@ -70,6 +70,9 @@ class CBT_Admin
         add_action('admin_post_cbt_save_security_settings', [CBT_Admin_Security_Actions::class, 'handle_save_security_settings']);
         add_action('admin_post_cbt_manage_security_logs', [CBT_Admin_Security_Actions::class, 'handle_manage_security_logs']);
         add_action('admin_post_cbt_simulate_native_security_event', [CBT_Admin_Security_Actions::class, 'handle_simulate_native_security_event']);
+        add_action('wp_ajax_cbt_save_security_settings', [CBT_Admin_Security_Actions::class, 'handle_save_security_settings']);
+        add_action('wp_ajax_cbt_manage_security_logs', [CBT_Admin_Security_Actions::class, 'handle_manage_security_logs']);
+        add_action('wp_ajax_cbt_simulate_native_security_event', [CBT_Admin_Security_Actions::class, 'handle_simulate_native_security_event']);
         add_action('admin_post_cbt_save_developer_settings', [CBT_Admin_Developer_Actions::class, 'handle_save_settings']);
         add_action('admin_post_cbt_check_developer_dev_server', [CBT_Admin_Developer_Actions::class, 'handle_check_dev_server']);
         add_action('admin_post_cbt_stop_developer_dev_server', [CBT_Admin_Developer_Actions::class, 'handle_stop_dev_server']);

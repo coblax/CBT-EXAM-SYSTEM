@@ -94,8 +94,8 @@ final class CBT_Admin_Menu
 
         add_submenu_page(
             'cbt-exams',
-            'CBT Exam Cards',
-            'CBT Exam Cards',
+            'CBT Administrative Documents',
+            'CBT Administrative Documents',
             'cbt_manage_users',
             'cbt-exam-cards',
             [CBT_Admin_Exam_Cards_Page::class, 'render']

@@ -263,8 +263,9 @@ final class CBT_Admin_Security_Actions
         $requested = !empty($_POST['cbt_security_local_refresh']) || !empty($_GET['cbt_security_local_refresh']);
         $xhr = isset($_SERVER['HTTP_X_REQUESTED_WITH'])
             && strtolower((string) $_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
+        $ajax = function_exists('wp_doing_ajax') && wp_doing_ajax();
 
-        return $requested || $xhr;
+        return $requested || $xhr || $ajax;
     }
 
     private static function maybe_send_security_refresh_success(string $message, string $tab): void

@@ -157,11 +157,11 @@ final class CBT_Admin_Introduction_Page
                     ],
                     [
                         'slug' => 'cbt-exam-cards',
-                        'label' => 'CBT Exam Cards',
+                        'label' => 'CBT Administrative Documents',
                         'capability' => 'cbt_manage_users',
-                        'summary' => 'Generasi bulk pencetakan kartu peserta fisikal dan absensi lapangan secara otomatis.',
-                        'when_to_use' => 'Sehari menjelang pelaksanaan demi pencetakan atribut fisik (Distribusi Tata Usaha).',
-                        'output' => 'PDF Print layout, label, kartu dan daftar hadir visual.',
+                        'summary' => 'Generasi bulk dokumen administrasi pra-pelaksanaan seperti kartu peserta, nomor meja, dan atribut cetak lapangan.',
+                        'when_to_use' => 'Sebelum pelaksanaan untuk menyiapkan dokumen fisik dan distribusi tata usaha.',
+                        'output' => 'PDF print layout untuk kartu peserta, nomor meja, label, dan dokumen pendukung.',
                     ],
                 ],
             ],
@@ -393,7 +393,7 @@ final class CBT_Admin_Introduction_Page
                     'can_open' => false,
                     'label' => 'Perlu akses peserta',
                     'tone' => 'restricted',
-                    'hint' => 'Akun ini belum punya izin untuk mengelola data peserta atau kartu ujian.',
+                    'hint' => 'Akun ini belum punya izin untuk mengelola data peserta atau dokumen administrasi.',
                 ];
 
             default:

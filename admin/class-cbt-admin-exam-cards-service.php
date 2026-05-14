@@ -15,8 +15,18 @@ final class CBT_Admin_Exam_Cards_Service
     private const PRINT_MODE_PARAM = 'cbt_card_print_mode';
     private const PRINT_MODE_PARTICIPANT = 'participant';
     private const PRINT_MODE_DESK_NUMBER = 'desk_number';
+    private const PRINT_MODE_ATTENDANCE = 'attendance';
+    private const PRINT_MODE_MINUTES = 'minutes';
     private const SEAT_START_PARAM = 'cbt_card_seat_start';
     private const SEAT_PADDING_PARAM = 'cbt_card_seat_padding';
+    private const MINUTES_SUBJECT_PARAM = 'cbt_minutes_subject';
+    private const MINUTES_DATE_PARAM = 'cbt_minutes_date';
+    private const MINUTES_START_TIME_PARAM = 'cbt_minutes_start_time';
+    private const MINUTES_END_TIME_PARAM = 'cbt_minutes_end_time';
+    private const MINUTES_ROOM_PARAM = 'cbt_minutes_room';
+    private const MINUTES_PROCTOR_NAME_PARAM = 'cbt_minutes_proctor_name';
+    private const MINUTES_SUPERVISOR_NAME_PARAM = 'cbt_minutes_supervisor_name';
+    private const MINUTES_NOTES_PARAM = 'cbt_minutes_notes';
     private const DEFAULT_SEAT_START = 1;
     private const DEFAULT_SEAT_PADDING = 3;
 
@@ -45,11 +55,16 @@ final class CBT_Admin_Exam_Cards_Service
         $selected_display_field_labels = self::get_selected_display_field_labels($selected_display_fields);
         $display_field_count = count($selected_display_fields);
         $is_desk_number_mode = $selected_print_mode === self::PRINT_MODE_DESK_NUMBER;
+        $is_attendance_mode = $selected_print_mode === self::PRINT_MODE_ATTENDANCE;
+        $is_participant_mode = $selected_print_mode === self::PRINT_MODE_PARTICIPANT;
+        $is_minutes_mode = $selected_print_mode === self::PRINT_MODE_MINUTES;
         $selected_print_mode_label = (string) ($print_mode_options[$selected_print_mode]['label'] ?? $selected_print_mode);
+        $selected_submit_label = (string) ($print_mode_options[$selected_print_mode]['submit_label'] ?? 'Generate & Print Dokumen');
 
         $kelas_options = self::get_distinct_user_meta_values('kode_kelas');
         $ruang_options = self::get_distinct_user_meta_values('kode_ruang');
         $schedule_count = count(self::get_exam_card_schedule_rows($selected_kelas));
+        $minutes_fields = self::get_minutes_fields_from_source($query, $selected_kelas, $selected_ruang);
         $active_filter_count = 0;
         if ($selected_kelas !== '') {
             $active_filter_count++;
@@ -73,8 +88,12 @@ final class CBT_Admin_Exam_Cards_Service
             'display_field_count',
             'display_field_options',
             'error',
+            'is_attendance_mode',
             'is_desk_number_mode',
+            'is_minutes_mode',
+            'is_participant_mode',
             'kelas_options',
+            'minutes_fields',
             'notice',
             'print_mode_options',
             'reset_url',
@@ -88,7 +107,8 @@ final class CBT_Admin_Exam_Cards_Service
             'selected_kelas',
             'selected_print_mode',
             'selected_print_mode_label',
-            'selected_ruang'
+            'selected_ruang',
+            'selected_submit_label'
         );
     }
 
@@ -105,6 +125,7 @@ final class CBT_Admin_Exam_Cards_Service
         $seat_start_number = self::get_seat_start_number_from_source($source);
         $seat_padding = self::get_seat_padding_from_source($source);
         $selected_display_fields = self::get_selected_display_fields_from_source($source);
+        $minutes_fields = self::get_minutes_fields_from_source($source, $selected_kelas, $selected_ruang);
 
         $redirect_args = [
             'cbt_card_kelas' => $selected_kelas,
@@ -115,11 +136,11 @@ final class CBT_Admin_Exam_Cards_Service
             self::SEAT_PADDING_PARAM => $seat_padding,
             self::DISPLAY_FIELDS_CONFIGURED_PARAM => '1',
             self::DISPLAY_FIELDS_PARAM => $selected_display_fields,
-        ];
+        ] + self::build_minutes_query_args($minutes_fields);
         if ($print_mode === self::PRINT_MODE_PARTICIPANT && empty($selected_display_fields)) {
             return new WP_Error(
                 'exam_cards_display_fields_empty',
-                'Pilih minimal satu informasi yang akan ditampilkan pada kartu ujian.',
+                'Pilih minimal satu informasi yang akan ditampilkan pada kartu peserta.',
                 ['redirect_args' => $redirect_args]
             );
         }
@@ -134,7 +155,7 @@ final class CBT_Admin_Exam_Cards_Service
         $kelas_label = $selected_kelas !== '' ? $selected_kelas : 'Semua Kelas';
         $ruang_label = $selected_ruang !== '' ? $selected_ruang : 'Semua Ruang';
         $student_total = count($students);
-        $back_url = self::build_print_back_url($selected_kelas, $selected_ruang, $search, $selected_display_fields, $print_mode, $seat_start_number, $seat_padding);
+        $back_url = self::build_print_back_url($selected_kelas, $selected_ruang, $search, $selected_display_fields, $print_mode, $seat_start_number, $seat_padding, $minutes_fields);
 
         if ($print_mode === self::PRINT_MODE_DESK_NUMBER) {
             $seat_cards = self::build_desk_number_cards($students, $seat_start_number, $seat_padding);
@@ -149,6 +170,47 @@ final class CBT_Admin_Exam_Cards_Service
                 'seat_padding',
                 'seat_start_number',
                 'student_total'
+            );
+        }
+
+        $schedule_rows = self::get_exam_card_schedule_rows($selected_kelas);
+        $schedule_items = [];
+        foreach ($schedule_rows as $schedule_row) {
+            $schedule_items[] = self::format_exam_card_schedule_line((array) $schedule_row);
+        }
+
+        if ($print_mode === self::PRINT_MODE_ATTENDANCE) {
+            return $branding_context + compact(
+                'back_url',
+                'kelas_label',
+                'printed_at',
+                'print_mode',
+                'ruang_label',
+                'schedule_items',
+                'student_total',
+                'students'
+            );
+        }
+
+        if ($print_mode === self::PRINT_MODE_MINUTES) {
+            $minutes_date_label = self::format_minutes_date_label((string) ($minutes_fields['date'] ?? ''));
+            $minutes_time_label = self::format_minutes_time_label(
+                (string) ($minutes_fields['start_time'] ?? ''),
+                (string) ($minutes_fields['end_time'] ?? '')
+            );
+
+            return $branding_context + compact(
+                'back_url',
+                'kelas_label',
+                'minutes_date_label',
+                'minutes_fields',
+                'minutes_time_label',
+                'printed_at',
+                'print_mode',
+                'ruang_label',
+                'schedule_items',
+                'student_total',
+                'students'
             );
         }
 
@@ -170,12 +232,6 @@ final class CBT_Admin_Exam_Cards_Service
             $students[$idx]['password'] = $generated_password;
         }
 
-        $schedule_rows = self::get_exam_card_schedule_rows($selected_kelas);
-        $schedule_items = [];
-        foreach ($schedule_rows as $schedule_row) {
-            $schedule_items[] = self::format_exam_card_schedule_line((array) $schedule_row);
-        }
-
         return $branding_context + compact(
             'back_url',
             'kelas_label',
@@ -190,7 +246,7 @@ final class CBT_Admin_Exam_Cards_Service
     }
 
     /**
-     * @return array<string,array{label:string,description:string}>
+     * @return array<string,array{label:string,description:string,submit_label:string}>
      */
     public static function get_print_mode_options(): array
     {
@@ -198,10 +254,22 @@ final class CBT_Admin_Exam_Cards_Service
             self::PRINT_MODE_PARTICIPANT => [
                 'label' => 'Kartu Peserta',
                 'description' => 'Cetak kartu peserta lengkap dengan informasi siswa yang dipilih.',
+                'submit_label' => 'Generate & Print Kartu',
             ],
             self::PRINT_MODE_DESK_NUMBER => [
                 'label' => 'Nomor Meja',
                 'description' => 'Cetak placard nomor meja besar dengan urutan otomatis untuk hasil filter siswa.',
+                'submit_label' => 'Generate & Print Nomor Meja',
+            ],
+            self::PRINT_MODE_ATTENDANCE => [
+                'label' => 'Daftar Hadir Peserta Ujian',
+                'description' => 'Cetak daftar hadir peserta dengan kolom identitas dan tanda tangan.',
+                'submit_label' => 'Generate & Print Daftar Hadir',
+            ],
+            self::PRINT_MODE_MINUTES => [
+                'label' => 'Berita Acara Pelaksanaan',
+                'description' => 'Cetak berita acara pelaksanaan dengan detail sesi, catatan, dan tanda tangan petugas.',
+                'submit_label' => 'Generate & Print Berita Acara',
             ],
         ];
     }
@@ -683,8 +751,12 @@ final class CBT_Admin_Exam_Cards_Service
             ? sanitize_key(wp_unslash((string) $source[self::PRINT_MODE_PARAM]))
             : self::PRINT_MODE_PARTICIPANT;
 
-        if ($raw_mode === self::PRINT_MODE_DESK_NUMBER) {
-            return self::PRINT_MODE_DESK_NUMBER;
+        if (in_array($raw_mode, [
+            self::PRINT_MODE_DESK_NUMBER,
+            self::PRINT_MODE_ATTENDANCE,
+            self::PRINT_MODE_MINUTES,
+        ], true)) {
+            return $raw_mode;
         }
 
         return self::PRINT_MODE_PARTICIPANT;
@@ -798,6 +870,154 @@ final class CBT_Admin_Exam_Cards_Service
     }
 
     /**
+     * @return array{subject:string,date:string,start_time:string,end_time:string,room:string,proctor_name:string,supervisor_name:string,notes:string}
+     */
+    private static function get_minutes_fields_from_source(array $source, string $selected_kelas, string $selected_ruang): array
+    {
+        $defaults = self::get_minutes_default_fields($selected_kelas, $selected_ruang);
+
+        return [
+            'subject' => self::posted_text_or_default($source, self::MINUTES_SUBJECT_PARAM, $defaults['subject']),
+            'date' => self::normalize_minutes_date(self::posted_text_or_default($source, self::MINUTES_DATE_PARAM, $defaults['date']), $defaults['date']),
+            'start_time' => self::normalize_minutes_time(self::posted_text_or_default($source, self::MINUTES_START_TIME_PARAM, $defaults['start_time']), $defaults['start_time']),
+            'end_time' => self::normalize_minutes_time(self::posted_text_or_default($source, self::MINUTES_END_TIME_PARAM, $defaults['end_time']), $defaults['end_time']),
+            'room' => self::posted_text_or_default($source, self::MINUTES_ROOM_PARAM, $defaults['room']),
+            'proctor_name' => self::posted_text_or_default($source, self::MINUTES_PROCTOR_NAME_PARAM, ''),
+            'supervisor_name' => self::posted_text_or_default($source, self::MINUTES_SUPERVISOR_NAME_PARAM, ''),
+            'notes' => self::posted_textarea_or_default($source, self::MINUTES_NOTES_PARAM, ''),
+        ];
+    }
+
+    /**
+     * @return array{subject:string,date:string,start_time:string,end_time:string,room:string}
+     */
+    private static function get_minutes_default_fields(string $selected_kelas, string $selected_ruang): array
+    {
+        $schedule_rows = self::get_exam_card_schedule_rows($selected_kelas);
+        $schedule = isset($schedule_rows[0]) && is_array($schedule_rows[0]) ? $schedule_rows[0] : [];
+        $starts_at = (string) ($schedule['starts_at'] ?? '');
+        $ends_at = (string) ($schedule['ends_at'] ?? '');
+        $duration_minutes = isset($schedule['duration_minutes']) ? (int) $schedule['duration_minutes'] : 0;
+        $date = self::format_minutes_date_value($starts_at);
+
+        if ($date === '') {
+            $date = wp_date('Y-m-d', (int) current_time('timestamp'));
+        }
+
+        return [
+            'subject' => trim(sanitize_text_field((string) ($schedule['title'] ?? ''))),
+            'date' => $date,
+            'start_time' => self::format_exam_card_time_only($starts_at) !== '-' ? self::format_exam_card_time_only($starts_at) : '',
+            'end_time' => self::format_exam_card_end_time($starts_at, $ends_at, $duration_minutes) !== '-' ? self::format_exam_card_end_time($starts_at, $ends_at, $duration_minutes) : '',
+            'room' => $selected_ruang !== '' ? $selected_ruang : 'Semua Ruang',
+        ];
+    }
+
+    private static function posted_text_or_default(array $source, string $key, string $default): string
+    {
+        if (!isset($source[$key])) {
+            return $default;
+        }
+
+        if (!is_scalar($source[$key])) {
+            return $default;
+        }
+
+        return sanitize_text_field(wp_unslash((string) $source[$key]));
+    }
+
+    private static function posted_textarea_or_default(array $source, string $key, string $default): string
+    {
+        if (!isset($source[$key])) {
+            return $default;
+        }
+
+        if (!is_scalar($source[$key])) {
+            return $default;
+        }
+
+        return sanitize_textarea_field(wp_unslash((string) $source[$key]));
+    }
+
+    private static function normalize_minutes_date(string $value, string $default): string
+    {
+        $value = trim($value);
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $value) === 1) {
+            return $value;
+        }
+
+        return $default;
+    }
+
+    private static function normalize_minutes_time(string $value, string $default): string
+    {
+        $value = trim($value);
+        if (preg_match('/^\d{2}:\d{2}$/', $value) === 1) {
+            return $value;
+        }
+
+        return $default;
+    }
+
+    private static function format_minutes_date_value(string $value): string
+    {
+        $timestamp = strtotime(trim($value));
+        if ($timestamp === false) {
+            return '';
+        }
+
+        return wp_date('Y-m-d', (int) $timestamp);
+    }
+
+    private static function format_minutes_date_label(string $value): string
+    {
+        $timestamp = strtotime(trim($value));
+        if ($timestamp === false) {
+            return sanitize_text_field($value);
+        }
+
+        $weekday = self::translate_exam_card_weekday((string) wp_date('l', (int) $timestamp));
+
+        return $weekday . ', ' . self::format_exam_card_indonesian_date((int) $timestamp);
+    }
+
+    private static function format_minutes_time_label(string $start_time, string $end_time): string
+    {
+        $start_time = trim($start_time);
+        $end_time = trim($end_time);
+
+        if ($start_time !== '' && $end_time !== '') {
+            return $start_time . ' - ' . $end_time;
+        }
+        if ($start_time !== '') {
+            return $start_time;
+        }
+        if ($end_time !== '') {
+            return $end_time;
+        }
+
+        return '-';
+    }
+
+    /**
+     * @param array{subject:string,date:string,start_time:string,end_time:string,room:string,proctor_name:string,supervisor_name:string,notes:string} $minutes_fields
+     * @return array<string,string>
+     */
+    private static function build_minutes_query_args(array $minutes_fields): array
+    {
+        return [
+            self::MINUTES_SUBJECT_PARAM => (string) ($minutes_fields['subject'] ?? ''),
+            self::MINUTES_DATE_PARAM => (string) ($minutes_fields['date'] ?? ''),
+            self::MINUTES_START_TIME_PARAM => (string) ($minutes_fields['start_time'] ?? ''),
+            self::MINUTES_END_TIME_PARAM => (string) ($minutes_fields['end_time'] ?? ''),
+            self::MINUTES_ROOM_PARAM => (string) ($minutes_fields['room'] ?? ''),
+            self::MINUTES_PROCTOR_NAME_PARAM => (string) ($minutes_fields['proctor_name'] ?? ''),
+            self::MINUTES_SUPERVISOR_NAME_PARAM => (string) ($minutes_fields['supervisor_name'] ?? ''),
+            self::MINUTES_NOTES_PARAM => (string) ($minutes_fields['notes'] ?? ''),
+        ];
+    }
+
+    /**
      * @return array<string,mixed>
      */
     private static function build_print_branding_context(): array
@@ -859,7 +1079,8 @@ final class CBT_Admin_Exam_Cards_Service
         array $selected_display_fields,
         string $print_mode,
         int $seat_start_number,
-        int $seat_padding
+        int $seat_padding,
+        array $minutes_fields = []
     ): string {
         $back_args = [
             'page' => 'cbt-exam-cards',
@@ -869,7 +1090,7 @@ final class CBT_Admin_Exam_Cards_Service
             self::SEAT_PADDING_PARAM => $seat_padding,
             self::DISPLAY_FIELDS_CONFIGURED_PARAM => '1',
             self::DISPLAY_FIELDS_PARAM => $selected_display_fields,
-        ];
+        ] + self::build_minutes_query_args($minutes_fields);
         if ($selected_ruang !== '') {
             $back_args['cbt_card_ruang'] = $selected_ruang;
         }

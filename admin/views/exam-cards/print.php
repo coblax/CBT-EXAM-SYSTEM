@@ -1,9 +1,18 @@
         <?php
         $print_mode = isset($print_mode) && is_string($print_mode) ? $print_mode : 'participant';
         $is_desk_number_mode = $print_mode === 'desk_number';
-        $document_title = $is_desk_number_mode
-            ? 'Nomor Meja ' . $card_program_title . ' - ' . $kelas_label
-            : 'Kartu Peserta ' . $card_program_title . ' - ' . $kelas_label;
+        $is_attendance_mode = $print_mode === 'attendance';
+        $is_minutes_mode = $print_mode === 'minutes';
+        $is_participant_mode = !$is_desk_number_mode && !$is_attendance_mode && !$is_minutes_mode;
+        if ($is_desk_number_mode) {
+            $document_title = 'Nomor Meja ' . $card_program_title . ' - ' . $kelas_label;
+        } elseif ($is_attendance_mode) {
+            $document_title = 'Daftar Hadir Peserta Ujian ' . $card_program_title . ' - ' . $kelas_label;
+        } elseif ($is_minutes_mode) {
+            $document_title = 'Berita Acara Pelaksanaan ' . $card_program_title . ' - ' . $kelas_label;
+        } else {
+            $document_title = 'Kartu Peserta ' . $card_program_title . ' - ' . $kelas_label;
+        }
         ?>
         <!doctype html>
         <html lang="id">
@@ -302,6 +311,136 @@
                     color: #334155;
                     white-space: nowrap;
                 }
+                .admin-document {
+                    break-inside: avoid;
+                    page-break-inside: avoid;
+                }
+                .admin-document-head {
+                    display: grid;
+                    grid-template-columns: 22mm minmax(0, 1fr) 22mm;
+                    gap: 4mm;
+                    align-items: start;
+                    padding-bottom: 4mm;
+                    border-bottom: 2px solid #0f172a;
+                    text-align: center;
+                }
+                .admin-document-logo {
+                    width: 20mm;
+                    min-height: 20mm;
+                    display: flex;
+                    align-items: flex-start;
+                    justify-content: center;
+                    overflow: hidden;
+                }
+                .admin-document-logo img {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: contain;
+                }
+                .admin-document-school {
+                    display: grid;
+                    gap: 1mm;
+                }
+                .admin-document-school-name {
+                    font-size: 16px;
+                    font-weight: 800;
+                    text-transform: uppercase;
+                    letter-spacing: 0.02em;
+                    line-height: 1.15;
+                }
+                .admin-document-school-meta,
+                .admin-document-school-address {
+                    font-size: 10.5px;
+                    color: #334155;
+                    line-height: 1.35;
+                }
+                .admin-document-title {
+                    margin: 6mm 0 4mm;
+                    text-align: center;
+                    font-size: 15px;
+                    font-weight: 800;
+                    text-decoration: underline;
+                    text-transform: uppercase;
+                    letter-spacing: 0.04em;
+                }
+                .admin-document-meta {
+                    width: 100%;
+                    margin-bottom: 4mm;
+                    border-collapse: collapse;
+                    table-layout: fixed;
+                    font-size: 11px;
+                }
+                .admin-document-meta td {
+                    padding: 1mm 1.4mm;
+                    vertical-align: top;
+                }
+                .admin-document-meta-label {
+                    width: 30mm;
+                    font-weight: 700;
+                    color: #334155;
+                }
+                .admin-document-meta-separator {
+                    width: 3mm;
+                    text-align: center;
+                    font-weight: 700;
+                }
+                .attendance-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    table-layout: fixed;
+                    font-size: 10.5px;
+                }
+                .attendance-table th,
+                .attendance-table td {
+                    border: 1px solid #0f172a;
+                    padding: 1.7mm 1.3mm;
+                    vertical-align: middle;
+                    word-break: break-word;
+                }
+                .attendance-table th {
+                    background: #f1f5f9;
+                    text-align: center;
+                    font-weight: 800;
+                }
+                .attendance-signature-cell {
+                    height: 13mm;
+                }
+                .minutes-body {
+                    font-size: 12px;
+                    line-height: 1.65;
+                }
+                .minutes-paragraph {
+                    margin: 0 0 4mm;
+                    text-align: justify;
+                }
+                .minutes-notes {
+                    min-height: 30mm;
+                    margin: 4mm 0 8mm;
+                    padding: 3mm;
+                    border: 1px solid #0f172a;
+                    white-space: pre-wrap;
+                }
+                .minutes-signatures {
+                    display: grid;
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                    gap: 18mm;
+                    margin-top: 8mm;
+                    text-align: center;
+                }
+                .minutes-signature-box {
+                    min-height: 36mm;
+                    display: grid;
+                    align-content: end;
+                    gap: 18mm;
+                }
+                .minutes-signature-role {
+                    font-weight: 700;
+                }
+                .minutes-signature-name {
+                    min-height: 6mm;
+                    border-bottom: 1px solid #0f172a;
+                    font-weight: 700;
+                }
                 .desk-seat-card {
                     border: 2.4px solid #38bdf8;
                     break-inside: avoid;
@@ -395,11 +534,11 @@
             </div>
             <main class="cards-wrap">
                 <div class="cards-meta">
-                    <div><strong>Mode Cetak</strong>: <?php echo esc_html($is_desk_number_mode ? 'Nomor Meja' : 'Kartu Peserta'); ?></div>
+                    <div><strong>Mode Cetak</strong>: <?php echo esc_html($is_desk_number_mode ? 'Nomor Meja' : ($is_attendance_mode ? 'Daftar Hadir Peserta Ujian' : ($is_minutes_mode ? 'Berita Acara Pelaksanaan' : 'Kartu Peserta'))); ?></div>
                     <?php if ($is_desk_number_mode): ?>
                         <div><strong>Nomor Awal</strong>: <?php echo esc_html((string) $seat_start_number); ?></div>
                     <?php else: ?>
-                        <div><strong>Total Siswa</strong>: <?php echo esc_html((string) $student_total); ?></div>
+                        <div><strong>Total Peserta</strong>: <?php echo esc_html((string) $student_total); ?></div>
                     <?php endif; ?>
                     <div><strong>Tanggal Cetak</strong>: <?php echo esc_html($printed_at); ?></div>
                     <div><strong>Kelas</strong>: <?php echo esc_html($kelas_label); ?></div>
@@ -415,6 +554,8 @@
                     return $segment !== '';
                 }));
                 $desk_logo_url = $school_logo_1_url !== '' ? $school_logo_1_url : $school_logo_2_url;
+                $document_logo_left = $school_logo_1_url !== '' ? $school_logo_1_url : $school_logo_2_url;
+                $document_logo_right = $school_logo_2_url !== '' ? $school_logo_2_url : '';
                 ?>
                 <?php if ($is_desk_number_mode): ?>
                     <section class="cards-grid is-desk-number">
@@ -436,6 +577,195 @@
                                 </div>
                             </article>
                         <?php endforeach; ?>
+                    </section>
+                <?php elseif ($is_attendance_mode): ?>
+                    <section class="admin-document">
+                        <header class="admin-document-head">
+                            <div class="admin-document-logo">
+                                <?php if ($document_logo_left !== ''): ?>
+                                    <img src="<?php echo esc_url($document_logo_left); ?>" alt="<?php echo esc_attr($school_name . ' Logo'); ?>" loading="lazy" decoding="async" />
+                                <?php endif; ?>
+                            </div>
+                            <div class="admin-document-school">
+                                <div class="admin-document-school-name"><?php echo esc_html($school_name); ?></div>
+                                <?php if ($school_npsn !== ''): ?>
+                                    <div class="admin-document-school-meta">NPSN: <?php echo esc_html($school_npsn); ?></div>
+                                <?php endif; ?>
+                                <?php if ($card_header_address_line !== ''): ?>
+                                    <div class="admin-document-school-address"><?php echo esc_html($card_header_address_line); ?></div>
+                                <?php endif; ?>
+                                <?php if (!empty($card_header_region_segments)): ?>
+                                    <div class="admin-document-school-address"><?php echo esc_html(implode(', ', $card_header_region_segments)); ?></div>
+                                <?php endif; ?>
+                                <?php if ($school_motto !== ''): ?>
+                                    <div class="admin-document-school-meta"><em><?php echo esc_html($school_motto); ?></em></div>
+                                <?php endif; ?>
+                            </div>
+                            <div class="admin-document-logo">
+                                <?php if ($document_logo_right !== ''): ?>
+                                    <img src="<?php echo esc_url($document_logo_right); ?>" alt="<?php echo esc_attr($school_name . ' Logo 2'); ?>" loading="lazy" decoding="async" />
+                                <?php endif; ?>
+                            </div>
+                        </header>
+                        <h1 class="admin-document-title">Daftar Hadir Peserta Ujian</h1>
+                        <table class="admin-document-meta">
+                            <tbody>
+                                <tr>
+                                    <td class="admin-document-meta-label">Program</td>
+                                    <td class="admin-document-meta-separator">:</td>
+                                    <td><?php echo esc_html($card_program_title); ?></td>
+                                    <td class="admin-document-meta-label">Tanggal Cetak</td>
+                                    <td class="admin-document-meta-separator">:</td>
+                                    <td><?php echo esc_html($printed_at); ?></td>
+                                </tr>
+                                <tr>
+                                    <td class="admin-document-meta-label">Kelas</td>
+                                    <td class="admin-document-meta-separator">:</td>
+                                    <td><?php echo esc_html($kelas_label); ?></td>
+                                    <td class="admin-document-meta-label">Ruang</td>
+                                    <td class="admin-document-meta-separator">:</td>
+                                    <td><?php echo esc_html($ruang_label); ?></td>
+                                </tr>
+                                <tr>
+                                    <td class="admin-document-meta-label">Total Peserta</td>
+                                    <td class="admin-document-meta-separator">:</td>
+                                    <td colspan="4"><?php echo esc_html((string) $student_total); ?></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <table class="attendance-table">
+                            <thead>
+                                <tr>
+                                    <th style="width:9mm;">No</th>
+                                    <th>Nama Peserta</th>
+                                    <th style="width:35mm;">NISN / Username</th>
+                                    <th style="width:24mm;">Kelas</th>
+                                    <th style="width:24mm;">Ruang</th>
+                                    <th style="width:42mm;">Tanda Tangan</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach (array_values((array) $students) as $student_index => $student): ?>
+                                    <?php
+                                    $student_name = trim((string) ($student['name'] ?? ''));
+                                    if ($student_name === '') {
+                                        $student_name = trim((string) ($student['username'] ?? '-'));
+                                    }
+                                    $student_identifier = trim((string) ($student['nisn'] ?? ''));
+                                    if ($student_identifier === '') {
+                                        $student_identifier = trim((string) ($student['username'] ?? '-'));
+                                    }
+                                    ?>
+                                    <tr>
+                                        <td style="text-align:center;"><?php echo esc_html((string) ($student_index + 1)); ?></td>
+                                        <td><?php echo esc_html($student_name !== '' ? $student_name : '-'); ?></td>
+                                        <td><?php echo esc_html($student_identifier !== '' ? $student_identifier : '-'); ?></td>
+                                        <td><?php echo esc_html(trim((string) ($student['kelas'] ?? '')) !== '' ? trim((string) ($student['kelas'] ?? '')) : '-'); ?></td>
+                                        <td><?php echo esc_html(trim((string) ($student['ruang'] ?? '')) !== '' ? trim((string) ($student['ruang'] ?? '')) : '-'); ?></td>
+                                        <td class="attendance-signature-cell"></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </section>
+                <?php elseif ($is_minutes_mode): ?>
+                    <?php
+                    $minutes = is_array($minutes_fields ?? null) ? $minutes_fields : [];
+                    $minutes_subject = trim((string) ($minutes['subject'] ?? ''));
+                    $minutes_room = trim((string) ($minutes['room'] ?? $ruang_label));
+                    $minutes_proctor_name = trim((string) ($minutes['proctor_name'] ?? ''));
+                    $minutes_supervisor_name = trim((string) ($minutes['supervisor_name'] ?? ''));
+                    $minutes_notes = trim((string) ($minutes['notes'] ?? ''));
+                    ?>
+                    <section class="admin-document">
+                        <header class="admin-document-head">
+                            <div class="admin-document-logo">
+                                <?php if ($document_logo_left !== ''): ?>
+                                    <img src="<?php echo esc_url($document_logo_left); ?>" alt="<?php echo esc_attr($school_name . ' Logo'); ?>" loading="lazy" decoding="async" />
+                                <?php endif; ?>
+                            </div>
+                            <div class="admin-document-school">
+                                <div class="admin-document-school-name"><?php echo esc_html($school_name); ?></div>
+                                <?php if ($school_npsn !== ''): ?>
+                                    <div class="admin-document-school-meta">NPSN: <?php echo esc_html($school_npsn); ?></div>
+                                <?php endif; ?>
+                                <?php if ($card_header_address_line !== ''): ?>
+                                    <div class="admin-document-school-address"><?php echo esc_html($card_header_address_line); ?></div>
+                                <?php endif; ?>
+                                <?php if (!empty($card_header_region_segments)): ?>
+                                    <div class="admin-document-school-address"><?php echo esc_html(implode(', ', $card_header_region_segments)); ?></div>
+                                <?php endif; ?>
+                                <?php if ($school_motto !== ''): ?>
+                                    <div class="admin-document-school-meta"><em><?php echo esc_html($school_motto); ?></em></div>
+                                <?php endif; ?>
+                            </div>
+                            <div class="admin-document-logo">
+                                <?php if ($document_logo_right !== ''): ?>
+                                    <img src="<?php echo esc_url($document_logo_right); ?>" alt="<?php echo esc_attr($school_name . ' Logo 2'); ?>" loading="lazy" decoding="async" />
+                                <?php endif; ?>
+                            </div>
+                        </header>
+                        <h1 class="admin-document-title">Berita Acara Pelaksanaan</h1>
+                        <div class="minutes-body">
+                            <p class="minutes-paragraph">
+                                Pada hari <?php echo esc_html((string) ($minutes_date_label ?? '-')); ?>,
+                                telah dilaksanakan <?php echo esc_html($card_program_title); ?>
+                                <?php if ($minutes_subject !== ''): ?>
+                                    untuk mata pelajaran/kegiatan <?php echo esc_html($minutes_subject); ?>
+                                <?php endif; ?>
+                                dengan rincian sebagai berikut.
+                            </p>
+                            <table class="admin-document-meta">
+                                <tbody>
+                                    <tr>
+                                        <td class="admin-document-meta-label">Program</td>
+                                        <td class="admin-document-meta-separator">:</td>
+                                        <td><?php echo esc_html($card_program_title); ?></td>
+                                        <td class="admin-document-meta-label">Mata Pelajaran</td>
+                                        <td class="admin-document-meta-separator">:</td>
+                                        <td><?php echo esc_html($minutes_subject !== '' ? $minutes_subject : '-'); ?></td>
+                                    </tr>
+                                    <tr>
+                                        <td class="admin-document-meta-label">Kelas</td>
+                                        <td class="admin-document-meta-separator">:</td>
+                                        <td><?php echo esc_html($kelas_label); ?></td>
+                                        <td class="admin-document-meta-label">Ruang</td>
+                                        <td class="admin-document-meta-separator">:</td>
+                                        <td><?php echo esc_html($minutes_room !== '' ? $minutes_room : $ruang_label); ?></td>
+                                    </tr>
+                                    <tr>
+                                        <td class="admin-document-meta-label">Tanggal</td>
+                                        <td class="admin-document-meta-separator">:</td>
+                                        <td><?php echo esc_html((string) ($minutes_date_label ?? '-')); ?></td>
+                                        <td class="admin-document-meta-label">Waktu</td>
+                                        <td class="admin-document-meta-separator">:</td>
+                                        <td><?php echo esc_html((string) ($minutes_time_label ?? '-')); ?></td>
+                                    </tr>
+                                    <tr>
+                                        <td class="admin-document-meta-label">Total Peserta</td>
+                                        <td class="admin-document-meta-separator">:</td>
+                                        <td><?php echo esc_html((string) $student_total); ?></td>
+                                        <td class="admin-document-meta-label">Tanggal Cetak</td>
+                                        <td class="admin-document-meta-separator">:</td>
+                                        <td><?php echo esc_html($printed_at); ?></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <p class="minutes-paragraph">
+                                Berita acara ini dibuat sebagai dokumen administrasi pelaksanaan ujian dan digunakan sebagaimana mestinya.
+                            </p>
+                            <div class="minutes-notes"><?php echo esc_html($minutes_notes !== '' ? $minutes_notes : "Catatan pelaksanaan:\n\n"); ?></div>
+                            <div class="minutes-signatures">
+                                <div class="minutes-signature-box">
+                                    <div class="minutes-signature-role">Proktor</div>
+                                    <div class="minutes-signature-name"><?php echo esc_html($minutes_proctor_name); ?></div>
+                                </div>
+                                <div class="minutes-signature-box">
+                                    <div class="minutes-signature-role">Pengawas</div>
+                                    <div class="minutes-signature-name"><?php echo esc_html($minutes_supervisor_name); ?></div>
+                                </div>
+                            </div>
+                        </div>
                     </section>
                 <?php else: ?>
                     <section class="cards-grid">
