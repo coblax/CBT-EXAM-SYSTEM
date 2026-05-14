@@ -802,46 +802,7 @@
                                     </p>
                                 </td>
                             </tr>
-                            <tr id="cbt-card-minutes-row"<?php echo !$is_minutes_mode ? ' class="cbt-exam-cards-row-hidden"' : ''; ?>>
-                                <th>Detail Berita Acara</th>
-                                <td>
-                                    <div class="cbt-exam-cards-minutes-grid">
-                                        <div class="cbt-exam-cards-minutes-field is-wide">
-                                            <label for="cbt-minutes-subject">Mata Pelajaran / Kegiatan</label>
-                                            <input type="text" id="cbt-minutes-subject" name="cbt_minutes_subject" value="<?php echo esc_attr((string) ($minutes_fields['subject'] ?? '')); ?>" placeholder="Contoh: Matematika" />
-                                        </div>
-                                        <div class="cbt-exam-cards-minutes-field">
-                                            <label for="cbt-minutes-date">Tanggal Pelaksanaan</label>
-                                            <input type="date" id="cbt-minutes-date" name="cbt_minutes_date" value="<?php echo esc_attr((string) ($minutes_fields['date'] ?? '')); ?>" />
-                                        </div>
-                                        <div class="cbt-exam-cards-minutes-field">
-                                            <label for="cbt-minutes-room">Ruang</label>
-                                            <input type="text" id="cbt-minutes-room" name="cbt_minutes_room" value="<?php echo esc_attr((string) ($minutes_fields['room'] ?? '')); ?>" />
-                                        </div>
-                                        <div class="cbt-exam-cards-minutes-field">
-                                            <label for="cbt-minutes-start-time">Jam Mulai</label>
-                                            <input type="time" id="cbt-minutes-start-time" name="cbt_minutes_start_time" value="<?php echo esc_attr((string) ($minutes_fields['start_time'] ?? '')); ?>" />
-                                        </div>
-                                        <div class="cbt-exam-cards-minutes-field">
-                                            <label for="cbt-minutes-end-time">Jam Selesai</label>
-                                            <input type="time" id="cbt-minutes-end-time" name="cbt_minutes_end_time" value="<?php echo esc_attr((string) ($minutes_fields['end_time'] ?? '')); ?>" />
-                                        </div>
-                                        <div class="cbt-exam-cards-minutes-field">
-                                            <label for="cbt-minutes-proctor-name">Nama Proktor</label>
-                                            <input type="text" id="cbt-minutes-proctor-name" name="cbt_minutes_proctor_name" value="<?php echo esc_attr((string) ($minutes_fields['proctor_name'] ?? '')); ?>" />
-                                        </div>
-                                        <div class="cbt-exam-cards-minutes-field">
-                                            <label for="cbt-minutes-supervisor-name">Nama Pengawas</label>
-                                            <input type="text" id="cbt-minutes-supervisor-name" name="cbt_minutes_supervisor_name" value="<?php echo esc_attr((string) ($minutes_fields['supervisor_name'] ?? '')); ?>" />
-                                        </div>
-                                        <div class="cbt-exam-cards-minutes-field is-wide">
-                                            <label for="cbt-minutes-notes">Catatan Pelaksanaan</label>
-                                            <textarea id="cbt-minutes-notes" name="cbt_minutes_notes" rows="4" placeholder="Catatan kejadian, kendala, atau keterangan tambahan."><?php echo esc_textarea((string) ($minutes_fields['notes'] ?? '')); ?></textarea>
-                                        </div>
-                                    </div>
-                                    <p class="description">Default diambil dari jadwal publish yang cocok dengan filter kelas. Semua field ini hanya dipakai untuk dokumen cetak.</p>
-                                </td>
-                            </tr>
+
                             </tbody>
                         </table>
                         <p id="cbt-card-participant-note" class="cbt-exam-cards-note<?php echo !$is_participant_mode ? ' cbt-exam-cards-row-hidden' : ''; ?>">

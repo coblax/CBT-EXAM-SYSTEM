@@ -29,12 +29,12 @@
         sort($actual_classes);
         sort($actual_rooms);
         
-        $display_kelas_label = ($kelas_label === 'Semua Kelas' && !empty($actual_classes)) 
-            ? implode(', ', $actual_classes) 
+        $display_kelas_label = ($kelas_label === 'Semua Kelas') 
+            ? (!empty($all_kelas_options) ? implode(' / ', $all_kelas_options) : (!empty($actual_classes) ? implode(' / ', $actual_classes) : $kelas_label))
             : $kelas_label;
             
-        $display_ruang_label = ($ruang_label === 'Semua Ruang' && !empty($actual_rooms))
-            ? implode(', ', $actual_rooms)
+        $display_ruang_label = ($ruang_label === 'Semua Ruang')
+            ? (!empty($all_ruang_options) ? implode(' / ', $all_ruang_options) : (!empty($actual_rooms) ? implode(' / ', $actual_rooms) : $ruang_label))
             : $ruang_label;
         ?>
         <!doctype html>
@@ -769,7 +769,7 @@
                     <?php
                     $minutes = is_array($minutes_fields ?? null) ? $minutes_fields : [];
                     $minutes_subject = trim((string) ($minutes['subject'] ?? ''));
-                    $minutes_room = trim((string) ($minutes['room'] ?? $ruang_label));
+                    $minutes_room = trim((string) ($minutes['room'] ?? ''));
                     $minutes_proctor_name = trim((string) ($minutes['proctor_name'] ?? ''));
                     $minutes_supervisor_name = trim((string) ($minutes['supervisor_name'] ?? ''));
                     $minutes_notes = trim((string) ($minutes['notes'] ?? ''));
@@ -802,65 +802,154 @@
                                 <?php endif; ?>
                             </div>
                         </header>
-                        <h1 class="admin-document-title">Berita Acara Pelaksanaan</h1>
-                        <div class="minutes-body">
-                            <p class="minutes-paragraph">
-                                Pada hari <?php echo esc_html((string) ($minutes_date_label ?? '-')); ?>,
-                                telah dilaksanakan <?php echo esc_html($card_program_title); ?>
-                                <?php if ($minutes_subject !== ''): ?>
-                                    untuk mata pelajaran/kegiatan <?php echo esc_html($minutes_subject); ?>
-                                <?php endif; ?>
-                                dengan rincian sebagai berikut.
+                        <style>
+                        .minutes-compact { font-size: 10.5px; line-height: 1.25; }
+                        .minutes-compact-title { font-size: 13px; font-weight: bold; text-align: center; margin-bottom: 5px; text-transform: uppercase; }
+                        .minutes-compact-p { margin-bottom: 4px; text-align: justify; }
+                        .minutes-compact-table { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
+                        .minutes-compact-table th, .minutes-compact-table td { border: 1px solid #000; padding: 2px 4px; vertical-align: top; }
+                        .minutes-section-title { font-weight: bold; margin-top: 6px; margin-bottom: 2px; }
+                        .minutes-signatures-compact { width: 100%; text-align: center; margin-top: 5px; margin-bottom: 5px; }
+                        .minutes-signatures-compact td { padding-bottom: 35px; vertical-align: bottom; }
+                        </style>
+
+                        <div class="minutes-compact">
+                            <div class="minutes-compact-title">
+                                BERITA ACARA PELAKSANAAN UJIAN<br>
+                                <?php echo esc_html($card_program_title); ?>
+                            </div>
+                            <div style="text-align: center; margin-bottom: 8px;">Nomor: ............................................................</div>
+
+                            <p class="minutes-compact-p">
+                                Pada hari ini, <strong>........................................</strong>, 
+                                tanggal <strong>...............</strong> bulan <strong><?php echo esc_html(date_i18n('F')); ?></strong> tahun <strong><?php echo esc_html(date_i18n('Y')); ?></strong>, 
+                                telah dilaksanakan kegiatan <strong><?php echo esc_html($card_program_title); ?></strong> 
+                                di <strong><?php echo esc_html($school_name); ?></strong>, dengan rincian sebagai berikut:
                             </p>
-                            <table class="admin-document-meta">
-                                <tbody>
-                                    <tr>
-                                        <td class="admin-document-meta-label">Program</td>
-                                        <td class="admin-document-meta-separator">:</td>
-                                        <td><?php echo esc_html($card_program_title); ?></td>
-                                        <td class="admin-document-meta-label">Mata Pelajaran</td>
-                                        <td class="admin-document-meta-separator">:</td>
-                                        <td><?php echo esc_html($minutes_subject !== '' ? $minutes_subject : '-'); ?></td>
-                                    </tr>
-                                    <tr>
-                                        <td class="admin-document-meta-label">Kelas</td>
-                                        <td class="admin-document-meta-separator">:</td>
-                                        <td><?php echo esc_html($display_kelas_label); ?></td>
-                                        <td class="admin-document-meta-label">Ruang</td>
-                                        <td class="admin-document-meta-separator">:</td>
-                                        <td><?php echo esc_html($minutes_room !== '' ? $minutes_room : $display_ruang_label); ?></td>
-                                    </tr>
-                                    <tr>
-                                        <td class="admin-document-meta-label">Tanggal</td>
-                                        <td class="admin-document-meta-separator">:</td>
-                                        <td><?php echo esc_html((string) ($minutes_date_label ?? '-')); ?></td>
-                                        <td class="admin-document-meta-label">Waktu</td>
-                                        <td class="admin-document-meta-separator">:</td>
-                                        <td><?php echo esc_html((string) ($minutes_time_label ?? '-')); ?></td>
-                                    </tr>
-                                    <tr>
-                                        <td class="admin-document-meta-label">Total Peserta</td>
-                                        <td class="admin-document-meta-separator">:</td>
-                                        <td><?php echo esc_html((string) $student_total); ?></td>
-                                        <td class="admin-document-meta-label">Hari / Tanggal</td>
-                                        <td class="admin-document-meta-separator">:</td>
-                                        <td>...................................................</td>
-                                    </tr>
-                                </tbody>
+
+                            <table class="minutes-compact-table">
+                                <tr>
+                                    <td style="width: 5%; text-align: center;">1</td>
+                                    <td style="width: 35%;">Nama Program Ujian</td>
+                                    <td><?php echo esc_html($card_program_title); ?></td>
+                                </tr>
+                                <tr>
+                                    <td style="text-align: center;">2</td>
+                                    <td>Mata Pelajaran/Kegiatan</td>
+                                    <td>................................................................................</td>
+                                </tr>
+                                <tr>
+                                    <td style="text-align: center;">3</td>
+                                    <td>Kelas/Tingkat</td>
+                                    <td><?php echo esc_html($display_kelas_label); ?></td>
+                                </tr>
+                                <tr>
+                                    <td style="text-align: center;">4</td>
+                                    <td>Ruang Ujian</td>
+                                    <td><?php echo esc_html($minutes_room !== '' ? $minutes_room : $display_ruang_label); ?></td>
+                                </tr>
+                                <tr>
+                                    <td style="text-align: center;">5</td>
+                                    <td>Jumlah Sesi</td>
+                                    <td>.................... sesi</td>
+                                </tr>
                             </table>
-                            <p class="minutes-paragraph">
-                                Berita acara ini dibuat sebagai dokumen administrasi pelaksanaan ujian dan digunakan sebagaimana mestinya.
+
+                            <div class="minutes-section-title">A. Pelaksanaan Ujian</div>
+                            <p class="minutes-compact-p">
+                                Ujian dilaksanakan sesuai dengan jadwal yang telah ditetapkan. Peserta ujian hadir dan mengikuti ujian sesuai dengan tata tertib yang berlaku. Sebelum ujian dimulai, pengawas/proktor telah melakukan pengecekan terhadap kesiapan ruang ujian, perangkat komputer, jaringan internet/lokal, aplikasi ujian, serta kelengkapan administrasi pelaksanaan ujian.
                             </p>
-                            <div class="minutes-notes"><?php echo esc_html($minutes_notes !== '' ? $minutes_notes : "Catatan pelaksanaan:\n\n"); ?></div>
-                            <div class="minutes-signatures">
-                                <div class="minutes-signature-box">
-                                    <div class="minutes-signature-role">Proktor</div>
-                                    <div class="minutes-signature-name"><?php echo esc_html($minutes_proctor_name); ?></div>
-                                </div>
-                                <div class="minutes-signature-box">
-                                    <div class="minutes-signature-role">Pengawas</div>
-                                    <div class="minutes-signature-name"><?php echo esc_html($minutes_supervisor_name); ?></div>
-                                </div>
+                            <p class="minutes-compact-p">
+                                Pelaksanaan ujian dimulai pada pukul <strong>.................... WIB</strong> dan berakhir pada pukul <strong>.................... WIB</strong>.
+                            </p>
+
+                            <div class="minutes-section-title">B. Rekapitulasi Kehadiran Peserta</div>
+                            <table class="minutes-compact-table">
+                                <tr>
+                                    <td style="width: 5%; text-align: center;">1</td>
+                                    <td style="width: 70%;">Peserta Terdaftar</td>
+                                    <td style="text-align: right;">............... orang</td>
+                                </tr>
+                                <tr>
+                                    <td style="text-align: center;">2</td>
+                                    <td>Peserta Hadir</td>
+                                    <td style="text-align: right;">............... orang</td>
+                                </tr>
+                                <tr>
+                                    <td style="text-align: center;">3</td>
+                                    <td>Peserta Tidak Hadir</td>
+                                    <td style="text-align: right;">............... orang</td>
+                                </tr>
+                                <tr>
+                                    <td style="text-align: center;">4</td>
+                                    <td>Peserta Mengikuti Ujian Susulan</td>
+                                    <td style="text-align: right;">............... orang</td>
+                                </tr>
+                                <tr>
+                                    <td style="text-align: center;">5</td>
+                                    <td>Peserta yang Mengalami Kendala Teknis</td>
+                                    <td style="text-align: right;">............... orang</td>
+                                </tr>
+                            </table>
+
+                            <div class="minutes-section-title">C. Kondisi Pelaksanaan Ujian</div>
+                            <table class="minutes-compact-table" style="text-align: center;">
+                                <tr>
+                                    <th style="width: 5%;">No</th>
+                                    <th style="width: 45%; text-align: left;">Uraian</th>
+                                    <th style="width: 8%;">Ya</th>
+                                    <th style="width: 8%;">Tidak</th>
+                                    <th style="width: 34%;">Keterangan</th>
+                                </tr>
+                                <tr><td>1</td><td style="text-align: left;">Ujian dimulai tepat waktu</td><td>☐</td><td>☐</td><td></td></tr>
+                                <tr><td>2</td><td style="text-align: left;">Seluruh komputer dapat digunakan</td><td>☐</td><td>☐</td><td></td></tr>
+                                <tr><td>3</td><td style="text-align: left;">Jaringan internet/lokal berjalan baik</td><td>☐</td><td>☐</td><td></td></tr>
+                                <tr><td>4</td><td style="text-align: left;">Aplikasi ujian dapat diakses</td><td>☐</td><td>☐</td><td></td></tr>
+                                <tr><td>5</td><td style="text-align: left;">Token/kode ujian tersedia</td><td>☐</td><td>☐</td><td></td></tr>
+                                <tr><td>6</td><td style="text-align: left;">Peserta mengikuti tata tertib ujian</td><td>☐</td><td>☐</td><td></td></tr>
+                                <tr><td>7</td><td style="text-align: left;">Tidak terjadi gangguan teknis</td><td>☐</td><td>☐</td><td></td></tr>
+                                <tr><td>8</td><td style="text-align: left;">Ujian selesai sesuai jadwal</td><td>☐</td><td>☐</td><td></td></tr>
+                            </table>
+
+                            <div class="minutes-section-title">D. Catatan Pelaksanaan</div>
+                            <div style="border-bottom: 1px dotted #000; height: 16px; margin-bottom: 4px;"></div>
+                            <div style="border-bottom: 1px dotted #000; height: 16px; margin-bottom: 4px;"></div>
+                            <div style="border-bottom: 1px dotted #000; height: 16px; margin-bottom: 4px;"></div>
+
+
+
+                            <p class="minutes-compact-p" style="margin-top: 4px;">
+                                Demikian berita acara ini dibuat dengan sebenar-benarnya sebagai dokumen administrasi pelaksanaan ujian dan dapat dipergunakan sebagaimana mestinya.
+                            </p>
+
+                            <?php
+                            $branding_settings = class_exists('CBT_Admin_Branding_Settings') ? CBT_Admin_Branding_Settings::get_print_context() : [];
+                            $kecamatan_label = !empty($branding_settings['school_district_city_ln']) ? $branding_settings['school_district_city_ln'] : '........................................';
+                            ?>
+                            <div style="text-align: right; margin-top: 4px;">
+                                <strong><?php echo esc_html($kecamatan_label); ?>, ............... <?php echo esc_html(date_i18n('F Y')); ?></strong>
+                            </div>
+
+                            <table class="minutes-signatures-compact">
+                                <tr>
+                                    <td style="width: 50%;">
+                                        Pengawas 1,<br><br><br><br>
+                                        <strong><?php echo esc_html($minutes_supervisor_name !== '' ? $minutes_supervisor_name : '........................................'); ?></strong><br>
+                                        NIP. ....................................
+                                    </td>
+                                    <td style="width: 50%;">
+                                        Pengawas 2,<br><br><br><br>
+                                        <strong><?php echo esc_html($minutes_proctor_name !== '' ? $minutes_proctor_name : '........................................'); ?></strong><br>
+                                        NIP. ....................................
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <div style="text-align: center; margin-top: -5px;">
+                                Mengetahui,<br>
+                                <strong>Kepala Sekolah</strong><br><br><br><br>
+                                <strong>............................................................</strong><br>
+                                NIP. ............................................................
                             </div>
                         </div>
                     </section>

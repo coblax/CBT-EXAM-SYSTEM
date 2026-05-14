@@ -154,6 +154,8 @@ final class CBT_Admin_Exam_Cards_Service
         $printed_at = current_time('d M Y H:i');
         $kelas_label = $selected_kelas !== '' ? $selected_kelas : 'Semua Kelas';
         $ruang_label = $selected_ruang !== '' ? $selected_ruang : 'Semua Ruang';
+        $all_kelas_options = self::get_distinct_user_meta_values('kode_kelas');
+        $all_ruang_options = self::get_distinct_user_meta_values('kode_ruang');
         $student_total = count($students);
         $back_url = self::build_print_back_url($selected_kelas, $selected_ruang, $search, $selected_display_fields, $print_mode, $seat_start_number, $seat_padding, $minutes_fields);
 
@@ -210,7 +212,9 @@ final class CBT_Admin_Exam_Cards_Service
                 'ruang_label',
                 'schedule_items',
                 'student_total',
-                'students'
+                'students',
+                'all_kelas_options',
+                'all_ruang_options'
             );
         }
 
@@ -909,7 +913,7 @@ final class CBT_Admin_Exam_Cards_Service
             'date' => $date,
             'start_time' => self::format_exam_card_time_only($starts_at) !== '-' ? self::format_exam_card_time_only($starts_at) : '',
             'end_time' => self::format_exam_card_end_time($starts_at, $ends_at, $duration_minutes) !== '-' ? self::format_exam_card_end_time($starts_at, $ends_at, $duration_minutes) : '',
-            'room' => $selected_ruang !== '' ? $selected_ruang : 'Semua Ruang',
+            'room' => $selected_ruang !== '' ? $selected_ruang : '',
         ];
     }
 
