@@ -82,4 +82,20 @@ describe('getFrontendConfig security settings', function () {
         expect(config.studentFrontendUrl).toBe('/cbt-ujian/');
         expect(config.supervisorFrontendUrl).toBe('/pengawas/');
     });
+
+    it('normalizes service worker config from localized frontend config', function () {
+        var config = getFrontendConfig({
+            CBTExamFrontendConfig: {
+                serviceWorkerBuildId: 12345,
+                serviceWorkerEnabled: '1',
+                serviceWorkerScope: ' /cbt-ujian/ ',
+                serviceWorkerUrl: ' /?cbt_exam_sw=student&v=abc '
+            }
+        });
+
+        expect(config.serviceWorkerEnabled).toBe(true);
+        expect(config.serviceWorkerUrl).toBe('/?cbt_exam_sw=student&v=abc');
+        expect(config.serviceWorkerScope).toBe('/cbt-ujian/');
+        expect(config.serviceWorkerBuildId).toBe('12345');
+    });
 });

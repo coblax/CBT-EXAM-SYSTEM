@@ -27,6 +27,9 @@ class CBT_Frontend
     private const VITE_ENTRY = 'src/frontend/main.js';
     private const VITE_BUILD_DIR = 'public/build/';
     private const VITE_MANIFEST_RELATIVE = 'public/build/manifest.json';
+    private const SERVICE_WORKER_QUERY_VAR = 'cbt_exam_sw';
+    private const SERVICE_WORKER_STUDENT_VALUE = 'student';
+    private const SERVICE_WORKER_CACHE_PREFIX = 'cbt-exam-student-';
 
     /** @var bool */
     private static $localized = false;
@@ -56,6 +59,7 @@ class CBT_Frontend
         add_filter('script_loader_tag', [self::class, 'filter_script_loader_tag'], 10, 3);
         add_filter('script_loader_src', [self::class, 'filter_asset_loader_src'], 10, 2);
         add_filter('style_loader_src', [self::class, 'filter_asset_loader_src'], 10, 2);
+        add_action('init', [self::class, 'maybe_render_service_worker']);
     }
 
     /**
@@ -159,6 +163,35 @@ class CBT_Frontend
         header('Pragma: no-cache');
         header('Expires: Wed, 11 Jan 1984 05:00:00 GMT');
         header('Vary: Cookie', false);
+    }
+
+    public static function maybe_render_service_worker(): void
+    {
+        $requested = isset($_GET[self::SERVICE_WORKER_QUERY_VAR])
+            ? sanitize_key(wp_unslash((string) $_GET[self::SERVICE_WORKER_QUERY_VAR]))
+            : '';
+        if ($requested !== self::SERVICE_WORKER_STUDENT_VALUE) {
+            return;
+        }
+
+        $manifest = self::get_vite_manifest();
+        if ($manifest === []) {
+            if (function_exists('status_header')) {
+                status_header(404);
+            }
+            header('Content-Type: application/javascript; charset=UTF-8');
+            header('Cache-Control: no-cache, must-revalidate, max-age=0');
+            echo '/* CBT service worker unavailable: frontend build manifest missing. */';
+            exit;
+        }
+
+        $scope = self::get_service_worker_scope_path();
+        header('Content-Type: application/javascript; charset=UTF-8');
+        header('Cache-Control: no-cache, must-revalidate, max-age=0');
+        header('Service-Worker-Allowed: ' . $scope);
+        header('X-Content-Type-Options: nosniff');
+        echo self::render_service_worker_script($manifest);
+        exit;
     }
 
     public static function prepare_frontend_request(): void
@@ -550,6 +583,409 @@ class CBT_Frontend
     }
 
     /**
+     * @param array{mode?:string,is_dev?:bool,label?:string} $asset_source
+     * @param array<string,mixed>|null $manifest
+     * @return array{enabled:int,url:string,scope:string,build_id:string}
+     */
+    private static function build_service_worker_frontend_config(array $asset_source, string $frontend_mode, ?array $manifest = null): array
+    {
+        $manifest = $manifest ?? self::get_vite_manifest();
+        $mode = sanitize_key((string) ($asset_source['mode'] ?? 'build'));
+        $enabled = $frontend_mode === 'student'
+            && empty($asset_source['is_dev'])
+            && in_array($mode, ['build', 'stable'], true)
+            && $manifest !== []
+            && self::get_service_worker_precache_asset_paths($manifest) !== [];
+
+        if (!$enabled) {
+            return [
+                'enabled' => 0,
+                'url' => '',
+                'scope' => '',
+                'build_id' => '',
+            ];
+        }
+
+        $build_id = self::build_service_worker_build_id($manifest);
+
+        return [
+            'enabled' => 1,
+            'url' => self::build_service_worker_url($build_id),
+            'scope' => self::get_service_worker_scope_path(),
+            'build_id' => $build_id,
+        ];
+    }
+
+    private static function build_service_worker_url(string $build_id): string
+    {
+        return add_query_arg(
+            [
+                self::SERVICE_WORKER_QUERY_VAR => self::SERVICE_WORKER_STUDENT_VALUE,
+                'v' => $build_id,
+            ],
+            home_url('/')
+        );
+    }
+
+    private static function get_service_worker_scope_path(): string
+    {
+        return self::normalize_service_worker_scope_path(self::frontend_page_url('student'));
+    }
+
+    private static function normalize_service_worker_scope_path(string $url): string
+    {
+        $path = wp_parse_url($url, PHP_URL_PATH);
+        $path = is_string($path) && $path !== '' ? $path : '/';
+        if ($path[0] !== '/') {
+            $path = '/' . $path;
+        }
+
+        return rtrim($path, '/') . '/';
+    }
+
+    /**
+     * @param array<string,mixed> $manifest
+     * @return array<int,string>
+     */
+    private static function get_service_worker_precache_asset_paths(array $manifest): array
+    {
+        $entry = self::get_vite_manifest_entry($manifest, self::VITE_ENTRY);
+        if ($entry === null) {
+            return [];
+        }
+
+        $visited = [];
+        $paths = [];
+        self::collect_service_worker_manifest_entry_assets($manifest, self::VITE_ENTRY, $entry, $visited, $paths);
+
+        return array_values(array_unique($paths));
+    }
+
+    /**
+     * @param array<string,mixed> $manifest
+     * @param array<string,mixed> $entry
+     * @param array<string,bool> $visited
+     * @param array<int,string> $paths
+     */
+    private static function collect_service_worker_manifest_entry_assets(
+        array $manifest,
+        string $entry_key,
+        array $entry,
+        array &$visited,
+        array &$paths
+    ): void {
+        $visit_key = $entry_key !== '' ? $entry_key : self::build_manifest_entry_visit_key($entry);
+        if ($visit_key !== '') {
+            if (isset($visited[$visit_key])) {
+                return;
+            }
+            $visited[$visit_key] = true;
+        }
+
+        if (self::should_skip_service_worker_manifest_entry($entry_key, $entry)) {
+            return;
+        }
+
+        if (!empty($entry['file']) && is_string($entry['file'])) {
+            self::append_service_worker_asset_path($paths, $entry['file']);
+        }
+        foreach (['css', 'assets'] as $asset_key) {
+            if (empty($entry[$asset_key]) || !is_array($entry[$asset_key])) {
+                continue;
+            }
+            foreach ($entry[$asset_key] as $asset_path) {
+                if (is_string($asset_path)) {
+                    self::append_service_worker_asset_path($paths, $asset_path);
+                }
+            }
+        }
+
+        foreach (['imports', 'dynamicImports'] as $import_group) {
+            if (empty($entry[$import_group]) || !is_array($entry[$import_group])) {
+                continue;
+            }
+            foreach ($entry[$import_group] as $import_key) {
+                if (!is_string($import_key) || $import_key === '') {
+                    continue;
+                }
+                $import_entry = self::get_vite_manifest_entry($manifest, $import_key);
+                if ($import_entry === null) {
+                    continue;
+                }
+                self::collect_service_worker_manifest_entry_assets($manifest, $import_key, $import_entry, $visited, $paths);
+            }
+        }
+    }
+
+    /**
+     * @param array<string,mixed> $entry
+     */
+    private static function should_skip_service_worker_manifest_entry(string $entry_key, array $entry): bool
+    {
+        $haystack = strtolower(implode(' ', [
+            str_replace('\\', '/', ltrim($entry_key, './')),
+            isset($entry['src']) && is_string($entry['src']) ? str_replace('\\', '/', ltrim($entry['src'], './')) : '',
+            isset($entry['name']) && is_string($entry['name']) ? $entry['name'] : '',
+            isset($entry['file']) && is_string($entry['file']) ? $entry['file'] : '',
+        ]));
+
+        return str_contains($haystack, 'src/admin/')
+            || str_contains($haystack, 'admin-math')
+            || str_contains($haystack, 'admin-analytics')
+            || str_contains($haystack, 'src/frontend/app/supervisor/')
+            || str_contains($haystack, 'frontend-supervisor')
+            || str_contains($haystack, 'supervisor/runtime');
+    }
+
+    /**
+     * @param array<int,string> $paths
+     */
+    private static function append_service_worker_asset_path(array &$paths, string $path): void
+    {
+        $path = ltrim(str_replace('\\', '/', trim($path)), '/');
+        if ($path === '' || str_contains($path, '..') || preg_match('#^(?:https?:)?//#i', $path)) {
+            return;
+        }
+
+        $paths[] = $path;
+    }
+
+    /**
+     * @param array<string,mixed> $manifest
+     */
+    private static function build_service_worker_build_id(array $manifest): string
+    {
+        $paths = self::get_service_worker_precache_asset_paths($manifest);
+        $seed = CBT_EXAM_SYSTEM_VERSION . '|' . implode('|', $paths);
+
+        return substr(hash('sha256', $seed), 0, 16);
+    }
+
+    /**
+     * @param array<string,mixed> $manifest
+     */
+    private static function render_service_worker_script(array $manifest): string
+    {
+        $build_id = self::build_service_worker_build_id($manifest);
+        $asset_paths = self::get_service_worker_precache_asset_paths($manifest);
+        $asset_urls = array_values(array_unique(array_map(static function (string $asset_path): string {
+            return self::build_asset_url($asset_path);
+        }, $asset_paths)));
+        $shell_url = self::frontend_page_url('student');
+        $scope_path = self::get_service_worker_scope_path();
+        $build_base_path = wp_parse_url(CBT_EXAM_SYSTEM_URL . self::VITE_BUILD_DIR, PHP_URL_PATH);
+        $build_base_path = is_string($build_base_path) && $build_base_path !== '' ? $build_base_path : '/';
+        if ($build_base_path[0] !== '/') {
+            $build_base_path = '/' . $build_base_path;
+        }
+
+        $build_id_json = self::service_worker_json($build_id);
+        $cache_prefix_json = self::service_worker_json(self::SERVICE_WORKER_CACHE_PREFIX);
+        $asset_urls_json = self::service_worker_json($asset_urls);
+        $shell_url_json = self::service_worker_json($shell_url);
+        $scope_path_json = self::service_worker_json($scope_path);
+        $build_base_path_json = self::service_worker_json(rtrim($build_base_path, '/') . '/');
+        $offline_html_json = self::service_worker_json(self::render_service_worker_offline_html());
+
+        return <<<JS
+(function () {
+    'use strict';
+
+    var BUILD_ID = {$build_id_json};
+    var CACHE_PREFIX = {$cache_prefix_json};
+    var STATIC_CACHE = CACHE_PREFIX + 'static-' + BUILD_ID;
+    var SHELL_CACHE = CACHE_PREFIX + 'shell-' + BUILD_ID;
+    var PRECACHE_URLS = {$asset_urls_json};
+    var SHELL_URL = {$shell_url_json};
+    var SCOPE_PATH = {$scope_path_json};
+    var BUILD_BASE_PATH = {$build_base_path_json};
+    var OFFLINE_HTML = {$offline_html_json};
+    var PRECACHE_LOOKUP = Object.create(null);
+
+    PRECACHE_URLS.forEach(function (url) {
+        PRECACHE_LOOKUP[url] = true;
+        try {
+            PRECACHE_LOOKUP[new URL(url, self.location.href).pathname] = true;
+        } catch (error) {}
+    });
+
+    function cacheRequest(cache, request) {
+        return fetch(request).then(function (response) {
+            if (response && (response.ok || response.type === 'opaque')) {
+                return cache.put(request, response.clone()).then(function () {
+                    return response;
+                });
+            }
+            return response;
+        });
+    }
+
+    function cachePrecacheUrl(cache, url) {
+        return cacheRequest(cache, new Request(url, {
+            cache: 'reload',
+            credentials: 'same-origin'
+        })).catch(function () {
+            return null;
+        });
+    }
+
+    function resolveBuildIdFromCacheName(name) {
+        if (name.indexOf(CACHE_PREFIX) !== 0) {
+            return '';
+        }
+        var rest = name.slice(CACHE_PREFIX.length);
+        var separator = rest.indexOf('-');
+        return separator >= 0 ? rest.slice(separator + 1) : '';
+    }
+
+    function isSameOrigin(url) {
+        return url.origin === self.location.origin;
+    }
+
+    function isWithinScope(url) {
+        return url.pathname.indexOf(SCOPE_PATH) === 0;
+    }
+
+    function isNavigationRequest(request) {
+        if (request.mode === 'navigate') {
+            return true;
+        }
+        var accept = request.headers && request.headers.get ? String(request.headers.get('accept') || '') : '';
+        return accept.indexOf('text/html') >= 0;
+    }
+
+    function isStaticBuildAsset(url) {
+        return url.pathname.indexOf(BUILD_BASE_PATH) === 0
+            || PRECACHE_LOOKUP[url.href] === true
+            || PRECACHE_LOOKUP[url.pathname] === true;
+    }
+
+    function cacheFirstStatic(request) {
+        return caches.match(request).then(function (cached) {
+            if (cached) {
+                return cached;
+            }
+            return caches.open(STATIC_CACHE).then(function (cache) {
+                return cacheRequest(cache, request);
+            });
+        });
+    }
+
+    function networkFirstNavigation(request) {
+        return fetch(request).then(function (response) {
+            if (response && response.ok) {
+                caches.open(SHELL_CACHE).then(function (cache) {
+                    cache.put(request, response.clone()).catch(function () {});
+                    cache.put(SHELL_URL, response.clone()).catch(function () {});
+                }).catch(function () {});
+            }
+            return response;
+        }).catch(function () {
+            return caches.match(request).then(function (cached) {
+                if (cached) {
+                    return cached;
+                }
+                return caches.match(SHELL_URL);
+            }).then(function (cachedShell) {
+                if (cachedShell) {
+                    return cachedShell;
+                }
+                return new Response(OFFLINE_HTML, {
+                    headers: {
+                        'Content-Type': 'text/html; charset=UTF-8',
+                        'Cache-Control': 'no-store'
+                    },
+                    status: 200
+                });
+            });
+        });
+    }
+
+    self.addEventListener('install', function (event) {
+        event.waitUntil(
+            caches.open(STATIC_CACHE).then(function (cache) {
+                return Promise.all(PRECACHE_URLS.map(function (url) {
+                    return cachePrecacheUrl(cache, url);
+                }));
+            }).then(function () {
+                return caches.open(SHELL_CACHE);
+            }).then(function (cache) {
+                return cachePrecacheUrl(cache, SHELL_URL);
+            }).then(function () {
+                return self.skipWaiting();
+            })
+        );
+    });
+
+    self.addEventListener('activate', function (event) {
+        event.waitUntil(
+            caches.keys().then(function (keys) {
+                var previousBuildIds = [];
+                keys.forEach(function (name) {
+                    var buildId = resolveBuildIdFromCacheName(name);
+                    if (buildId !== '' && buildId !== BUILD_ID && previousBuildIds.indexOf(buildId) < 0) {
+                        previousBuildIds.push(buildId);
+                    }
+                });
+                var previousBuildId = previousBuildIds.length ? previousBuildIds[previousBuildIds.length - 1] : '';
+                return Promise.all(keys.map(function (name) {
+                    var buildId = resolveBuildIdFromCacheName(name);
+                    if (buildId === '' || buildId === BUILD_ID || buildId === previousBuildId) {
+                        return null;
+                    }
+                    return caches.delete(name);
+                }));
+            }).then(function () {
+                return self.clients.claim();
+            })
+        );
+    });
+
+    self.addEventListener('fetch', function (event) {
+        var request = event.request;
+        if (!request || request.method !== 'GET') {
+            return;
+        }
+
+        var url;
+        try {
+            url = new URL(request.url);
+        } catch (error) {
+            return;
+        }
+
+        if (!isSameOrigin(url)) {
+            return;
+        }
+
+        if (isStaticBuildAsset(url)) {
+            event.respondWith(cacheFirstStatic(request));
+            return;
+        }
+
+        if (isNavigationRequest(request) && isWithinScope(url)) {
+            event.respondWith(networkFirstNavigation(request));
+        }
+    });
+})();
+JS;
+    }
+
+    private static function render_service_worker_offline_html(): string
+    {
+        return '<!doctype html><html lang="id"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CBT Offline</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#edf4ff;color:#16324f}.card{max-width:520px;margin:24px;padding:24px;border-radius:18px;background:#fff;box-shadow:0 18px 44px rgba(35,73,132,.14)}h1{font-size:24px;margin:0 0 10px}p{line-height:1.55;margin:0;color:#506a86}</style><body><main class="card"><h1>CBT sedang offline</h1><p>Halaman ujian belum tersedia di cache browser ini. Sambungkan koneksi lalu muat ulang halaman.</p></main></body></html>';
+    }
+
+    /**
+     * @param mixed $value
+     */
+    private static function service_worker_json($value): string
+    {
+        $encoded = wp_json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        return is_string($encoded) ? $encoded : 'null';
+    }
+
+    /**
      * @param array<string,mixed> $manifest
      * @param array<string,mixed> $entry
      * @return array<int,string>
@@ -675,12 +1111,13 @@ class CBT_Frontend
         $diagnostics_context = self::resolve_frontend_diagnostics_context();
         $storage_debug_config = self::get_frontend_storage_debug_config();
         $frontend_mode = self::current_frontend_mode();
-        $rest_base_absolute = trailingslashit((string) rest_url('cbt/v1'));
+        $rest_base_absolute = self::ensure_trailing_slash((string) rest_url('cbt/v1'));
         $rest_base_path = (string) wp_parse_url($rest_base_absolute, PHP_URL_PATH);
-        $rest_base_path = trailingslashit($rest_base_path !== '' ? $rest_base_path : '/wp-json/cbt/v1/');
+        $rest_base_path = self::ensure_trailing_slash($rest_base_path !== '' ? $rest_base_path : '/wp-json/cbt/v1/');
         $branding = self::get_setup_branding_config();
         $security = self::get_setup_security_config();
         $developer_page_url = '';
+        $service_worker_config = self::build_service_worker_frontend_config($asset_source, $frontend_mode);
 
         if (class_exists('CBT_Admin_Developer_Service') && current_user_can('manage_options')) {
             $developer_page_url = CBT_Admin_Developer_Service::developer_page_url();
@@ -738,6 +1175,10 @@ class CBT_Frontend
             'frontendDiagnosticsIndexedDbName' => isset($storage_debug_config['indexed_db_name']) ? (string) $storage_debug_config['indexed_db_name'] : 'cbt_exam_frontend_cache_v2',
             'frontendDeveloperPageUrl' => $developer_page_url,
             'frontendAssetSource' => isset($asset_source['label']) ? (string) $asset_source['label'] : 'Production Build',
+            'serviceWorkerEnabled' => $service_worker_config['enabled'],
+            'serviceWorkerUrl' => $service_worker_config['url'],
+            'serviceWorkerScope' => $service_worker_config['scope'],
+            'serviceWorkerBuildId' => $service_worker_config['build_id'],
         ]);
 
         self::$localized = true;
@@ -865,7 +1306,12 @@ class CBT_Frontend
             ? self::SUPERVISOR_FRONTEND_PAGE_SLUG
             : self::STUDENT_FRONTEND_PAGE_SLUG;
 
-        return trailingslashit((string) home_url('/' . $slug));
+        return self::ensure_trailing_slash((string) home_url('/' . $slug));
+    }
+
+    private static function ensure_trailing_slash(string $value): string
+    {
+        return rtrim($value, '/') . '/';
     }
 
     private static function render_frontend_markup(bool $include_boot_shell): string
