@@ -138,7 +138,7 @@ final class ExamCardsServiceTest extends TestCase
             'cbt_minutes_start_time' => '10:00',
             'cbt_minutes_end_time' => '11:15',
             'cbt_minutes_room' => 'Lab CBT 1',
-            'cbt_minutes_proctor_name' => 'Pak Proktor',
+            'cbt_minutes_proctor_name' => 'Pak Pengawas 2',
             'cbt_minutes_supervisor_name' => 'Bu Pengawas',
             'cbt_minutes_notes' => "Pelaksanaan lancar.\nTidak ada kendala.",
         ]);
@@ -150,7 +150,7 @@ final class ExamCardsServiceTest extends TestCase
         self::assertSame('10:00', (string) ($minutes['start_time'] ?? ''));
         self::assertSame('11:15', (string) ($minutes['end_time'] ?? ''));
         self::assertSame('Lab CBT 1', (string) ($minutes['room'] ?? ''));
-        self::assertSame('Pak Proktor', (string) ($minutes['proctor_name'] ?? ''));
+        self::assertSame('Pak Pengawas 2', (string) ($minutes['proctor_name'] ?? ''));
         self::assertSame('Bu Pengawas', (string) ($minutes['supervisor_name'] ?? ''));
         self::assertStringContainsString('Pelaksanaan lancar.', (string) ($minutes['notes'] ?? ''));
         self::assertStringContainsString('cbt_card_print_mode=minutes', (string) ($context['back_url'] ?? ''));

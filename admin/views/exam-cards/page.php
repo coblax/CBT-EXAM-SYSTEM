@@ -338,25 +338,6 @@
                 font-weight: 700;
                 color: #0f172a;
             }
-            .cbt-exam-cards-minutes-grid {
-                display: grid;
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-                gap: 14px 16px;
-                max-width: 760px;
-            }
-            .cbt-exam-cards-minutes-field {
-                display: grid;
-                gap: 7px;
-                min-width: 0;
-            }
-            .cbt-exam-cards-minutes-field.is-wide {
-                grid-column: 1 / -1;
-            }
-            .cbt-exam-cards-minutes-field label {
-                font-size: 13px;
-                font-weight: 700;
-                color: #0f172a;
-            }
             .cbt-exam-cards-row-hidden {
                 display: none;
             }
@@ -619,9 +600,6 @@
                     width: 100%;
                 }
                 .cbt-exam-cards-field-grid {
-                    grid-template-columns: 1fr;
-                }
-                .cbt-exam-cards-minutes-grid {
                     grid-template-columns: 1fr;
                 }
             }
@@ -1166,7 +1144,6 @@
 
                     const modeInput = root.querySelector('#cbt-card-print-mode');
                     const fieldsRow = root.querySelector('#cbt-card-fields-row');
-                    const minutesRow = root.querySelector('#cbt-card-minutes-row');
                     const seatRow = root.querySelector('#cbt-card-seat-row');
                     const participantNote = root.querySelector('#cbt-card-participant-note');
                     const deskNote = root.querySelector('#cbt-card-desk-note');
@@ -1179,7 +1156,6 @@
                     const submitButton = root.querySelector('#cbt-card-submit-button');
                     const fieldInputs = fieldsRow ? fieldsRow.querySelectorAll('input[type="checkbox"]') : [];
                     const seatInputs = seatRow ? seatRow.querySelectorAll('input') : [];
-                    const minutesInputs = minutesRow ? minutesRow.querySelectorAll('input, textarea') : [];
                     const modeTabs = root.querySelectorAll('[data-print-mode-tab]');
                     const form = root.querySelector('[data-cbt-exam-cards-print-form]');
 
@@ -1197,9 +1173,6 @@
 
                         if (fieldsRow) {
                             fieldsRow.classList.toggle('cbt-exam-cards-row-hidden', !isParticipantMode);
-                        }
-                        if (minutesRow) {
-                            minutesRow.classList.toggle('cbt-exam-cards-row-hidden', !isMinutesMode);
                         }
                         if (seatRow) {
                             seatRow.classList.toggle('cbt-exam-cards-row-hidden', !isDeskMode);
@@ -1223,10 +1196,6 @@
                         seatInputs.forEach(function (input) {
                             input.disabled = !isDeskMode;
                         });
-                        minutesInputs.forEach(function (input) {
-                            input.disabled = !isMinutesMode;
-                        });
-
                         if (modeTitle) {
                             modeTitle.textContent = activeModeDescription.label || activeMode;
                         }

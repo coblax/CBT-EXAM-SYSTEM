@@ -67,6 +67,14 @@ final class ExamCardsProgressUiTest extends TestCase
     public function test_administrative_documents_declares_attendance_and_minutes_modes(): void
     {
         foreach ([
+            'cbt-card-minutes-note',
+            'isAttendanceMode',
+            'isMinutesMode',
+        ] as $needle) {
+            self::assertStringContainsString($needle, $this->viewSource);
+        }
+
+        foreach ([
             'cbt_minutes_subject',
             'cbt_minutes_date',
             'cbt_minutes_start_time',
@@ -77,10 +85,8 @@ final class ExamCardsProgressUiTest extends TestCase
             'cbt_minutes_notes',
             'cbt-card-minutes-row',
             'minutesInputs',
-            'isAttendanceMode',
-            'isMinutesMode',
         ] as $needle) {
-            self::assertStringContainsString($needle, $this->viewSource);
+            self::assertStringNotContainsString($needle, $this->viewSource);
         }
     }
 
@@ -94,7 +100,7 @@ final class ExamCardsProgressUiTest extends TestCase
             'NISN / Username',
             'Tanda Tangan',
             'minutes-signatures',
-            'Proktor',
+            'Pengawas 2',
             'Pengawas',
         ] as $needle) {
             self::assertStringContainsString($needle, $this->printSource);
