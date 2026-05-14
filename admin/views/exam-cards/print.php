@@ -29,13 +29,15 @@
         sort($actual_classes);
         sort($actual_rooms);
         
-        $display_kelas_label = ($kelas_label === 'Semua Kelas') 
-            ? (!empty($all_kelas_options) ? implode(' / ', $all_kelas_options) : (!empty($actual_classes) ? implode(' / ', $actual_classes) : $kelas_label))
-            : $kelas_label;
+        $kelas_options = !empty($all_kelas_options) ? $all_kelas_options : (!empty($actual_classes) ? $actual_classes : []);
+        $display_kelas_html = ($kelas_label === 'Semua Kelas' && !empty($kelas_options)) 
+            ? '&#9744; ' . implode(' &nbsp;&nbsp; &#9744; ', array_map('esc_html', $kelas_options))
+            : esc_html($kelas_label);
             
-        $display_ruang_label = ($ruang_label === 'Semua Ruang')
-            ? (!empty($all_ruang_options) ? implode(' / ', $all_ruang_options) : (!empty($actual_rooms) ? implode(' / ', $actual_rooms) : $ruang_label))
-            : $ruang_label;
+        $ruang_options = !empty($all_ruang_options) ? $all_ruang_options : (!empty($actual_rooms) ? $actual_rooms : []);
+        $display_ruang_html = ($ruang_label === 'Semua Ruang' && !empty($ruang_options))
+            ? '&#9744; ' . implode(' &nbsp;&nbsp; &#9744; ', array_map('esc_html', $ruang_options))
+            : esc_html($ruang_label);
         ?>
         <!doctype html>
         <html lang="id">
@@ -647,10 +649,10 @@
                                 <tr>
                                     <td class="admin-document-meta-label">Kelas</td>
                                     <td class="admin-document-meta-separator">:</td>
-                                    <td><?php echo esc_html($display_kelas_label); ?></td>
+                                    <td><?php echo wp_kses_post($display_kelas_html); ?></td>
                                     <td class="admin-document-meta-label">Ruang</td>
                                     <td class="admin-document-meta-separator">:</td>
-                                    <td><?php echo esc_html($display_ruang_label); ?></td>
+                                    <td><?php echo wp_kses_post($display_ruang_html); ?></td>
                                 </tr>
                                 <tr>
                                     <td class="admin-document-meta-label">Total Peserta</td>
@@ -803,14 +805,14 @@
                             </div>
                         </header>
                         <style>
-                        .minutes-compact { font-size: 10.5px; line-height: 1.25; }
-                        .minutes-compact-title { font-size: 13px; font-weight: bold; text-align: center; margin-bottom: 5px; text-transform: uppercase; }
-                        .minutes-compact-p { margin-bottom: 4px; text-align: justify; }
-                        .minutes-compact-table { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
-                        .minutes-compact-table th, .minutes-compact-table td { border: 1px solid #000; padding: 2px 4px; vertical-align: top; }
-                        .minutes-section-title { font-weight: bold; margin-top: 6px; margin-bottom: 2px; }
-                        .minutes-signatures-compact { width: 100%; text-align: center; margin-top: 5px; margin-bottom: 5px; }
-                        .minutes-signatures-compact td { padding-bottom: 35px; vertical-align: bottom; }
+                        .minutes-compact { font-size: 12.5px; line-height: 1.4; }
+                        .minutes-compact-title { font-size: 15px; font-weight: bold; text-align: center; margin-bottom: 8px; text-transform: uppercase; }
+                        .minutes-compact-p { margin-bottom: 8px; text-align: justify; }
+                        .minutes-compact-table { width: calc(100% - 1.5px); margin: 0 auto 8px; border-collapse: collapse; table-layout: fixed; }
+                        .minutes-compact-table th, .minutes-compact-table td { border: 1px solid #000; padding: 4px 6px; vertical-align: top; word-wrap: break-word; overflow-wrap: break-word; }
+                        .minutes-section-title { font-size: 13.5px; font-weight: bold; margin-top: 12px; margin-bottom: 4px; }
+                        .minutes-signatures-compact { width: 100%; text-align: center; margin-top: 15px; margin-bottom: 5px; }
+                        .minutes-signatures-compact td { padding-bottom: 50px; vertical-align: bottom; }
                         </style>
 
                         <div class="minutes-compact">
@@ -841,23 +843,26 @@
                                 <tr>
                                     <td style="text-align: center;">3</td>
                                     <td>Kelas/Tingkat</td>
-                                    <td><?php echo esc_html($display_kelas_label); ?></td>
+                                    <td><?php echo wp_kses_post($display_kelas_html); ?></td>
                                 </tr>
                                 <tr>
                                     <td style="text-align: center;">4</td>
                                     <td>Ruang Ujian</td>
-                                    <td><?php echo esc_html($minutes_room !== '' ? $minutes_room : $display_ruang_label); ?></td>
+                                    <td><?php echo $minutes_room !== '' ? esc_html($minutes_room) : wp_kses_post($display_ruang_html); ?></td>
                                 </tr>
                                 <tr>
                                     <td style="text-align: center;">5</td>
-                                    <td>Jumlah Sesi</td>
-                                    <td>.................... sesi</td>
+                                    <td>Sesi</td>
+                                    <td>....................</td>
                                 </tr>
                             </table>
 
                             <div class="minutes-section-title">A. Pelaksanaan Ujian</div>
                             <p class="minutes-compact-p">
-                                Ujian dilaksanakan sesuai dengan jadwal yang telah ditetapkan. Peserta ujian hadir dan mengikuti ujian sesuai dengan tata tertib yang berlaku. Sebelum ujian dimulai, pengawas/proktor telah melakukan pengecekan terhadap kesiapan ruang ujian, perangkat komputer, jaringan internet/lokal, aplikasi ujian, serta kelengkapan administrasi pelaksanaan ujian.
+                                Ujian dilaksanakan sesuai dengan jadwal dan ketentuan yang telah ditetapkan. Peserta ujian hadir dan mengikuti kegiatan ujian dengan tertib sesuai tata tertib yang berlaku.
+                            </p>
+                            <p class="minutes-compact-p">
+                                Sebelum ujian dimulai, pengawas/proktor telah melakukan pengecekan terhadap kesiapan ruang ujian, kelengkapan administrasi, serta sarana dan prasarana pendukung pelaksanaan ujian. Berdasarkan hasil pengecekan, ujian dinyatakan siap untuk dilaksanakan.
                             </p>
                             <p class="minutes-compact-p">
                                 Pelaksanaan ujian dimulai pada pukul <strong>.................... WIB</strong> dan berakhir pada pukul <strong>.................... WIB</strong>.
@@ -880,19 +885,56 @@
                                     <td>Peserta Tidak Hadir</td>
                                     <td style="text-align: right;">............... orang</td>
                                 </tr>
-                                <tr>
-                                    <td style="text-align: center;">4</td>
-                                    <td>Peserta Mengikuti Ujian Susulan</td>
-                                    <td style="text-align: right;">............... orang</td>
-                                </tr>
-                                <tr>
-                                    <td style="text-align: center;">5</td>
-                                    <td>Peserta yang Mengalami Kendala Teknis</td>
-                                    <td style="text-align: right;">............... orang</td>
-                                </tr>
                             </table>
+                            <div style="margin-top: 4px; margin-bottom: 2px;">Daftar Peserta Tidak Hadir:</div>
+                            <table class="minutes-compact-table" style="text-align: center;">
+                                <tr>
+                                    <th style="width: 5%;">No</th>
+                                    <th style="width: 45%; text-align: left;">Nama Peserta</th>
+                                    <th style="width: 25%;">NISN</th>
+                                    <th style="width: 25%;">Kelas</th>
+                                </tr>
+                                <tr><td style="height: 14px;">1</td><td style="text-align: left;"></td><td></td><td></td></tr>
+                                <tr><td style="height: 14px;">2</td><td style="text-align: left;"></td><td></td><td></td></tr>
+                                <tr><td style="height: 14px;">3</td><td style="text-align: left;"></td><td></td><td></td></tr>
+                                <tr><td style="height: 14px;">4</td><td style="text-align: left;"></td><td></td><td></td></tr>
+                                <tr><td style="height: 14px;">5</td><td style="text-align: left;"></td><td></td><td></td></tr>
+                            </table>
+                        </div>
+                    </section>
 
-                            <div class="minutes-section-title">C. Kondisi Pelaksanaan Ujian</div>
+                    <div style="page-break-before: always; clear: both;"></div>
+
+                    <section class="admin-document">
+                        <header class="admin-document-head">
+                            <div class="admin-document-logo">
+                                <?php if ($document_logo_left !== ''): ?>
+                                    <img src="<?php echo esc_url($document_logo_left); ?>" alt="<?php echo esc_attr($school_name . ' Logo'); ?>" loading="lazy" decoding="async" />
+                                <?php endif; ?>
+                            </div>
+                            <div class="admin-document-school">
+                                <div class="admin-document-school-name"><?php echo esc_html($school_name); ?></div>
+                                <?php if ($school_npsn !== ''): ?>
+                                    <div class="admin-document-school-meta">NPSN: <?php echo esc_html($school_npsn); ?></div>
+                                <?php endif; ?>
+                                <?php if ($card_header_address_line !== ''): ?>
+                                    <div class="admin-document-school-address"><?php echo esc_html($card_header_address_line); ?></div>
+                                <?php endif; ?>
+                                <?php if (!empty($card_header_region_segments)): ?>
+                                    <div class="admin-document-school-address"><?php echo esc_html(implode(', ', $card_header_region_segments)); ?></div>
+                                <?php endif; ?>
+                                <?php if ($school_motto !== ''): ?>
+                                    <div class="admin-document-school-meta"><em><?php echo esc_html($school_motto); ?></em></div>
+                                <?php endif; ?>
+                            </div>
+                            <div class="admin-document-logo">
+                                <?php if ($document_logo_right !== ''): ?>
+                                    <img src="<?php echo esc_url($document_logo_right); ?>" alt="<?php echo esc_attr($school_name . ' Logo 2'); ?>" loading="lazy" decoding="async" />
+                                <?php endif; ?>
+                            </div>
+                        </header>
+                        <div class="minutes-compact">
+                            <div class="minutes-section-title" style="margin-top: 10px;">C. Kondisi Pelaksanaan Ujian</div>
                             <table class="minutes-compact-table" style="text-align: center;">
                                 <tr>
                                     <th style="width: 5%;">No</th>
@@ -901,25 +943,29 @@
                                     <th style="width: 8%;">Tidak</th>
                                     <th style="width: 34%;">Keterangan</th>
                                 </tr>
-                                <tr><td>1</td><td style="text-align: left;">Ujian dimulai tepat waktu</td><td>☐</td><td>☐</td><td></td></tr>
-                                <tr><td>2</td><td style="text-align: left;">Seluruh komputer dapat digunakan</td><td>☐</td><td>☐</td><td></td></tr>
-                                <tr><td>3</td><td style="text-align: left;">Jaringan internet/lokal berjalan baik</td><td>☐</td><td>☐</td><td></td></tr>
-                                <tr><td>4</td><td style="text-align: left;">Aplikasi ujian dapat diakses</td><td>☐</td><td>☐</td><td></td></tr>
-                                <tr><td>5</td><td style="text-align: left;">Token/kode ujian tersedia</td><td>☐</td><td>☐</td><td></td></tr>
-                                <tr><td>6</td><td style="text-align: left;">Peserta mengikuti tata tertib ujian</td><td>☐</td><td>☐</td><td></td></tr>
-                                <tr><td>7</td><td style="text-align: left;">Tidak terjadi gangguan teknis</td><td>☐</td><td>☐</td><td></td></tr>
-                                <tr><td>8</td><td style="text-align: left;">Ujian selesai sesuai jadwal</td><td>☐</td><td>☐</td><td></td></tr>
+                                <tr><td>1</td><td style="text-align: left;">Ujian dimulai sesuai jadwal yang telah ditetapkan</td><td>☐</td><td>☐</td><td></td></tr>
+                                <tr><td>2</td><td style="text-align: left;">Ruang ujian siap digunakan</td><td>☐</td><td>☐</td><td></td></tr>
+                                <tr><td>3</td><td style="text-align: left;">Penataan tempat duduk peserta telah sesuai</td><td>☐</td><td>☐</td><td></td></tr>
+                                <tr><td>4</td><td style="text-align: left;">Administrasi pelaksanaan ujian tersedia</td><td>☐</td><td>☐</td><td></td></tr>
+                                <tr><td>5</td><td style="text-align: left;">Pengawas/proktor hadir dan melaksanakan tugas</td><td>☐</td><td>☐</td><td></td></tr>
+                                <tr><td>6</td><td style="text-align: left;">Perangkat dan sarana pendukung ujian tersedia</td><td>☐</td><td>☐</td><td></td></tr>
+                                <tr><td>7</td><td style="text-align: left;">Sistem/aplikasi/media ujian dapat digunakan</td><td>☐</td><td>☐</td><td></td></tr>
+                                <tr><td>8</td><td style="text-align: left;">Akses ujian/token/akun peserta tersedia apabila diperlukan</td><td>☐</td><td>☐</td><td></td></tr>
+                                <tr><td>9</td><td style="text-align: left;">Peserta hadir dan mengikuti ujian sesuai tata tertib</td><td>☐</td><td>☐</td><td></td></tr>
+                                <tr><td>10</td><td style="text-align: left;">Pelaksanaan ujian berlangsung tertib, aman, dan lancar</td><td>☐</td><td>☐</td><td></td></tr>
+                                <tr><td>11</td><td style="text-align: left;">Tidak terdapat kendala yang mengganggu pelaksanaan ujian</td><td>☐</td><td>☐</td><td></td></tr>
+                                <tr><td>12</td><td style="text-align: left;">Ujian selesai sesuai jadwal</td><td>☐</td><td>☐</td><td></td></tr>
                             </table>
 
                             <div class="minutes-section-title">D. Catatan Pelaksanaan</div>
-                            <div style="border-bottom: 1px dotted #000; height: 16px; margin-bottom: 4px;"></div>
-                            <div style="border-bottom: 1px dotted #000; height: 16px; margin-bottom: 4px;"></div>
-                            <div style="border-bottom: 1px dotted #000; height: 16px; margin-bottom: 4px;"></div>
+                            <div style="width: calc(100% - 1.5px); margin: 0 auto 4px; border-bottom: 1px dotted #000; height: 16px;"></div>
+                            <div style="width: calc(100% - 1.5px); margin: 0 auto 4px; border-bottom: 1px dotted #000; height: 16px;"></div>
+                            <div style="width: calc(100% - 1.5px); margin: 0 auto 4px; border-bottom: 1px dotted #000; height: 16px;"></div>
 
 
 
                             <p class="minutes-compact-p" style="margin-top: 4px;">
-                                Demikian berita acara ini dibuat dengan sebenar-benarnya sebagai dokumen administrasi pelaksanaan ujian dan dapat dipergunakan sebagaimana mestinya.
+                                Demikian berita acara pelaksanaan ujian ini dibuat sebagai dokumen administrasi dan bukti pelaksanaan kegiatan ujian. Keterangan yang tercantum dalam berita acara ini dibuat sesuai dengan kondisi pelaksanaan ujian dan dapat dipertanggungjawabkan sebagaimana mestinya.
                             </p>
 
                             <?php
