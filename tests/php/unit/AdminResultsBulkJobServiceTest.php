@@ -184,10 +184,8 @@ final class AdminResultsBulkJobServiceTest extends TestCase
         self::assertSame(2, $secondResponse['payload']['abandoned_count']);
         self::assertSame(1, CBT_Cache::$invalidateAnalyticsCalls);
         self::assertCount(101, CBT_Cache::$invalidatedAnalyticsExamIdsBatch);
-        self::assertCount(101, $wpdb->answerCleanupAttemptIds);
-        self::assertCount(101, $wpdb->essayAiCleanupAttemptIds);
-        self::assertSame(1001, min($wpdb->answerCleanupAttemptIds));
-        self::assertSame(1101, max($wpdb->answerCleanupAttemptIds));
+        self::assertSame([], $wpdb->answerCleanupAttemptIds);
+        self::assertSame([], $wpdb->essayAiCleanupAttemptIds);
         self::assertSame([], CBT_Auth::$clearedLoginSessionUserIds);
         self::assertCount(2, array_filter(CBT_Runtime::$clearedAttemptIds, static fn ($attemptId): bool => $attemptId >= 5001));
         self::assertSame('', (string) get_transient('cbt_results_bulk_job_active_' . get_current_user_id()));

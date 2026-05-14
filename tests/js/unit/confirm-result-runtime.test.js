@@ -33,6 +33,27 @@ describe('confirm runtime', function () {
         expect(fixture.state.selectedExamId).toBe(0);
     });
 
+    it('clears the completed login progress overlay once confirm is ready', async function () {
+        var fixture = createRuntimeFixture();
+        fixture.state.authProgressVisible = true;
+        fixture.state.authProgressMode = 'login';
+        fixture.state.authProgressPercent = 100;
+        fixture.state.authProgressStepIndex = 4;
+        fixture.state.authProgressStepTotal = 4;
+        fixture.state.authProgressStatus = 'Login berhasil';
+        fixture.state.authProgressDetail = 'Runtime sesi aktif sedang dimuat.';
+        mockFetchRoutes({
+            exams: [buildExamsPayload([buildExam(15, { title: 'Matematika' })])]
+        });
+
+        var module = await import('../../../src/frontend/app/stages/confirm-runtime.js');
+        await module.mountConfirmStage(fixture.context, {});
+
+        expect(fixture.state.authProgressVisible).toBe(false);
+        expect(fixture.root.textContent).not.toContain('Login Sedang Diproses');
+        expect(fixture.root.textContent).toContain('Matematika');
+    });
+
     it('reloads exams and keeps failures visible without clearing local auth', async function () {
         var fixture = createRuntimeFixture();
         var fetchMock = mockFetchRoutes({
@@ -171,6 +192,49 @@ describe('confirm runtime', function () {
         expect(fixture.context.transitionTo).not.toHaveBeenCalledWith('login', expect.anything());
         expect(JSON.parse(sessionStorage.getItem(AUTH_SESSION_STORAGE_KEY)).token).toBe('token-123');
         expect(fixture.root.textContent).toContain('Logout ditolak server.');
+    });
+});
+
+describe('login runtime', function () {
+    beforeEach(function () {
+        vi.resetModules();
+        document.body.innerHTML = '<div id="cbt-exam-app"></div>';
+        window.CBTExamFrontendConfig = {
+            frontendMode: 'student',
+            restBasePath: '/wp-json/cbt/v1/',
+            securityLogEvents: 0
+        };
+    });
+
+    it('marks successful login as final auth progress step 4 of 4 before handoff', async function () {
+        var fixture = createRuntimeFixture({ stage: 'login' });
+        mockFetchRoutes({
+            login: buildLoginPayload()
+        });
+
+        var module = await import('../../../src/frontend/app/stages/login-runtime.js');
+        module.mountLoginStage(fixture.context, {});
+
+        var identifier = fixture.root.querySelector('[name="identifier"]');
+        var password = fixture.root.querySelector('[name="password"]');
+        identifier.value = 'ayu';
+        password.value = 'secret';
+        identifier.dispatchEvent(new Event('input', { bubbles: true }));
+        password.dispatchEvent(new Event('input', { bubbles: true }));
+        fixture.root.querySelector('#cbt-login-form').dispatchEvent(new Event('submit', {
+            bubbles: true,
+            cancelable: true
+        }));
+        await flushPromises();
+
+        expect(fixture.state.authProgressVisible).toBe(true);
+        expect(fixture.state.authProgressPercent).toBe(100);
+        expect(fixture.state.authProgressStepIndex).toBe(4);
+        expect(fixture.state.authProgressStepTotal).toBe(4);
+        expect(fixture.root.textContent).toContain('Langkah 4/4');
+        expect(fixture.context.transitionTo).toHaveBeenCalledWith('confirm', expect.objectContaining({
+            reason: 'login-success'
+        }));
     });
 });
 
@@ -414,6 +478,9 @@ function mockFetchRoutes(routes) {
         if (path.endsWith('/exams')) {
             return Promise.resolve(toResponse(examsQueue.length ? examsQueue.shift() : buildExamsPayload([])));
         }
+        if (path.endsWith('/login')) {
+            return Promise.resolve(toResponse(routes.login || buildLoginPayload()));
+        }
         if (path.endsWith('/result')) {
             return Promise.resolve(toResponse(routes.result || buildResultPayload({ attemptId: Number(parsed.searchParams.get('attempt_id')) || 0 })));
         }
@@ -429,6 +496,21 @@ function mockFetchRoutes(routes) {
     });
     vi.stubGlobal('fetch', fetchMock);
     return fetchMock;
+}
+
+function buildLoginPayload() {
+    return {
+        agama: 'Islam',
+        display_name: 'Ayu Sari',
+        email: 'ayu@example.test',
+        foto: '',
+        kode_kelas: 'XII-A',
+        kode_ruang: 'R1',
+        role: 'student',
+        token: 'token-after-login',
+        user_id: 7,
+        username: 'ayu'
+    };
 }
 
 function toResponse(payload) {

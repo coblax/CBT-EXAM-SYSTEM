@@ -1,1 +1,0 @@
-import{t as e}from"./frontend-student-shell-CveSzr34.js";function t(){return e()}export{t as bootstrapFrontendApp};

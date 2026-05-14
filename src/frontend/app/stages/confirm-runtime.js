@@ -29,6 +29,9 @@ export async function mountConfirmStage(context, options) {
         runtime.state.error = error instanceof Error ? error.message : 'Gagal memuat daftar ujian.';
     } finally {
         runtime.state.busy = false;
+        if (runtime.state.authProgressMode === 'login') {
+            runtime.resetAuthProgressState();
+        }
         runtime.render('confirm-load-complete');
     }
 

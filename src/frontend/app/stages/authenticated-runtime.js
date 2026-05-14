@@ -157,6 +157,7 @@ export function createAuthenticatedStageRuntime(context, options) {
         questionOptionKey: questionOptionKey,
         render: render,
         renderAlert: appMetaManager.renderAlert,
+        resetAuthProgressState: resetAuthProgressState,
         resetResultProgressState: resetResultProgressState,
         resolvePrimaryActionSelection: resolvePrimaryActionSelection,
         root: root,

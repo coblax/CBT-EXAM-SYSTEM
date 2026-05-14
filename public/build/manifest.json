@@ -1,13 +1,13 @@
 {
-  "_frontend-dynamic-loader-nGOInowK.js": {
-    "file": "assets/frontend-dynamic-loader-nGOInowK.js",
+  "_frontend-dynamic-loader-m-htK1h2.js": {
+    "file": "assets/frontend-dynamic-loader-m-htK1h2.js",
     "name": "frontend-dynamic-loader",
     "dynamicImports": [
       "src/frontend/app/legacy-runtime.js",
-      "_frontend-stage-login-DsZHmL8S.js",
-      "_frontend-stage-confirm-DP5jgI1m.js",
+      "_frontend-stage-login-L_gMvhCw.js",
+      "_frontend-stage-confirm-CuRyf7hk.js",
       "_frontend-stage-exam-DgpR8Zdz.js",
-      "_frontend-stage-result-DggVFqRM.js",
+      "_frontend-stage-result-C1NqEBXI.js",
       "_frontend-result-renderer-D_GnQEp8.js"
     ]
   },
@@ -69,8 +69,8 @@
       "_frontend-shell-auth-core-BdDjg24r.js"
     ]
   },
-  "_frontend-stage-confirm-DP5jgI1m.js": {
-    "file": "assets/frontend-stage-confirm-DP5jgI1m.js",
+  "_frontend-stage-confirm-CuRyf7hk.js": {
+    "file": "assets/frontend-stage-confirm-CuRyf7hk.js",
     "name": "frontend-stage-confirm",
     "imports": [
       "_rolldown-runtime-CmsrGqdA.js",
@@ -93,8 +93,8 @@
       "assets/frontend-stage-exam-D0Z99I7C.css"
     ]
   },
-  "_frontend-stage-login-DsZHmL8S.js": {
-    "file": "assets/frontend-stage-login-DsZHmL8S.js",
+  "_frontend-stage-login-L_gMvhCw.js": {
+    "file": "assets/frontend-stage-login-L_gMvhCw.js",
     "name": "frontend-stage-login",
     "imports": [
       "_rolldown-runtime-CmsrGqdA.js",
@@ -102,21 +102,21 @@
       "_frontend-shell-auth-core-BdDjg24r.js"
     ]
   },
-  "_frontend-stage-result-DggVFqRM.js": {
-    "file": "assets/frontend-stage-result-DggVFqRM.js",
+  "_frontend-stage-result-C1NqEBXI.js": {
+    "file": "assets/frontend-stage-result-C1NqEBXI.js",
     "name": "frontend-stage-result",
     "imports": [
       "_rolldown-runtime-CmsrGqdA.js",
-      "_frontend-dynamic-loader-nGOInowK.js",
+      "_frontend-dynamic-loader-m-htK1h2.js",
       "_frontend-shell-auth-core-BdDjg24r.js",
-      "_frontend-stage-confirm-DP5jgI1m.js"
+      "_frontend-stage-confirm-CuRyf7hk.js"
     ]
   },
-  "_frontend-student-shell-CveSzr34.js": {
-    "file": "assets/frontend-student-shell-CveSzr34.js",
+  "_frontend-student-shell-C9Oh9VVX.js": {
+    "file": "assets/frontend-student-shell-C9Oh9VVX.js",
     "name": "frontend-student-shell",
     "imports": [
-      "_frontend-dynamic-loader-nGOInowK.js",
+      "_frontend-dynamic-loader-m-htK1h2.js",
       "_frontend-shell-auth-core-BdDjg24r.js"
     ]
   },
@@ -488,17 +488,17 @@
     "isDynamicEntry": true
   },
   "src/frontend/app/legacy-runtime.js": {
-    "file": "assets/legacy-runtime-mj2jnbWr.js",
+    "file": "assets/legacy-runtime-Bksrq9xf.js",
     "name": "legacy-runtime",
     "src": "src/frontend/app/legacy-runtime.js",
     "isDynamicEntry": true,
     "imports": [
-      "_frontend-dynamic-loader-nGOInowK.js",
+      "_frontend-dynamic-loader-m-htK1h2.js",
       "_frontend-stage-auth-core-DML9UtrZ.js",
       "_frontend-exam-session-CHsA3V2v.js",
       "_frontend-shell-auth-core-BdDjg24r.js",
       "_frontend-exam-security-VByJI0p6.js",
-      "_frontend-student-shell-CveSzr34.js",
+      "_frontend-student-shell-C9Oh9VVX.js",
       "_frontend-exam-question-runtime-C2HSbmdu.js"
     ],
     "dynamicImports": [
@@ -511,12 +511,12 @@
     ]
   },
   "src/frontend/app/runtime.js": {
-    "file": "assets/runtime-C0KUwWYJ.js",
+    "file": "assets/runtime-B5qRP0KR.js",
     "name": "runtime",
     "src": "src/frontend/app/runtime.js",
     "isDynamicEntry": true,
     "imports": [
-      "_frontend-student-shell-CveSzr34.js"
+      "_frontend-student-shell-C9Oh9VVX.js"
     ]
   },
   "src/frontend/app/supervisor/runtime.js": {
@@ -533,12 +533,12 @@
     ]
   },
   "src/frontend/main.js": {
-    "file": "assets/frontend-core-Dt_EA5EC.js",
+    "file": "assets/frontend-core-C3T6fNUF.js",
     "name": "frontend",
     "src": "src/frontend/main.js",
     "isEntry": true,
     "imports": [
-      "_frontend-dynamic-loader-nGOInowK.js",
+      "_frontend-dynamic-loader-m-htK1h2.js",
       "_frontend-shell-auth-core-BdDjg24r.js"
     ],
     "dynamicImports": [

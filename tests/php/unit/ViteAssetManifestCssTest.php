@@ -156,6 +156,9 @@ final class ViteAssetManifestCssTest extends TestCase
                 $resolved[] = $name;
             }
 
+            foreach ((array) ($entry['imports'] ?? []) as $nested_import_key) {
+                $stack[] = $nested_import_key;
+            }
             foreach ((array) ($entry['dynamicImports'] ?? []) as $nested_import_key) {
                 $stack[] = $nested_import_key;
             }

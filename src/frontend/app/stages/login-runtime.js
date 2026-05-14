@@ -316,7 +316,7 @@ export function mountLoginStage(context) {
             state.loginPassword = '';
             state.loginPasswordVisible = false;
             authSession.persistAuthSession();
-            updateAuthProgress(100, 3, 'Login berhasil', 'Runtime sesi aktif sedang dimuat.');
+            updateAuthProgress(100, 4, 'Login berhasil', 'Runtime sesi aktif sedang dimuat.');
             render('login-success', {});
             await context.transitionTo('confirm', {
                 reason: 'login-success'
@@ -407,7 +407,7 @@ export function mountLoginStage(context) {
         state.authProgressMode = 'login';
         state.authProgressPercent = Math.max(0, Math.min(100, Number(percent) || 0));
         state.authProgressStepIndex = Math.max(1, Number(stepIndex) || 1);
-        state.authProgressStepTotal = 3;
+        state.authProgressStepTotal = 4;
         state.authProgressStatus = String(status || '');
         state.authProgressDetail = String(detail || '');
     }

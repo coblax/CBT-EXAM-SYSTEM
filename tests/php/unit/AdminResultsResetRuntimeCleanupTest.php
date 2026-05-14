@@ -49,8 +49,8 @@ final class AdminResultsResetRuntimeCleanupTest extends TestCase
         self::assertSame([44], CBT_Cache::$invalidatedAttemptIds);
         self::assertSame([7], CBT_Cache::$invalidatedUserIds);
         self::assertSame([9], CBT_Cache::$invalidatedAnalyticsExamIds);
-        self::assertSame([44], $wpdb->answerCleanupAttemptIds);
-        self::assertSame([44], $wpdb->essayAiCleanupAttemptIds);
+        self::assertSame([], $wpdb->answerCleanupAttemptIds);
+        self::assertSame([], $wpdb->essayAiCleanupAttemptIds);
         self::assertSame([[31, 32]], CBT_UI_State::$clearedAttemptStatesByAttemptIds);
         self::assertSame([[7, 44]], CBT_UI_State::$clearedAttemptStates);
         self::assertSame([], CBT_Auth::$clearedLoginSessionUserIds);
