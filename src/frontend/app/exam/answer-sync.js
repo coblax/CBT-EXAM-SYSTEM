@@ -10,7 +10,9 @@ export function createAnswerSyncManager(deps) {
     var autoSaveBatchMaxItems = Math.max(1, Number(deps.autoSaveBatchMaxItems) || 1);
     var answerSyncRetryBaseDelayMs = Math.max(0, Number(deps.answerSyncRetryBaseDelayMs) || 0);
     var answerSyncRetryMaxDelayMs = Math.max(answerSyncRetryBaseDelayMs, Number(deps.answerSyncRetryMaxDelayMs) || 0);
+    var answerSyncBackgroundEnabled = !!deps.answerSyncBackgroundEnabled;
     var apiRequest = deps.apiRequest;
+    var durableAnswerQueue = deps.durableAnswerQueue || null;
     var getNavigatorConnectionStatus = deps.getNavigatorConnectionStatus;
     var getQuestionById = deps.getQuestionById;
     var getQuestionPayloadById = deps.getQuestionPayloadById;
@@ -40,6 +42,10 @@ export function createAnswerSyncManager(deps) {
     var answerBatchInFlightItems = [];
     var answerSyncRetryCount = 0;
     var lastSyncErrorRetryable = false;
+    var durableQueuePersistence = Promise.resolve();
+    var durableQueueHydration = Promise.resolve();
+    var durableQueueOwner = 'main:' + String(Date.now()) + ':' + String(Math.random()).slice(2);
+    var answerSyncGrantPromise = null;
 
     function recordTimelineEntry(kind, summary, meta) {
         if (typeof recordTimeline === 'function') {
@@ -51,6 +57,204 @@ export function createAnswerSyncManager(deps) {
         if (typeof recordActionTrail === 'function') {
             recordActionTrail(kind, summary, meta || {});
         }
+    }
+
+    function getDurableQueueContext() {
+        return {
+            attemptId: Number(state.attemptId) || 0,
+            examId: Number(state.selectedExamId) || 0,
+            userId: Number(state.user && state.user.user_id) || 0
+        };
+    }
+
+    function hasDurableQueueContext() {
+        var context = getDurableQueueContext();
+        return context.userId > 0 && context.attemptId > 0;
+    }
+
+    function queueDurableOperation(operation) {
+        if (!durableAnswerQueue || typeof operation !== 'function') {
+            return Promise.resolve(null);
+        }
+
+        durableQueuePersistence = durableQueuePersistence
+            .catch(function () {
+                return null;
+            })
+            .then(function () {
+                return operation();
+            })
+            .catch(function (error) {
+                recordTimelineEntry('sync:durable-queue:error', error instanceof Error ? error.message : 'Durable answer queue gagal.', {
+                    attemptId: Number(state.attemptId) || 0
+                });
+                return null;
+            });
+
+        return durableQueuePersistence;
+    }
+
+    function waitForDurableQueue() {
+        return durableQueuePersistence
+            .catch(function () {
+                return null;
+            })
+            .then(function () {
+                return durableQueueHydration.catch(function () {
+                    return null;
+                });
+            });
+    }
+
+    function applyDurablePendingMirror(items) {
+        var nextByQuestion = {};
+        var nextOrder = [];
+        (Array.isArray(items) ? items : []).forEach(function (item) {
+            var questionId = Number(item && item.question_id) || 0;
+            if (questionId <= 0) {
+                return;
+            }
+            nextByQuestion[questionId] = {
+                question_id: questionId,
+                answer: Object.prototype.hasOwnProperty.call(item, 'answer') ? item.answer : null,
+                signature: String(item.signature || '')
+            };
+            if (nextOrder.indexOf(questionId) < 0) {
+                nextOrder.push(questionId);
+            }
+        });
+        pendingAnswerBatchByQuestion = nextByQuestion;
+        pendingAnswerBatchOrder = nextOrder;
+    }
+
+    function refreshDurablePendingMirror(reason, options) {
+        options = options || {};
+        if (!durableAnswerQueue || !hasDurableQueueContext() || typeof durableAnswerQueue.listPendingAnswers !== 'function') {
+            return Promise.resolve([]);
+        }
+
+        return waitForDurableQueue().then(function () {
+            return durableAnswerQueue.listPendingAnswers(getDurableQueueContext());
+        }).then(function (items) {
+            applyDurablePendingMirror(items);
+            syncPendingAnswerRuntimeState({
+                persist: options.persist !== false,
+                clearLastSyncError: false,
+                render: !!options.render,
+                reason: reason || 'durable-queue-refresh'
+            });
+            return items;
+        }).catch(function (error) {
+            recordTimelineEntry('sync:durable-queue:refresh-error', error instanceof Error ? error.message : 'Durable answer queue refresh gagal.', {
+                attemptId: Number(state.attemptId) || 0
+            });
+            return [];
+        });
+    }
+
+    function registerBackgroundAnswerSync(reason) {
+        if (!answerSyncBackgroundEnabled || !windowRef || !windowRef.navigator || !windowRef.navigator.serviceWorker) {
+            return;
+        }
+
+        try {
+            var serviceWorker = windowRef.navigator.serviceWorker;
+            if (serviceWorker.controller && typeof serviceWorker.controller.postMessage === 'function') {
+                serviceWorker.controller.postMessage({
+                    type: 'CBT_FLUSH_ANSWER_QUEUE',
+                    reason: String(reason || '')
+                });
+            }
+            if (serviceWorker.ready && typeof serviceWorker.ready.then === 'function') {
+                serviceWorker.ready.then(function (registration) {
+                    if (registration && registration.sync && typeof registration.sync.register === 'function') {
+                        return registration.sync.register('cbt-answer-sync');
+                    }
+                    return null;
+                }).catch(function () {});
+            }
+        } catch (error) {
+            // Background sync is best-effort; main-thread sync remains authoritative.
+        }
+    }
+
+    function ensureAnswerSyncGrant(reason) {
+        if (!answerSyncBackgroundEnabled || !durableAnswerQueue || !hasDurableQueueContext()) {
+            return Promise.resolve(null);
+        }
+
+        if (answerSyncGrantPromise) {
+            return answerSyncGrantPromise;
+        }
+
+        answerSyncGrantPromise = Promise.resolve()
+            .then(function () {
+                if (typeof durableAnswerQueue.getAuthGrant !== 'function') {
+                    return null;
+                }
+                return durableAnswerQueue.getAuthGrant(getDurableQueueContext());
+            })
+            .then(function (existingGrant) {
+                var nowMs = Date.now();
+                if (existingGrant && Number(existingGrant.expires_at_ms) > nowMs + 60000) {
+                    return existingGrant;
+                }
+                return apiRequest('answer_sync_token', {
+                    method: 'POST',
+                    suppressAuthExpiry: true,
+                    body: {
+                        attempt_id: Number(state.attemptId) || 0
+                    }
+                }).then(function (payload) {
+                    var expiresAtMs = Math.max(0, Number(payload && payload.expires_at_ms) || 0);
+                    if (expiresAtMs <= 0 && payload && payload.expires_at) {
+                        expiresAtMs = Date.parse(String(payload.expires_at || '')) || 0;
+                    }
+                    if (expiresAtMs <= 0) {
+                        expiresAtMs = Date.now() + (Math.max(60, Number(payload && payload.expires_in) || 600) * 1000);
+                    }
+                    return durableAnswerQueue.storeAuthGrant(getDurableQueueContext(), {
+                        token: String(payload && payload.token ? payload.token : ''),
+                        expiresAtMs: expiresAtMs
+                    });
+                });
+            })
+            .then(function (grant) {
+                if (grant) {
+                    registerBackgroundAnswerSync(reason || 'grant-ready');
+                }
+                return grant;
+            })
+            .catch(function (error) {
+                recordTimelineEntry('sync:grant:error', error instanceof Error ? error.message : 'Token sync background gagal dibuat.', {
+                    attemptId: Number(state.attemptId) || 0
+                });
+                return null;
+            })
+            .finally(function () {
+                answerSyncGrantPromise = null;
+            });
+
+        return answerSyncGrantPromise;
+    }
+
+    if (windowRef && typeof windowRef.addEventListener === 'function') {
+        windowRef.addEventListener('cbt:sw-answer-sync-complete', function () {
+            refreshDurablePendingMirror('sw-sync-complete', {
+                persist: true,
+                render: true
+            }).then(function () {
+                if (state.pendingSyncCount > 0 && getNavigatorConnectionStatus() !== 'offline') {
+                    schedulePendingAnswerRetry('sw-sync-remaining', {
+                        immediate: true,
+                        resetBackoff: true,
+                        persist: false
+                    });
+                } else {
+                    maybeFinalizeLockedExam('sw-sync-complete');
+                }
+            });
+        });
     }
 
     function publishSyncSnapshot(reason) {
@@ -69,6 +273,7 @@ export function createAnswerSyncManager(deps) {
             isFinishing: Boolean(state.isFinishing),
             flushInFlight: Boolean(answerBatchFlushInFlight),
             hasPendingBatchItems: pendingAnswerBatchOrder.length > 0 || answerBatchInFlightItems.length > 0,
+            durableQueueEnabled: !!durableAnswerQueue,
             retryCount: Number(answerSyncRetryCount) || 0,
             nextRetryDueAt: answerBatchFlushDueAt > 0 ? new Date(answerBatchFlushDueAt).toISOString() : '',
             autoSaveCongestedUntil: autoSaveCongestedUntil > 0 ? new Date(autoSaveCongestedUntil).toISOString() : '',
@@ -438,6 +643,38 @@ export function createAnswerSyncManager(deps) {
             clearLastSyncError: false,
             reason: 'restore-autosave'
         });
+
+        if (durableAnswerQueue && hasDurableQueueContext()) {
+            durableQueueHydration = queueDurableOperation(function () {
+                return durableAnswerQueue.importPendingAnswersFromSnapshot(
+                    getDurableQueueContext(),
+                    pendingAnswerBatchByQuestion,
+                    pendingAnswerBatchOrder
+                );
+            }).then(function () {
+                return durableAnswerQueue.listPendingAnswers(getDurableQueueContext());
+            }).then(function (items) {
+                applyDurablePendingMirror(items);
+                syncPendingAnswerRuntimeState({
+                    persist: false,
+                    clearLastSyncError: false,
+                    reason: 'restore-durable-autosave'
+                });
+                if (items.length > 0 && getNavigatorConnectionStatus() !== 'offline') {
+                    ensureAnswerSyncGrant('restore-durable-autosave').then(function () {
+                        registerBackgroundAnswerSync('restore-durable-autosave');
+                    });
+                    schedulePendingAnswerRetry('restore-durable-autosave', {
+                        immediate: true,
+                        resetBackoff: true,
+                        persist: false
+                    });
+                }
+                return items;
+            }).catch(function () {
+                return [];
+            });
+        }
     }
 
     function primeSubmittedPayloadCacheFromQuestionItems(questions) {
@@ -509,6 +746,9 @@ export function createAnswerSyncManager(deps) {
         state.lastSyncError = '';
         state.examLockedForPendingFinish = false;
         state.pendingFinishAutoSubmit = false;
+        if (durableAnswerQueue && hasDurableQueueContext() && typeof durableAnswerQueue.clearAuthGrant === 'function') {
+            durableAnswerQueue.clearAuthGrant(getDurableQueueContext()).catch(function () {});
+        }
         syncPendingAnswerRuntimeState({
             persist: false,
             reason: 'clear-autosave-runtime'
@@ -809,6 +1049,17 @@ export function createAnswerSyncManager(deps) {
             pendingAnswerBatchOrder.push(questionId);
         }
 
+        if (durableAnswerQueue && hasDurableQueueContext()) {
+            var durableItem = Object.assign({}, pendingAnswerBatchByQuestion[questionId]);
+            queueDurableOperation(function () {
+                return durableAnswerQueue.upsertAnswer(getDurableQueueContext(), durableItem);
+            }).then(function () {
+                return ensureAnswerSyncGrant('answer-queued');
+            }).then(function () {
+                registerBackgroundAnswerSync('answer-queued');
+            });
+        }
+
         syncPendingAnswerRuntimeState({
             persist: true,
             clearLastSyncError: false,
@@ -827,6 +1078,30 @@ export function createAnswerSyncManager(deps) {
 
     function takePendingAnswerBatchItems(maxItems) {
         var limit = Math.max(1, Number(maxItems) || autoSaveBatchMaxItems);
+        if (durableAnswerQueue && hasDurableQueueContext() && typeof durableAnswerQueue.acquireBatch === 'function') {
+            return waitForDurableQueue().then(function () {
+                return durableAnswerQueue.acquireBatch(getDurableQueueContext(), {
+                    leaseMs: 30000,
+                    limit: limit,
+                    owner: durableQueueOwner
+                });
+            }).then(function (acquiredItems) {
+                return refreshDurablePendingMirror('batch-acquired', {
+                    persist: false
+                }).then(function () {
+                    return (Array.isArray(acquiredItems) ? acquiredItems : []).map(function (item) {
+                        return {
+                            question_id: Number(item && item.question_id) || 0,
+                            answer: Object.prototype.hasOwnProperty.call(item || {}, 'answer') ? item.answer : null,
+                            signature: String(item && item.signature ? item.signature : '')
+                        };
+                    }).filter(function (item) {
+                        return item.question_id > 0;
+                    });
+                });
+            });
+        }
+
         var items = [];
 
         while (pendingAnswerBatchOrder.length && items.length < limit) {
@@ -869,7 +1144,21 @@ export function createAnswerSyncManager(deps) {
         });
     }
 
-    function applySubmittedBatchItems(items, responseItems, options) {
+    async function releasePendingAnswerBatchItems(items, options) {
+        options = options || {};
+        requeuePendingAnswerBatchItems(items);
+        if (durableAnswerQueue && hasDurableQueueContext() && typeof durableAnswerQueue.releaseBatch === 'function') {
+            await durableAnswerQueue.releaseBatch(getDurableQueueContext(), items, {
+                errorMessage: options.errorMessage || '',
+                status: options.status || 'failed_retryable'
+            });
+            await refreshDurablePendingMirror('batch-released', {
+                persist: true
+            });
+        }
+    }
+
+    async function applySubmittedBatchItems(items, responseItems, options) {
         options = options || {};
         var requestGeneration = Number(options.questionDataGeneration);
         if (Number.isFinite(requestGeneration) && requestGeneration !== getQuestionDataGeneration()) {
@@ -886,7 +1175,15 @@ export function createAnswerSyncManager(deps) {
             });
         }
 
-        items.forEach(function (item) {
+        var submittedItems = Array.isArray(items) ? items : [];
+        if (durableAnswerQueue && hasDurableQueueContext() && typeof durableAnswerQueue.markAcked === 'function') {
+            submittedItems = await durableAnswerQueue.markAcked(getDurableQueueContext(), submittedItems);
+            await refreshDurablePendingMirror('batch-acked', {
+                persist: false
+            });
+        }
+
+        submittedItems.forEach(function (item) {
             var questionId = Number(item && item.question_id) || 0;
             if (questionId <= 0) {
                 return;
@@ -987,7 +1284,7 @@ export function createAnswerSyncManager(deps) {
             });
 
             answerBatchInFlightItems = [];
-            applySubmittedBatchItems(items, batchResponse && Array.isArray(batchResponse.items) ? batchResponse.items : [], {
+            await applySubmittedBatchItems(items, batchResponse && Array.isArray(batchResponse.items) ? batchResponse.items : [], {
                 questionDataGeneration: requestGeneration
             });
             return batchResponse;
@@ -995,7 +1292,10 @@ export function createAnswerSyncManager(deps) {
             if (isRetryableAnswerSyncError(batchError) || !shouldFallbackToLegacyBatch(batchError)) {
                 answerBatchInFlightItems = [];
                 if (requestGeneration === getQuestionDataGeneration()) {
-                    requeuePendingAnswerBatchItems(items);
+                    await releasePendingAnswerBatchItems(items, {
+                        errorMessage: batchError instanceof Error ? batchError.message : 'Sinkronisasi jawaban gagal.',
+                        status: isRetryableAnswerSyncError(batchError) ? 'failed_retryable' : 'failed_terminal'
+                    });
                 }
                 throw batchError;
             }
@@ -1005,7 +1305,7 @@ export function createAnswerSyncManager(deps) {
             try {
                 var legacyResponse = await submitLegacyAnswerBatch(items, options);
                 answerBatchInFlightItems = [];
-                    applySubmittedBatchItems(items, legacyResponse.items || [], {
+                    await applySubmittedBatchItems(items, legacyResponse.items || [], {
                         questionDataGeneration: requestGeneration
                     });
                     if (requestGeneration === getQuestionDataGeneration()) {
@@ -1027,15 +1327,21 @@ export function createAnswerSyncManager(deps) {
                         : [];
 
                     if (partialSubmittedItems.length > 0) {
-                        applySubmittedBatchItems(partialSubmittedItems, partialResponseItems, {
+                        await applySubmittedBatchItems(partialSubmittedItems, partialResponseItems, {
                             questionDataGeneration: requestGeneration
                         });
                     }
 
                     if (remainingItems.length > 0) {
-                        requeuePendingAnswerBatchItems(remainingItems);
+                        await releasePendingAnswerBatchItems(remainingItems, {
+                            errorMessage: legacyError instanceof Error ? legacyError.message : 'Sinkronisasi jawaban gagal.',
+                            status: 'failed_retryable'
+                        });
                     } else if (partialSubmittedItems.length <= 0) {
-                        requeuePendingAnswerBatchItems(items);
+                        await releasePendingAnswerBatchItems(items, {
+                            errorMessage: legacyError instanceof Error ? legacyError.message : 'Sinkronisasi jawaban gagal.',
+                            status: 'failed_retryable'
+                        });
                     }
                 }
                 throw (legacyError instanceof Error) ? legacyError : batchError;
@@ -1052,6 +1358,12 @@ export function createAnswerSyncManager(deps) {
             : getQuestionDataGeneration();
 
         clearAnswerBatchFlushTimer();
+        if (durableAnswerQueue && hasDurableQueueContext()) {
+            await waitForDurableQueue();
+            await refreshDurablePendingMirror('flush-precheck', {
+                persist: false
+            });
+        }
 
         if (
             diagnosticsManager
@@ -1106,7 +1418,10 @@ export function createAnswerSyncManager(deps) {
                 }
             }
 
-            var items = takePendingAnswerBatchItems(autoSaveBatchMaxItems);
+            var itemsResult = takePendingAnswerBatchItems(autoSaveBatchMaxItems);
+            var items = itemsResult && typeof itemsResult.then === 'function'
+                ? await itemsResult
+                : itemsResult;
             if (!items.length) {
                 return {
                     attempt_id: state.attemptId,

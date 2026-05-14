@@ -6,6 +6,7 @@ export function createApiClient(deps) {
     var expireAuthSession = deps.expireAuthSession;
     var getNavigatorConnectionStatus = deps.getNavigatorConnectionStatus;
     var isAnswerSubmitPath = deps.isAnswerSubmitPath;
+    var readOnlyApiCache = deps.readOnlyApiCache || null;
     var schedulePendingAnswerRetry = deps.schedulePendingAnswerRetry;
     var setConnectionStatus = deps.setConnectionStatus;
     var windowRef = deps.windowRef;
@@ -249,6 +250,19 @@ export function createApiClient(deps) {
                     body: body
                 });
             }
+            if (
+                readOnlyApiCache
+                && typeof readOnlyApiCache.match === 'function'
+                && method === 'GET'
+            ) {
+                var cachedPayload = readOnlyApiCache.match(path, {
+                    method: method,
+                    query: query
+                });
+                if (cachedPayload) {
+                    return cachedPayload;
+                }
+            }
             throw networkError;
         }
 
@@ -377,6 +391,17 @@ export function createApiClient(deps) {
             } catch (error) {
                 // Ignore metadata attachment failures for non-extensible payloads.
             }
+        }
+
+        if (
+            readOnlyApiCache
+            && typeof readOnlyApiCache.put === 'function'
+            && method === 'GET'
+        ) {
+            readOnlyApiCache.put(path, {
+                method: method,
+                query: query
+            }, payload);
         }
 
         return payload;

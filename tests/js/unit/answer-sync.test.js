@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAnswerSyncManager } from '../../../src/frontend/app/exam/answer-sync.js';
+import { createDurableAnswerQueueStorage } from '../../../src/frontend/app/storage/durable-answer-queue.js';
 
 function createFixture(overrides = {}) {
     var calls = {
@@ -35,7 +36,9 @@ function createFixture(overrides = {}) {
         autoSaveCongestedWindowMs: 1200,
         autoSaveTextDelayCongestedMs: 1000,
         autoSaveTextDelayMs: 500,
+        answerSyncBackgroundEnabled: !!overrides.answerSyncBackgroundEnabled,
         diagnosticsManager: overrides.diagnosticsManager || null,
+        durableAnswerQueue: overrides.durableAnswerQueue || null,
         getNavigatorConnectionStatus: overrides.getNavigatorConnectionStatus || function () {
             return 'online';
         },
@@ -361,6 +364,87 @@ describe('createAnswerSyncManager', function () {
         });
         expect(fixture.state.pendingSyncCount).toBe(0);
         expect(fixture.state.syncBlockingReason).toBe('');
+    });
+
+    it('uses durable queue as the pending source and clears it only after server ack', async function () {
+        var durableQueue = createDurableAnswerQueueStorage({
+            getIndexedDb: function () {
+                return null;
+            },
+            getLocalStorage: function () {
+                return localStorage;
+            },
+            now: function () {
+                return Date.now();
+            }
+        });
+        var requests = [];
+        var payloadByQuestion = {
+            303: { selected: 707 }
+        };
+        var fixture = createFixture({
+            apiRequest: async function (path, options) {
+                requests.push({
+                    body: options.body,
+                    path: path
+                });
+                return {
+                    attempt_id: 55,
+                    accepted_count: 1,
+                    buffered: 0,
+                    flushed: 1,
+                    pending_count: 0,
+                    items: [
+                        { question_id: 303, is_correct: 1, score_awarded: 1, deferred: 0, cleared: 0 }
+                    ]
+                };
+            },
+            durableAnswerQueue: durableQueue,
+            getQuestionById: function (questionId) {
+                return {
+                    id: Number(questionId) || 0,
+                    question_type: 'multiple_choice'
+                };
+            },
+            payloadSignature: function (payload) {
+                return JSON.stringify(payload || null);
+            },
+            questionAnswerPayload: function (question) {
+                return payloadByQuestion[Number(question && question.id) || 0] || null;
+            },
+            state: {
+                user: {
+                    user_id: 7
+                }
+            }
+        });
+
+        expect(fixture.manager.queueQuestionAnswer({ id: 303, question_type: 'multiple_choice' })).toBe(true);
+        await fixture.manager.flushPendingAnswerBatch({ flushAll: true });
+
+        expect(requests).toEqual([
+            {
+                path: 'submit_answers_batch',
+                body: {
+                    attempt_id: 55,
+                    answers: [
+                        {
+                            question_id: 303,
+                            answer: { selected: 707 }
+                        }
+                    ]
+                }
+            }
+        ]);
+        expect(await durableQueue.getPendingCount({
+            attemptId: 55,
+            examId: 9,
+            userId: 7
+        })).toBe(0);
+        expect(fixture.manager.getAutoSaveState().lastSubmittedPayloadByQuestion).toEqual({
+            303: JSON.stringify({ selected: 707 })
+        });
+        expect(fixture.state.pendingSyncCount).toBe(0);
     });
 
     it('reports unique pending sync question ids from queued and in-flight batches', async function () {

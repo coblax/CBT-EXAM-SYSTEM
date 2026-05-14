@@ -2229,7 +2229,10 @@
                     }
 
                     try {
-                        const parsed = new DOMParser().parseFromString(String(html), 'text/html');
+                        const sanitizedHtml = String(html)
+                            .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+                            .replace(/<style[\s\S]*?<\/style>/gi, ' ');
+                        const parsed = new DOMParser().parseFromString(sanitizedHtml, 'text/html');
                         const title = parsed.querySelector('title');
                         const bodyText = String((parsed.body && parsed.body.textContent) || '').replace(/\s+/g, ' ').trim();
                         const titleText = title ? String(title.textContent || '').replace(/\s+/g, ' ').trim() : '';

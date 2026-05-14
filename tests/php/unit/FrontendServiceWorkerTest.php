@@ -103,7 +103,8 @@ final class FrontendServiceWorkerTest extends TestCase
         self::assertStringContainsString("var SHELL_URL = \"http://localhost/wordpress/cbt-ujian/\"", $script);
         self::assertStringContainsString('assets/frontend-core.js', $script);
         self::assertStringContainsString('assets/legacy-runtime.js', $script);
-        self::assertStringNotContainsString('submit_answers_batch', $script);
+        self::assertStringContainsString('ANSWER_QUEUE_DB_NAME', $script);
+        self::assertStringContainsString('submit_answers_batch', $script);
         self::assertStringNotContainsString('finish_exam', $script);
     }
 

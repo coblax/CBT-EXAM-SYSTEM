@@ -6,6 +6,42 @@ if (!defined('ABSPATH')) {
 
 trait CBT_REST_Submit_Answer_Routes
 {
+    public static function answer_sync_token(WP_REST_Request $request)
+    {
+        $attempt_id = (int) $request->get_param('attempt_id');
+        if ($attempt_id <= 0) {
+            return new WP_Error('invalid_payload', 'attempt_id is required', ['status' => 400]);
+        }
+
+        $user_id = CBT_Auth::current_user_id($request);
+        $role = CBT_Auth::current_user_role($request);
+        if ($user_id <= 0 || !in_array($role, ['siswa', 'student'], true)) {
+            return new WP_Error('forbidden', 'Only student role can request answer sync token', ['status' => 403]);
+        }
+
+        $attempt = self::get_attempt_for_submission($attempt_id, $user_id, false);
+        if (is_wp_error($attempt)) {
+            return $attempt;
+        }
+
+        $session_key = CBT_Auth::current_session_key($request);
+        if ($session_key === '') {
+            return new WP_Error('missing_session', 'Session key is required', ['status' => 401]);
+        }
+
+        $ttl = 10 * MINUTE_IN_SECONDS;
+        $expires_at = time() + $ttl;
+        $token = CBT_Auth::generate_answer_sync_token($user_id, $role, $attempt_id, $session_key, $ttl);
+
+        return rest_ensure_response([
+            'attempt_id' => $attempt_id,
+            'expires_at' => gmdate('c', $expires_at),
+            'expires_at_ms' => $expires_at * 1000,
+            'expires_in' => $ttl,
+            'token' => $token,
+        ]);
+    }
+
     public static function submit_answer(WP_REST_Request $request)
     {
         $attempt_id = (int) $request->get_param('attempt_id');

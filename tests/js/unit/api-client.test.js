@@ -243,4 +243,80 @@ describe('createApiClient auth expiry handling', function () {
         expect(fixture.calls.expireAuthSession).toHaveLength(0);
         expect(fixture.state.token).toBe('login-token');
     });
+
+    it('falls back to read-only exams cache on network errors without caching mutations', async function () {
+        var cacheCalls = {
+            match: [],
+            put: []
+        };
+        var state = {
+            token: 'login-token',
+            user: {
+                user_id: 7
+            }
+        };
+        var client = createApiClient({
+            config: {
+                restBasePath: '/wp-json/cbt/v1/'
+            },
+            diagnosticsManager: null,
+            expireAuthSession: function () {},
+            fetchImpl: async function () {
+                throw new TypeError('Failed to fetch');
+            },
+            getNavigatorConnectionStatus: function () {
+                return 'offline';
+            },
+            isAnswerSubmitPath: function () {
+                return false;
+            },
+            readOnlyApiCache: {
+                match: function (path, options) {
+                    cacheCalls.match.push({ path, options });
+                    if (path === 'exams') {
+                        return {
+                            items: [{ id: 15 }]
+                        };
+                    }
+                    return null;
+                },
+                put: function (path, options, payload) {
+                    cacheCalls.put.push({ path, options, payload });
+                }
+            },
+            schedulePendingAnswerRetry: function () {},
+            setConnectionStatus: function () {},
+            state,
+            windowRef: {
+                location: {
+                    origin: 'https://ujian.example.sch.id'
+                },
+                setTimeout: globalThis.setTimeout
+            }
+        });
+
+        await expect(client.api('exams')).resolves.toEqual({
+            items: [{ id: 15 }]
+        });
+        await expect(client.api('finish_exam', {
+            method: 'POST',
+            body: {
+                attempt_id: 55
+            }
+        })).rejects.toMatchObject({
+            code: 'network_error',
+            status: 0
+        });
+
+        expect(cacheCalls.match).toEqual([
+            {
+                path: 'exams',
+                options: {
+                    method: 'GET',
+                    query: null
+                }
+            }
+        ]);
+        expect(cacheCalls.put).toEqual([]);
+    });
 });

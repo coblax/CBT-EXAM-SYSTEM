@@ -3651,13 +3651,68 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                 }
 
                 function extractSecurityResponseError(text, status) {
-                    var raw = String(text || '').replace(/<script[\s\S]*?<\/script>/gi, ' ');
+                    var raw = String(text || '')
+                        .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+                        .replace(/<style[\s\S]*?<\/style>/gi, ' ');
                     var plain = raw.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
                     if (plain.length > 180) {
                         plain = plain.slice(0, 180) + '...';
                     }
 
                     return 'HTTP ' + String(status || 0) + (plain ? ': ' + plain : '');
+                }
+
+                function normalizeSecurityJsonPayload(json) {
+                    var root = json && typeof json === 'object' ? json : {};
+                    var data = root.data && typeof root.data === 'object' ? root.data : root;
+
+                    return {
+                        html: String(data.html || root.html || ''),
+                        message: String(data.message || root.message || ''),
+                        tab: String(data.tab || root.tab || ''),
+                        success: root.success !== false
+                    };
+                }
+
+                function parseSecurityFetchResponse(response) {
+                    return response.text().then(function (text) {
+                        var contentType = response.headers && response.headers.get ? String(response.headers.get('content-type') || '') : '';
+                        var json = null;
+                        var payload = null;
+
+                        if (contentType.indexOf('application/json') >= 0 || /^\s*[\{\[]/.test(String(text || ''))) {
+                            try {
+                                json = JSON.parse(String(text || '{}'));
+                            } catch (error) {
+                                json = null;
+                            }
+                        }
+
+                        if (json) {
+                            payload = normalizeSecurityJsonPayload(json);
+                            if (!response.ok || !payload.success) {
+                                throw new Error(payload.message || extractSecurityResponseError(payload.html || text, response.status));
+                            }
+
+                            return {
+                                response: response,
+                                text: payload.html,
+                                message: payload.message,
+                                tab: payload.tab
+                            };
+                        }
+
+                        if (!response.ok) {
+                            throw new Error(extractSecurityResponseError(text, response.status));
+                        }
+
+                        return {
+                            response: response,
+                            text: text,
+                            message: '',
+                            tab: ''
+                        };
+                    });
                 }
 
                 function replaceSecurityRefreshAreas(responseHtml, areas) {
@@ -3785,29 +3840,20 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                                 body: formData,
                                 credentials: 'same-origin',
                                 headers: {
+                                    'Accept': 'application/json, text/html;q=0.8, */*;q=0.5',
                                     'X-Requested-With': 'XMLHttpRequest'
                                 }
                             })
-                                .then(function (response) {
-                                    return response.text().then(function (text) {
-                                        if (!response.ok) {
-                                            throw new Error(extractSecurityResponseError(text, response.status));
-                                        }
-                                        return {
-                                            response: response,
-                                            text: text
-                                        };
-                                    });
-                                })
+                                .then(parseSecurityFetchResponse)
                                 .then(function (payload) {
                                     var replacedAreas = replaceSecurityRefreshAreas(payload.text, areaList);
-                                    var targetTab = getSecurityTargetTab(form, payload.response.url, replacedAreas);
+                                    var targetTab = payload.tab || getSecurityTargetTab(form, payload.response.url, replacedAreas);
 
                                     rebindSecurityLocalUi(replacedAreas);
                                     if (window.cbtSetupSetActiveTab) {
                                         window.cbtSetupSetActiveTab(targetTab, true);
                                     }
-                                    completeSecurityProgress(config.completeLabel, 'Area ' + targetTab.replace('-', ' ') + ' sudah diperbarui secara lokal.', '');
+                                    completeSecurityProgress(config.completeLabel, payload.message || ('Area ' + targetTab.replace('-', ' ') + ' sudah diperbarui secara lokal.'), '');
                                 })
                                 .catch(function (error) {
                                     completeSecurityProgress('Gagal memproses CBT Security.', error && error.message ? error.message : 'Form masih aman dikirim ulang bila dibutuhkan.', 'error');

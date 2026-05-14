@@ -960,7 +960,14 @@
                         const responseText = await response.text();
 
                         if (!response.ok) {
-                            throw new Error('HTTP ' + response.status + ': ' + responseText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 180));
+                            const errorText = responseText
+                                .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+                                .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+                                .replace(/<[^>]*>/g, ' ')
+                                .replace(/\s+/g, ' ')
+                                .trim()
+                                .slice(0, 180);
+                            throw new Error('HTTP ' + response.status + (errorText ? ': ' + errorText : ''));
                         }
 
                         const replaced = replaceExamCardsRefreshAreas(responseText, areas);

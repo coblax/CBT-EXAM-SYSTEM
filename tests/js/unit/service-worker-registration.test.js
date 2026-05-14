@@ -13,6 +13,7 @@ function baseConfig(overrides) {
 
 function createHarness(overrides) {
     var listeners = {};
+    var serviceWorkerListeners = {};
     var register = vi.fn(function () {
         return Promise.resolve({ scope: '/cbt-ujian/' });
     });
@@ -20,14 +21,24 @@ function createHarness(overrides) {
         addEventListener: vi.fn(function (eventName, callback) {
             listeners[eventName] = callback;
         }),
+        CustomEvent: function (name, eventInit) {
+            return {
+                detail: eventInit && eventInit.detail ? eventInit.detail : {},
+                type: name
+            };
+        },
         console: {
             warn: vi.fn()
         },
         document: {
             readyState: 'loading'
         },
+        dispatchEvent: vi.fn(),
         navigator: {
             serviceWorker: {
+                addEventListener: vi.fn(function (eventName, callback) {
+                    serviceWorkerListeners[eventName] = callback;
+                }),
                 register: register
             }
         }
@@ -40,6 +51,7 @@ function createHarness(overrides) {
     return {
         listeners: listeners,
         register: register,
+        serviceWorkerListeners: serviceWorkerListeners,
         windowRef: windowRef
     };
 }
@@ -125,5 +137,27 @@ describe('registerServiceWorker', function () {
             'CBT Service Worker registration failed:',
             error
         );
+    });
+
+    it('dispatches an app event when the service worker reports answer sync completion', function () {
+        var harness = createHarness();
+
+        expect(registerServiceWorker(baseConfig(), {
+            windowRef: harness.windowRef
+        })).toBe(true);
+
+        harness.serviceWorkerListeners.message({
+            data: {
+                remaining: 2,
+                type: 'CBT_SW_ANSWER_SYNC_COMPLETE'
+            }
+        });
+
+        expect(harness.windowRef.dispatchEvent).toHaveBeenCalledWith({
+            detail: {
+                remaining: 2
+            },
+            type: 'cbt:sw-answer-sync-complete'
+        });
     });
 });

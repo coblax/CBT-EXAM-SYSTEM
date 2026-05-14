@@ -39,6 +39,8 @@ class CBT_Auth
     private const USER_META_ACTIVE_LOGIN_SESSION_RESET_AT = 'cbt_active_login_session_reset_at';
     private const USER_META_ACTIVE_LOGIN_SESSION_RESET_KEY = 'cbt_active_login_session_reset_key';
     private const LOGIN_TOKEN_TTL_SECONDS = 43200;
+    private const ANSWER_SYNC_TOKEN_TTL_SECONDS = 600;
+    private const ANSWER_SYNC_TOKEN_PURPOSE = 'answer_sync';
     private const AUTH_REDIS_TTL_SECONDS = 44100;
     private const AUTH_REDIS_DEFAULT_HOST = '127.0.0.1';
     private const AUTH_REDIS_DEFAULT_PORT = 6379;
@@ -114,6 +116,38 @@ class CBT_Auth
         ];
 
         return JWT::encode($payload, self::jwt_secret(), 'HS256');
+    }
+
+    public static function generate_answer_sync_token(int $user_id, string $role, int $attempt_id, string $session_key, ?int $ttl_seconds = null): string
+    {
+        $issued_at = time();
+        $ttl_seconds = max(60, min(HOUR_IN_SECONDS, (int) ($ttl_seconds ?? self::ANSWER_SYNC_TOKEN_TTL_SECONDS)));
+
+        $payload = [
+            'iss' => site_url(),
+            'iat' => $issued_at,
+            'exp' => $issued_at + $ttl_seconds,
+            'data' => [
+                'purpose' => self::ANSWER_SYNC_TOKEN_PURPOSE,
+                'user_id' => $user_id,
+                'role' => $role,
+                'attempt_id' => $attempt_id,
+                'session_key' => $session_key,
+            ],
+        ];
+
+        return JWT::encode($payload, self::jwt_secret(), 'HS256');
+    }
+
+    public static function current_session_key(WP_REST_Request $request): string
+    {
+        $decoded = self::decode_request_token_payload($request);
+        if (is_wp_error($decoded)) {
+            return '';
+        }
+
+        $session_key = self::decoded_token_value($decoded, 'session_key');
+        return is_scalar($session_key) ? (string) $session_key : '';
     }
 
     public static function reset_login_session(int $user_id): string
@@ -202,6 +236,12 @@ class CBT_Auth
         try {
             $decoded = JWT::decode($token, new Key(self::jwt_secret(), 'HS256'));
             $payload = (array) $decoded;
+            $purpose = (string) (self::decoded_token_value($payload, 'purpose') ?? '');
+            if ($purpose === self::ANSWER_SYNC_TOKEN_PURPOSE) {
+                $error = new WP_Error('answer_sync_token_scope', 'Answer sync token is only valid for answer submission', ['status' => 401]);
+                self::$decoded_token_cache[$cache_key] = $error;
+                return $error;
+            }
             $user_id = (int) (self::decoded_token_value($payload, 'user_id') ?? 0);
             $session_key = (string) (self::decoded_token_value($payload, 'session_key') ?? '');
             $active_state = self::read_active_login_state($user_id);
@@ -231,6 +271,59 @@ class CBT_Auth
         }
     }
 
+    public static function verify_answer_sync_token(WP_REST_Request $request, int $expected_attempt_id = 0)
+    {
+        $lib_check = self::ensure_jwt_library();
+        if (is_wp_error($lib_check)) {
+            return $lib_check;
+        }
+
+        $token = self::extract_bearer_token($request);
+        if (!$token) {
+            return new WP_Error('missing_token', 'Authorization token not found', ['status' => 401]);
+        }
+
+        try {
+            $decoded = (array) JWT::decode($token, new Key(self::jwt_secret(), 'HS256'));
+        } catch (Throwable $exception) {
+            return new WP_Error('answer_sync_token_invalid', 'Invalid or expired answer sync token', ['status' => 401]);
+        }
+
+        $purpose = self::decoded_token_value($decoded, 'purpose');
+        $user_id = (int) (self::decoded_token_value($decoded, 'user_id') ?? 0);
+        $role = (string) (self::decoded_token_value($decoded, 'role') ?? '');
+        $attempt_id = (int) (self::decoded_token_value($decoded, 'attempt_id') ?? 0);
+        $session_key = (string) (self::decoded_token_value($decoded, 'session_key') ?? '');
+
+        if ($purpose !== self::ANSWER_SYNC_TOKEN_PURPOSE || $user_id <= 0 || $attempt_id <= 0 || $session_key === '') {
+            return new WP_Error('answer_sync_token_invalid', 'Invalid answer sync token', ['status' => 401]);
+        }
+
+        if ($expected_attempt_id > 0 && $attempt_id !== $expected_attempt_id) {
+            return new WP_Error('answer_sync_token_attempt_mismatch', 'Answer sync token does not match this attempt', ['status' => 403]);
+        }
+
+        if (!in_array($role, ['siswa', 'student'], true)) {
+            return new WP_Error('answer_sync_token_forbidden', 'Only student answer sync tokens are accepted', ['status' => 403]);
+        }
+
+        $active_state = self::read_active_login_state($user_id);
+        $active_session_key = (string) ($active_state['session_key'] ?? '');
+        if ($active_session_key === '' || !hash_equals($active_session_key, $session_key)) {
+            return new WP_Error('session_revoked', 'Sesi login ini sudah digantikan oleh login lain. Silakan login kembali.', ['status' => 401]);
+        }
+
+        return [
+            'data' => [
+                'purpose' => self::ANSWER_SYNC_TOKEN_PURPOSE,
+                'user_id' => $user_id,
+                'role' => $role,
+                'attempt_id' => $attempt_id,
+                'session_key' => $session_key,
+            ],
+        ];
+    }
+
     private static function decode_request_token_payload(WP_REST_Request $request)
     {
         $lib_check = self::ensure_jwt_library();
@@ -244,7 +337,12 @@ class CBT_Auth
         }
 
         try {
-            return (array) JWT::decode($token, new Key(self::jwt_secret(), 'HS256'));
+            $decoded = (array) JWT::decode($token, new Key(self::jwt_secret(), 'HS256'));
+            $purpose = (string) (self::decoded_token_value($decoded, 'purpose') ?? '');
+            if ($purpose === self::ANSWER_SYNC_TOKEN_PURPOSE) {
+                return new WP_Error('answer_sync_token_scope', 'Answer sync token is only valid for answer submission', ['status' => 401]);
+            }
+            return $decoded;
         } catch (Throwable $exception) {
             return new WP_Error('invalid_token', 'Invalid or expired token', ['status' => 401]);
         }
@@ -253,6 +351,10 @@ class CBT_Auth
     public static function current_user_id(WP_REST_Request $request): int
     {
         $decoded = self::verify_request_token($request);
+        if (is_wp_error($decoded) && self::is_answer_submission_request($request)) {
+            $attempt_id = absint($request->get_param('attempt_id'));
+            $decoded = self::verify_answer_sync_token($request, $attempt_id);
+        }
         if (is_wp_error($decoded)) {
             return 0;
         }
@@ -264,6 +366,10 @@ class CBT_Auth
     public static function current_user_role(WP_REST_Request $request): string
     {
         $decoded = self::verify_request_token($request);
+        if (is_wp_error($decoded) && self::is_answer_submission_request($request)) {
+            $attempt_id = absint($request->get_param('attempt_id'));
+            $decoded = self::verify_answer_sync_token($request, $attempt_id);
+        }
         if (is_wp_error($decoded)) {
             return '';
         }
@@ -296,6 +402,34 @@ class CBT_Auth
         }
 
         return true;
+    }
+
+    public static function permission_answer_submission(WP_REST_Request $request)
+    {
+        $normal_permission = self::permission_teacher_or_student($request);
+        if ($normal_permission === true) {
+            return true;
+        }
+
+        $attempt_id = absint($request->get_param('attempt_id'));
+        if ($attempt_id <= 0) {
+            return $normal_permission;
+        }
+
+        $answer_sync_permission = self::verify_answer_sync_token($request, $attempt_id);
+        if (is_wp_error($answer_sync_permission)) {
+            return $normal_permission;
+        }
+
+        return true;
+    }
+
+    private static function is_answer_submission_request(WP_REST_Request $request): bool
+    {
+        $route = method_exists($request, 'get_route') ? (string) $request->get_route() : '';
+        $route = '/' . ltrim($route, '/');
+
+        return in_array($route, ['/cbt/v1/submit_answer', '/cbt/v1/submit_answers_batch'], true);
     }
 
     public static function permission_supervisor_dashboard(WP_REST_Request $request)

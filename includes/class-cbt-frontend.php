@@ -786,6 +786,9 @@ class CBT_Frontend
         $scope_path_json = self::service_worker_json($scope_path);
         $build_base_path_json = self::service_worker_json(rtrim($build_base_path, '/') . '/');
         $offline_html_json = self::service_worker_json(self::render_service_worker_offline_html());
+        $rest_base_url = function_exists('rest_url') ? (string) rest_url('cbt/v1') : '/wp-json/cbt/v1/';
+        $rest_base_path = self::ensure_trailing_slash((string) wp_parse_url($rest_base_url, PHP_URL_PATH));
+        $rest_base_path_json = self::service_worker_json($rest_base_path !== '' ? $rest_base_path : '/wp-json/cbt/v1/');
 
         return <<<JS
 (function () {
@@ -799,7 +802,13 @@ class CBT_Frontend
     var SHELL_URL = {$shell_url_json};
     var SCOPE_PATH = {$scope_path_json};
     var BUILD_BASE_PATH = {$build_base_path_json};
+    var REST_BASE_PATH = {$rest_base_path_json};
     var OFFLINE_HTML = {$offline_html_json};
+    var ANSWER_QUEUE_DB_NAME = 'cbt_exam_answer_queue_v1';
+    var ANSWER_QUEUE_STORE = 'answers';
+    var AUTH_GRANT_STORE = 'auth_grants';
+    var ANSWER_SYNC_TAG = 'cbt-answer-sync';
+    var ANSWER_SYNC_LEASE_MS = 30000;
     var PRECACHE_LOOKUP = Object.create(null);
 
     PRECACHE_URLS.forEach(function (url) {
@@ -901,6 +910,253 @@ class CBT_Frontend
         });
     }
 
+    function openAnswerQueueDb() {
+        if (!self.indexedDB) {
+            return Promise.resolve(null);
+        }
+
+        return new Promise(function (resolve) {
+            var request;
+            try {
+                request = self.indexedDB.open(ANSWER_QUEUE_DB_NAME, 1);
+            } catch (error) {
+                resolve(null);
+                return;
+            }
+
+            request.onupgradeneeded = function () {
+                var db = request.result;
+                if (!db.objectStoreNames.contains(ANSWER_QUEUE_STORE)) {
+                    db.createObjectStore(ANSWER_QUEUE_STORE, { keyPath: 'queue_key' });
+                }
+                if (!db.objectStoreNames.contains(AUTH_GRANT_STORE)) {
+                    db.createObjectStore(AUTH_GRANT_STORE, { keyPath: 'grant_key' });
+                }
+            };
+            request.onsuccess = function () {
+                resolve(request.result || null);
+            };
+            request.onerror = function () {
+                resolve(null);
+            };
+            request.onblocked = function () {
+                resolve(null);
+            };
+        });
+    }
+
+    function withAnswerQueueStore(storeName, mode, callback) {
+        return openAnswerQueueDb().then(function (db) {
+            if (!db) {
+                return null;
+            }
+
+            return new Promise(function (resolve) {
+                var result = null;
+                var settled = false;
+                var tx;
+                try {
+                    tx = db.transaction(storeName, mode);
+                    var request = callback(tx.objectStore(storeName));
+                    if (request && typeof request === 'object') {
+                        request.onsuccess = function () {
+                            result = request.result;
+                        };
+                        request.onerror = function () {
+                            result = null;
+                        };
+                    }
+                } catch (error) {
+                    resolve(null);
+                    return;
+                }
+
+                tx.oncomplete = function () {
+                    if (!settled) {
+                        settled = true;
+                        resolve(result);
+                    }
+                };
+                tx.onerror = function () {
+                    if (!settled) {
+                        settled = true;
+                        resolve(null);
+                    }
+                };
+                tx.onabort = tx.onerror;
+            });
+        });
+    }
+
+    function normalizeQueueItem(raw) {
+        if (!raw || typeof raw !== 'object') {
+            return null;
+        }
+        var questionId = Number(raw.question_id) || 0;
+        var attemptId = Number(raw.attempt_id) || 0;
+        var userId = Number(raw.user_id) || 0;
+        if (questionId <= 0 || attemptId <= 0 || userId <= 0) {
+            return null;
+        }
+        return raw;
+    }
+
+    function listAnswerQueueItems() {
+        return withAnswerQueueStore(ANSWER_QUEUE_STORE, 'readonly', function (store) {
+            return store.getAll();
+        }).then(function (items) {
+            return (Array.isArray(items) ? items : []).map(normalizeQueueItem).filter(Boolean);
+        });
+    }
+
+    function putAnswerQueueItem(item) {
+        return withAnswerQueueStore(ANSWER_QUEUE_STORE, 'readwrite', function (store) {
+            return store.put(item);
+        });
+    }
+
+    function deleteAnswerQueueItem(queueKey) {
+        return withAnswerQueueStore(ANSWER_QUEUE_STORE, 'readwrite', function (store) {
+            return store.delete(queueKey);
+        });
+    }
+
+    function listAuthGrants() {
+        return withAnswerQueueStore(AUTH_GRANT_STORE, 'readonly', function (store) {
+            return store.getAll();
+        }).then(function (items) {
+            var now = Date.now();
+            return (Array.isArray(items) ? items : []).filter(function (grant) {
+                return grant && String(grant.token || '') !== '' && Number(grant.expires_at_ms) > now;
+            });
+        });
+    }
+
+    function acquireAnswerQueueBatch(grant) {
+        var now = Date.now();
+        var owner = 'sw:' + BUILD_ID;
+        return listAnswerQueueItems().then(function (items) {
+            var available = items.filter(function (item) {
+                if (Number(item.user_id) !== Number(grant.user_id) || Number(item.attempt_id) !== Number(grant.attempt_id)) {
+                    return false;
+                }
+                if (item.status === 'pending' || item.status === 'failed_retryable') {
+                    return true;
+                }
+                return item.status === 'syncing' && Number(item.lease_until) > 0 && Number(item.lease_until) <= now;
+            }).slice(0, 10);
+
+            return available.reduce(function (promise, item) {
+                return promise.then(function (acquired) {
+                    item.status = 'syncing';
+                    item.lease_owner = owner;
+                    item.lease_until = now + ANSWER_SYNC_LEASE_MS;
+                    item.attempted_at = now;
+                    item.attempt_count = Math.max(0, Number(item.attempt_count) || 0) + 1;
+                    item.updated_at = now;
+                    return putAnswerQueueItem(item).then(function () {
+                        acquired.push(item);
+                        return acquired;
+                    });
+                });
+            }, Promise.resolve([]));
+        });
+    }
+
+    function releaseAnswerQueueBatch(items, status, message) {
+        var now = Date.now();
+        return (Array.isArray(items) ? items : []).reduce(function (promise, item) {
+            return promise.then(function () {
+                item.status = status || 'failed_retryable';
+                item.lease_owner = '';
+                item.lease_until = 0;
+                item.last_error = String(message || '');
+                item.updated_at = now;
+                return putAnswerQueueItem(item);
+            });
+        }, Promise.resolve());
+    }
+
+    function ackAnswerQueueBatch(items) {
+        return (Array.isArray(items) ? items : []).reduce(function (promise, item) {
+            return promise.then(function () {
+                return withAnswerQueueStore(ANSWER_QUEUE_STORE, 'readonly', function (store) {
+                    return store.get(item.queue_key);
+                }).then(function (current) {
+                    if (current && String(current.signature || '') === String(item.signature || '')) {
+                        return deleteAnswerQueueItem(item.queue_key);
+                    }
+                    return null;
+                });
+            });
+        }, Promise.resolve());
+    }
+
+    function notifyAnswerSyncComplete() {
+        return listAnswerQueueItems().then(function (items) {
+            return self.clients.matchAll({ includeUncontrolled: true }).then(function (clients) {
+                clients.forEach(function (client) {
+                    client.postMessage({
+                        type: 'CBT_SW_ANSWER_SYNC_COMPLETE',
+                        remaining: items.filter(function (item) {
+                            return item.status !== 'acked';
+                        }).length
+                    });
+                });
+            });
+        });
+    }
+
+    function flushAnswerQueueForGrant(grant) {
+        return acquireAnswerQueueBatch(grant).then(function (items) {
+            if (!items.length) {
+                return null;
+            }
+            return fetch(new URL('submit_answers_batch', self.location.origin + REST_BASE_PATH).toString(), {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'Authorization': 'Bearer ' + String(grant.token || ''),
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    attempt_id: Number(grant.attempt_id) || 0,
+                    answers: items.map(function (item) {
+                        return {
+                            question_id: Number(item.question_id) || 0,
+                            answer: Object.prototype.hasOwnProperty.call(item, 'answer') ? item.answer : null
+                        };
+                    })
+                })
+            }).then(function (response) {
+                if (response && response.ok) {
+                    return ackAnswerQueueBatch(items);
+                }
+                if (response && Number(response.status) === 401) {
+                    return releaseAnswerQueueBatch(items, 'failed_retryable', 'answer_sync_token_expired');
+                }
+                if (response && Number(response.status) >= 400 && Number(response.status) < 500) {
+                    return releaseAnswerQueueBatch(items, 'failed_terminal', 'answer_sync_rejected');
+                }
+                return releaseAnswerQueueBatch(items, 'failed_retryable', 'answer_sync_retryable');
+            }).catch(function () {
+                return releaseAnswerQueueBatch(items, 'failed_retryable', 'answer_sync_network_error');
+            });
+        });
+    }
+
+    function flushQueuedAnswers() {
+        return listAuthGrants().then(function (grants) {
+            return grants.reduce(function (promise, grant) {
+                return promise.then(function () {
+                    return flushAnswerQueueForGrant(grant);
+                });
+            }, Promise.resolve());
+        }).then(function () {
+            return notifyAnswerSyncComplete();
+        });
+    }
+
     self.addEventListener('install', function (event) {
         event.waitUntil(
             caches.open(STATIC_CACHE).then(function (cache) {
@@ -939,6 +1195,23 @@ class CBT_Frontend
                 return self.clients.claim();
             })
         );
+    });
+
+    self.addEventListener('sync', function (event) {
+        if (event.tag === ANSWER_SYNC_TAG) {
+            event.waitUntil(flushQueuedAnswers());
+        }
+    });
+
+    self.addEventListener('message', function (event) {
+        var data = event && event.data && typeof event.data === 'object' ? event.data : null;
+        if (!data || String(data.type || '') !== 'CBT_FLUSH_ANSWER_QUEUE') {
+            return;
+        }
+        var flushPromise = flushQueuedAnswers();
+        if (event && typeof event.waitUntil === 'function') {
+            event.waitUntil(flushPromise);
+        }
     });
 
     self.addEventListener('fetch', function (event) {
@@ -1179,6 +1452,7 @@ JS;
             'serviceWorkerUrl' => $service_worker_config['url'],
             'serviceWorkerScope' => $service_worker_config['scope'],
             'serviceWorkerBuildId' => $service_worker_config['build_id'],
+            'answerSyncBackgroundEnabled' => $service_worker_config['enabled'],
         ]);
 
         self::$localized = true;

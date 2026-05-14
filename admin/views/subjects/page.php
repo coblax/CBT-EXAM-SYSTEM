@@ -1316,7 +1316,9 @@
                 }
 
                 function extractSubjectResponseError(text, status) {
-                    const raw = String(text || '').replace(/<script[\s\S]*?<\/script>/gi, ' ');
+                    const raw = String(text || '')
+                        .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+                        .replace(/<style[\s\S]*?<\/style>/gi, ' ');
                     let plain = raw.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
                     if (plain.length > 180) {
                         plain = plain.slice(0, 180) + '...';

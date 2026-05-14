@@ -65,6 +65,7 @@ import { createSyncLifecycleBridge } from './core/sync-lifecycle-bridge';
 import { createAppShellManager } from './core/app-shell';
 import { createStageRuntimeManager } from './core/stage-runtime';
 import { createUiPreferencesManager } from './core/ui-preferences';
+import { createReadonlyApiCache } from './storage/readonly-api-cache';
 import { createAuthSessionManager } from './core/auth-session';
 import { createApiClient } from './core/api';
 import { escapeHtml } from './core/html';
@@ -954,6 +955,11 @@ export function bootstrapFrontendApp() {
             return (window.navigator && window.navigator.onLine === false) ? 'offline' : 'online';
         },
         isAnswerSubmitPath: isAnswerSubmitPath,
+        readOnlyApiCache: createReadonlyApiCache({
+            getIndexedDb: getIndexedDb,
+            getLocalStorage: getLocalStorage,
+            state: state
+        }),
         schedulePendingAnswerRetry: schedulePendingAnswerRetry,
         setConnectionStatus: setConnectionStatus,
         state: state,
@@ -1346,6 +1352,7 @@ export function bootstrapFrontendApp() {
                 autoSaveCongestedWindowMs: AUTO_SAVE_CONGESTED_WINDOW_MS,
                 autoSaveTextDelayCongestedMs: AUTO_SAVE_TEXT_DELAY_CONGESTED_MS,
                 autoSaveTextDelayMs: AUTO_SAVE_TEXT_DELAY_MS,
+                answerSyncBackgroundEnabled: !!config.answerSyncBackgroundEnabled,
                 buildDoubtfulSessionStorageKey: buildDoubtfulSessionStorageKey,
                 clearMessages: clearMessages,
                 clearPersistedDoubtfulState: clearPersistedDoubtfulState,

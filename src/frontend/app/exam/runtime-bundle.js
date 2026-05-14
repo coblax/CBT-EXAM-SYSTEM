@@ -1,4 +1,5 @@
 import { createAttemptUiStateStorage } from '../storage/attempt-ui-state';
+import { createDurableAnswerQueueStorage } from '../storage/durable-answer-queue';
 import { createQuestionCacheStorage } from '../storage/question-cache';
 import { createAnswerInputManager } from './answer-inputs';
 import { createAnswerSyncManager } from './answer-sync';
@@ -28,6 +29,11 @@ export function createExamRuntimeBundle(deps) {
     var finishFlowManager = null;
     var navigationManager = null;
     var questionCacheStorage = null;
+    var durableAnswerQueue = createDurableAnswerQueueStorage({
+        getIndexedDb: deps.getIndexedDb,
+        getLocalStorage: deps.getLocalStorage,
+        now: Date.now
+    });
 
     var questionWindowManager = createQuestionWindowManager({
         escapeHtml: deps.escapeHtml,
@@ -60,7 +66,9 @@ export function createExamRuntimeBundle(deps) {
         autoSaveCongestedWindowMs: deps.autoSaveCongestedWindowMs,
         autoSaveTextDelayCongestedMs: deps.autoSaveTextDelayCongestedMs,
         autoSaveTextDelayMs: deps.autoSaveTextDelayMs,
+        answerSyncBackgroundEnabled: !!deps.answerSyncBackgroundEnabled,
         diagnosticsManager: deps.diagnosticsManager,
+        durableAnswerQueue: durableAnswerQueue,
         getNavigatorConnectionStatus: deps.getNavigatorConnectionStatus,
         getQuestionById: questionWindowManager.getQuestionById,
         getQuestionDataGeneration: function () {

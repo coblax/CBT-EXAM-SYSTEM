@@ -10,6 +10,7 @@ import { createAppMetaManager } from '../core/app-meta.js';
 import { createAppShellManager } from '../core/app-shell.js';
 import { createAuthStageManager } from '../core/auth-stages.js';
 import { createUiPreferencesManager } from '../core/ui-preferences.js';
+import { createReadonlyApiCache } from '../storage/readonly-api-cache.js';
 import { escapeHtml } from '../core/html.js';
 import {
     formatDateTime,
@@ -76,6 +77,11 @@ export function createAuthenticatedStageRuntime(context, options) {
         isAnswerSubmitPath: function () {
             return false;
         },
+        readOnlyApiCache: createReadonlyApiCache({
+            getIndexedDb: browserStorage.getIndexedDb,
+            getLocalStorage: browserStorage.getLocalStorage,
+            state: state
+        }),
         schedulePendingAnswerRetry: function () {},
         setConnectionStatus: setConnectionStatus,
         state: state,

@@ -80,6 +80,7 @@ export function getFrontendConfig(win) {
         serviceWorkerUrl: String(raw.serviceWorkerUrl || '').trim(),
         serviceWorkerScope: String(raw.serviceWorkerScope || '').trim(),
         serviceWorkerBuildId: String(raw.serviceWorkerBuildId || '').trim(),
+        answerSyncBackgroundEnabled: normalizeBooleanFlag(raw.answerSyncBackgroundEnabled),
         securityForceFullscreen: normalizeBooleanFlag(raw.securityForceFullscreen),
         securityBlockCopyPaste: normalizeBooleanFlag(raw.securityBlockCopyPaste),
         securityBlockBrowserInspectionShortcuts: normalizeBooleanFlag(raw.securityBlockBrowserInspectionShortcuts),

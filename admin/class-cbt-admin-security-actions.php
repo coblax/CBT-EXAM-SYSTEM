@@ -13,6 +13,7 @@ final class CBT_Admin_Security_Actions
     public static function handle_save_security_settings(): void
     {
         if (!CBT_Admin_Security_Service::can_manage_exams()) {
+            self::maybe_send_security_refresh_error('Unauthorized', 'security', 403, false);
             wp_die('Unauthorized');
         }
 
@@ -59,6 +60,8 @@ final class CBT_Admin_Security_Actions
         update_option($security_option_key, $security_settings, false);
         CBT_Admin_Security_Service::flush_security_settings_cache();
 
+        self::maybe_send_security_refresh_success('Pengaturan security berhasil disimpan.', 'security');
+
         wp_safe_redirect(
             admin_url('admin.php?page=cbt-security&cbt_msg=' . rawurlencode('Pengaturan security berhasil disimpan.')) . '#security'
         );
@@ -87,10 +90,11 @@ final class CBT_Admin_Security_Actions
     public static function handle_manage_security_logs(): void
     {
         if (!CBT_Admin_Security_Service::can_manage_exams()) {
+            self::maybe_send_security_refresh_error('Unauthorized', 'security-log', 403, false);
             wp_die('Unauthorized');
         }
 
-        check_admin_referer('cbt_manage_security_logs');
+        self::verify_security_action_nonce('cbt_manage_security_logs', 'security-log');
 
         $teacher_id = CBT_Admin_Security_Service::is_admin_scope() ? 0 : get_current_user_id();
         $delete_scope = isset($_POST['delete_scope'])
@@ -106,6 +110,7 @@ final class CBT_Admin_Security_Actions
                 : [];
 
             if (empty($selected_log_ids)) {
+                self::maybe_send_security_refresh_error('Pilih minimal satu security log untuk dihapus.', 'security-log', 400);
                 wp_safe_redirect($redirect_url . '&cbt_err=' . rawurlencode('Pilih minimal satu security log untuk dihapus.') . $redirect_suffix);
                 exit;
             }
@@ -115,10 +120,12 @@ final class CBT_Admin_Security_Actions
             ]);
 
             if ($deleted_count > 0) {
+                self::maybe_send_security_refresh_success(sprintf('Security log berhasil dihapus: %d.', $deleted_count), 'security-log');
                 wp_safe_redirect($redirect_url . '&cbt_msg=' . rawurlencode(sprintf('Security log berhasil dihapus: %d.', $deleted_count)) . $redirect_suffix);
                 exit;
             }
 
+            self::maybe_send_security_refresh_error('Log yang dipilih tidak ditemukan atau tidak bisa dihapus.', 'security-log', 404);
             wp_safe_redirect($redirect_url . '&cbt_err=' . rawurlencode('Log yang dipilih tidak ditemukan atau tidak bisa dihapus.') . $redirect_suffix);
             exit;
         }
@@ -129,14 +136,17 @@ final class CBT_Admin_Security_Actions
             ]);
 
             if ($deleted_count > 0) {
+                self::maybe_send_security_refresh_success(sprintf('Semua security log berhasil dihapus: %d.', $deleted_count), 'security-log');
                 wp_safe_redirect($redirect_url . '&cbt_msg=' . rawurlencode(sprintf('Semua security log berhasil dihapus: %d.', $deleted_count)) . $redirect_suffix);
                 exit;
             }
 
+            self::maybe_send_security_refresh_error('Tidak ada security log yang bisa dihapus.', 'security-log', 404);
             wp_safe_redirect($redirect_url . '&cbt_err=' . rawurlencode('Tidak ada security log yang bisa dihapus.') . $redirect_suffix);
             exit;
         }
 
+        self::maybe_send_security_refresh_error('Aksi security log tidak dikenali.', 'security-log', 400);
         wp_safe_redirect($redirect_url . '&cbt_err=' . rawurlencode('Aksi security log tidak dikenali.') . $redirect_suffix);
         exit;
     }
@@ -144,12 +154,14 @@ final class CBT_Admin_Security_Actions
     public static function handle_simulate_native_security_event(): void
     {
         if (!CBT_Admin_Security_Service::can_manage_exams()) {
+            self::maybe_send_security_refresh_error('Unauthorized', 'native', 403, false);
             wp_die('Unauthorized');
         }
 
-        check_admin_referer('cbt_simulate_native_security_event');
+        self::verify_security_action_nonce('cbt_simulate_native_security_event', 'native');
 
         if (!CBT_Security_Log::is_logging_enabled()) {
+            self::maybe_send_security_refresh_error('Aktifkan logging security terlebih dahulu sebelum mensimulasikan native event.', 'native', 400);
             wp_safe_redirect(
                 admin_url('admin.php?page=cbt-security&cbt_err=' . rawurlencode('Aktifkan logging security terlebih dahulu sebelum mensimulasikan native event.')) . '#native'
             );
@@ -164,18 +176,21 @@ final class CBT_Admin_Security_Actions
         $native_version = isset($_POST['native_version']) ? sanitize_text_field((string) wp_unslash($_POST['native_version'])) : '';
 
         if ($attempt_id <= 0) {
+            self::maybe_send_security_refresh_error('Attempt ID wajib diisi untuk simulasi native event.', 'native', 400);
             wp_safe_redirect(admin_url('admin.php?page=cbt-security&cbt_err=' . rawurlencode('Attempt ID wajib diisi untuk simulasi native event.')) . '#native');
             exit;
         }
 
         $native_app_labels = CBT_Security_Log::native_app_labels();
         if ($native_app === '' || !isset($native_app_labels[$native_app])) {
+            self::maybe_send_security_refresh_error('Native app tidak dikenali.', 'native', 400);
             wp_safe_redirect(admin_url('admin.php?page=cbt-security&cbt_err=' . rawurlencode('Native app tidak dikenali.')) . '#native');
             exit;
         }
 
         $native_event_definitions = CBT_Security_Log::native_supported_event_definitions_for_app($native_app);
         if ($event_type === '' || !isset($native_event_definitions[$event_type])) {
+            self::maybe_send_security_refresh_error('Event native tidak dikenali untuk app yang dipilih.', 'native', 400);
             wp_safe_redirect(admin_url('admin.php?page=cbt-security&cbt_err=' . rawurlencode('Event native tidak dikenali untuk app yang dipilih.')) . '#native');
             exit;
         }
@@ -193,11 +208,14 @@ final class CBT_Admin_Security_Actions
 
         $logged = CBT_Security_Log::record_attempt_event($attempt_id, $event_type, $context);
         if (!$logged) {
+            self::maybe_send_security_refresh_error('Simulasi native event gagal dicatat. Pastikan attempt aktif masih ada dan logging security menyala.', 'native', 500);
             wp_safe_redirect(
                 admin_url('admin.php?page=cbt-security&cbt_err=' . rawurlencode('Simulasi native event gagal dicatat. Pastikan attempt aktif masih ada dan logging security menyala.')) . '#native'
             );
             exit;
         }
+
+        self::maybe_send_security_refresh_success('Simulasi native event berhasil dicatat ke security log.', 'security-log');
 
         wp_safe_redirect(
             admin_url('admin.php?page=cbt-security&cbt_msg=' . rawurlencode('Simulasi native event berhasil dicatat ke security log.')) . '#security-log'
@@ -213,6 +231,144 @@ final class CBT_Admin_Security_Actions
             return;
         }
 
+        if (self::is_security_local_refresh_request()) {
+            $fallback_nonce = isset($_REQUEST['_wpnonce']) ? (string) wp_unslash($_REQUEST['_wpnonce']) : '';
+            if ($fallback_nonce !== '' && wp_verify_nonce($fallback_nonce, 'cbt_save_setup_security')) {
+                return;
+            }
+
+            self::send_security_refresh_json(false, 'Sesi admin sudah kedaluwarsa. Muat ulang halaman lalu coba lagi.', 'security', 403);
+        }
+
         check_admin_referer('cbt_save_setup_security');
+    }
+
+    private static function verify_security_action_nonce(string $action, string $tab): void
+    {
+        if (!self::is_security_local_refresh_request()) {
+            check_admin_referer($action);
+            return;
+        }
+
+        $nonce = isset($_REQUEST['_wpnonce']) ? (string) wp_unslash($_REQUEST['_wpnonce']) : '';
+        if ($nonce !== '' && wp_verify_nonce($nonce, $action)) {
+            return;
+        }
+
+        self::send_security_refresh_json(false, 'Sesi admin sudah kedaluwarsa. Muat ulang halaman lalu coba lagi.', $tab, 403);
+    }
+
+    private static function is_security_local_refresh_request(): bool
+    {
+        $requested = !empty($_POST['cbt_security_local_refresh']) || !empty($_GET['cbt_security_local_refresh']);
+        $xhr = isset($_SERVER['HTTP_X_REQUESTED_WITH'])
+            && strtolower((string) $_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
+
+        return $requested || $xhr;
+    }
+
+    private static function maybe_send_security_refresh_success(string $message, string $tab): void
+    {
+        if (!self::is_security_local_refresh_request()) {
+            return;
+        }
+
+        self::send_security_refresh_json(true, $message, $tab, 200);
+    }
+
+    private static function maybe_send_security_refresh_error(string $message, string $tab, int $status, bool $include_html = true): void
+    {
+        if (!self::is_security_local_refresh_request()) {
+            return;
+        }
+
+        self::send_security_refresh_json(false, $message, $tab, $status, $include_html);
+    }
+
+    private static function send_security_refresh_json(bool $success, string $message, string $tab, int $status, bool $include_html = true): void
+    {
+        $html = $include_html
+            ? self::render_security_page_html(
+                $success ? $message : '',
+                $success ? '' : $message
+            )
+            : '';
+        $payload = [
+            'html' => $html,
+            'message' => $message,
+            'tab' => $tab,
+        ];
+
+        if ($success && function_exists('wp_send_json_success')) {
+            wp_send_json_success($payload, $status);
+            exit;
+        }
+        if (!$success && function_exists('wp_send_json_error')) {
+            wp_send_json_error($payload, $status);
+            exit;
+        }
+
+        if (function_exists('status_header')) {
+            status_header($status);
+        }
+        if (!headers_sent()) {
+            header('Content-Type: application/json; charset=UTF-8');
+        }
+
+        echo wp_json_encode([
+            'success' => $success,
+            'data' => $payload,
+        ]);
+        exit;
+    }
+
+    private static function render_security_page_html(string $notice = '', string $error = ''): string
+    {
+        if (!class_exists('CBT_Admin_Security_Page')) {
+            require_once __DIR__ . '/class-cbt-admin-security-page.php';
+        }
+
+        $previous_page = $_GET['page'] ?? null;
+        $previous_notice = $_GET['cbt_msg'] ?? null;
+        $previous_error = $_GET['cbt_err'] ?? null;
+
+        $_GET['page'] = 'cbt-security';
+        if ($notice !== '') {
+            $_GET['cbt_msg'] = $notice;
+            unset($_GET['cbt_err']);
+        } elseif ($error !== '') {
+            $_GET['cbt_err'] = $error;
+            unset($_GET['cbt_msg']);
+        }
+
+        $buffer_level = ob_get_level();
+        ob_start();
+        try {
+            CBT_Admin_Security_Page::render();
+            $html = (string) ob_get_clean();
+        } finally {
+            while (ob_get_level() > $buffer_level) {
+                ob_end_clean();
+            }
+
+            self::restore_query_value('page', $previous_page);
+            self::restore_query_value('cbt_msg', $previous_notice);
+            self::restore_query_value('cbt_err', $previous_error);
+        }
+
+        return $html;
+    }
+
+    /**
+     * @param mixed $value
+     */
+    private static function restore_query_value(string $key, $value): void
+    {
+        if ($value === null) {
+            unset($_GET[$key]);
+            return;
+        }
+
+        $_GET[$key] = $value;
     }
 }

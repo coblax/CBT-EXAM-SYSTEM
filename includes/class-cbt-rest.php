@@ -424,12 +424,18 @@ class CBT_REST
         register_rest_route('cbt/v1', '/submit_answer', [
             'methods' => WP_REST_Server::CREATABLE,
             'callback' => [self::class, 'submit_answer'],
-            'permission_callback' => [CBT_Auth::class, 'permission_teacher_or_student'],
+            'permission_callback' => [CBT_Auth::class, 'permission_answer_submission'],
         ]);
 
         register_rest_route('cbt/v1', '/submit_answers_batch', [
             'methods' => WP_REST_Server::CREATABLE,
             'callback' => [self::class, 'submit_answers_batch'],
+            'permission_callback' => [CBT_Auth::class, 'permission_answer_submission'],
+        ]);
+
+        register_rest_route('cbt/v1', '/answer_sync_token', [
+            'methods' => WP_REST_Server::CREATABLE,
+            'callback' => [self::class, 'answer_sync_token'],
             'permission_callback' => [CBT_Auth::class, 'permission_teacher_or_student'],
         ]);
 

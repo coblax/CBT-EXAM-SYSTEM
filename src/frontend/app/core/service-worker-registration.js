@@ -26,6 +26,22 @@ export function registerServiceWorker(config, deps) {
         return false;
     }
 
+    if (typeof navigatorRef.serviceWorker.addEventListener === 'function') {
+        navigatorRef.serviceWorker.addEventListener('message', function (event) {
+            var data = event && event.data && typeof event.data === 'object' ? event.data : null;
+            if (!data || String(data.type || '') !== 'CBT_SW_ANSWER_SYNC_COMPLETE') {
+                return;
+            }
+            if (typeof windowRef.dispatchEvent === 'function' && typeof windowRef.CustomEvent === 'function') {
+                windowRef.dispatchEvent(new windowRef.CustomEvent('cbt:sw-answer-sync-complete', {
+                    detail: {
+                        remaining: Math.max(0, Number(data.remaining) || 0)
+                    }
+                }));
+            }
+        });
+    }
+
     var register = function () {
         return navigatorRef.serviceWorker.register(serviceWorkerUrl, {
             scope: serviceWorkerScope

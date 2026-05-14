@@ -62,11 +62,27 @@ final class SetupSecurityProgressUiTest extends TestCase
 
         self::assertStringContainsString('startSecurityProgress', $html);
         self::assertStringContainsString('completeSecurityProgress', $html);
+        self::assertStringContainsString('parseSecurityFetchResponse', $html);
+        self::assertStringContainsString('normalizeSecurityJsonPayload', $html);
+        self::assertStringContainsString('application/json, text/html', $html);
+        self::assertStringContainsString('cbt_security_local_refresh', $html);
         self::assertStringContainsString('replaceSecurityRefreshAreas', $html);
         self::assertStringContainsString('bindSecurityAsyncForms();', $html);
         self::assertStringContainsString('Memperbarui panel Security tanpa reload global.', $html);
         self::assertStringNotContainsString('window.location.reload', $html);
         self::assertStringNotContainsString('location.reload', $html);
+    }
+
+    public function test_security_actions_support_json_local_refresh_without_redirect_dependency(): void
+    {
+        $source = (string) file_get_contents(dirname(__DIR__, 3) . '/admin/class-cbt-admin-security-actions.php');
+
+        self::assertStringContainsString('cbt_security_local_refresh', $source);
+        self::assertStringContainsString('maybe_send_security_refresh_success', $source);
+        self::assertStringContainsString('maybe_send_security_refresh_error', $source);
+        self::assertStringContainsString('send_security_refresh_json', $source);
+        self::assertStringContainsString('wp_send_json_success', $source);
+        self::assertStringContainsString('render_security_page_html', $source);
     }
 
     private function renderSecurityView(): string
