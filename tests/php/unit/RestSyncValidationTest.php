@@ -146,6 +146,106 @@ final class RestSyncValidationTest extends TestCase
     }
 
     #[RunInSeparateProcess]
+    public function test_finish_exam_rejects_completion_when_runtime_flush_still_has_pending_answers(): void
+    {
+        $this->bootstrapRestScaffold();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
+
+        global $wpdb;
+        $wpdb = new RestSyncValidationFakeWpdb([
+            58 => [
+                'id' => 58,
+                'exam_id' => 9,
+                'student_id' => 7,
+                'status' => 'in_progress',
+                'started_at' => '2026-03-24 11:00:00',
+                'score' => 0,
+                'max_score' => 0,
+            ],
+        ], [
+            9 => [
+                'kkm_percentage' => 75,
+                'show_student_result' => 1,
+            ],
+        ]);
+
+        \CBT_Runtime::$finishToken = 'finish-token';
+        \CBT_Runtime::$flushAttemptCalls = [];
+        \CBT_Runtime::$flushAttemptResult = [
+            'runtime_used' => 1,
+            'flushed' => 0,
+            'pending_count' => 2,
+        ];
+
+        $result = \CBT_REST::finish_exam(new \WP_REST_Request([
+            'attempt_id' => 58,
+        ]));
+
+        self::assertTrue(is_wp_error($result));
+        self::assertSame('runtime_flush_pending', $result->get_error_code());
+        self::assertSame(
+            [
+                'status' => 409,
+                'pending_count' => 2,
+                'flushed' => 0,
+            ],
+            $result->get_error_data()
+        );
+        self::assertSame([
+            ['attempt_id' => 58, 'force' => true],
+        ], \CBT_Runtime::$flushAttemptCalls);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_finalize_attempt_completion_uses_created_at_fallback_when_started_at_is_invalid(): void
+    {
+        $this->bootstrapRestScaffold();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
+
+        global $wpdb;
+        $wpdb = new RestSyncValidationFakeWpdb([
+            59 => [
+                'id' => 59,
+                'exam_id' => 9,
+                'student_id' => 7,
+                'status' => 'in_progress',
+                'question_order' => '[]',
+                'option_order' => '[]',
+                'started_at' => 'not-a-valid-date',
+                'created_at' => '2026-03-24 11:00:00',
+                'duration_seconds' => 123,
+                'score' => 0,
+                'max_score' => 0,
+            ],
+        ], [
+            9 => [
+                'duration_minutes' => 45,
+                'kkm_percentage' => 75,
+                'show_student_result' => 1,
+            ],
+        ]);
+
+        \CBT_Runtime::$flushAttemptResult = [
+            'runtime_used' => 0,
+            'flushed' => 0,
+            'pending_count' => 0,
+        ];
+
+        $result = \CBT_REST::finalize_attempt_completion(
+            59,
+            '2026-03-24 11:30:00',
+            ['defer_invalidation' => true]
+        );
+
+        self::assertFalse(is_wp_error($result));
+        self::assertSame('completed', $result['status']);
+        self::assertSame('2026-03-24 11:30:00', $result['finished_at']);
+        self::assertCount(1, $wpdb->updateCalls);
+        self::assertSame(1800, $wpdb->updateCalls[0]['data']['duration_seconds']);
+        self::assertSame('2026-03-24 11:30:00', $wpdb->updateCalls[0]['data']['finished_at']);
+    }
+
+    #[RunInSeparateProcess]
     public function test_ui_state_submit_and_restricted_result_helpers_keep_expected_contract_keys(): void
     {
         $this->bootstrapRestScaffold();
@@ -307,6 +407,14 @@ class CBT_Runtime
     public static string $finishToken = '';
     /** @var int[] */
     public static array $acquireFinishLockCalls = [];
+    /** @var array<int,array{attempt_id:int,force:bool}> */
+    public static array $flushAttemptCalls = [];
+    /** @var array<string,int> */
+    public static array $flushAttemptResult = [
+        'runtime_used' => 0,
+        'flushed' => 0,
+        'pending_count' => 0,
+    ];
 
     public static function acquire_finish_lock(int $attempt_id): string
     {
@@ -318,8 +426,19 @@ class CBT_Runtime
     {
     }
 
-    public static function flush_attempt(int $attempt_id, bool $force = false): void
+    public static function is_ready(): bool
     {
+        return false;
+    }
+
+    public static function flush_attempt(int $attempt_id, bool $force = false): array
+    {
+        self::$flushAttemptCalls[] = [
+            'attempt_id' => $attempt_id,
+            'force' => $force,
+        ];
+
+        return self::$flushAttemptResult;
     }
 
     public static function clear_attempt_runtime(int $attempt_id): void
@@ -413,6 +532,8 @@ PHP);
 final class RestSyncValidationFakeWpdb
 {
     public string $prefix = 'wp_';
+    /** @var array<int,array{table:string,data:array<string,mixed>,where:array<string,mixed>}> */
+    public array $updateCalls = [];
 
     /**
      * @param array<int,array<string,mixed>> $attemptRows
@@ -456,5 +577,31 @@ final class RestSyncValidationFakeWpdb
         }
 
         return null;
+    }
+
+    /** @param array<string,mixed>|string $prepared */
+    public function get_results($prepared, $output = null): array
+    {
+        return [];
+    }
+
+    /**
+     * @param array<string,mixed> $data
+     * @param array<string,mixed> $where
+     */
+    public function update($table, array $data, array $where, $format = null, $where_format = null): int
+    {
+        $this->updateCalls[] = [
+            'table' => (string) $table,
+            'data' => $data,
+            'where' => $where,
+        ];
+
+        $attemptId = (int) ($where['id'] ?? 0);
+        if ($attemptId > 0 && isset($this->attemptRows[$attemptId])) {
+            $this->attemptRows[$attemptId] = array_merge($this->attemptRows[$attemptId], $data);
+        }
+
+        return 1;
     }
 }

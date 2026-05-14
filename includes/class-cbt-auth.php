@@ -329,14 +329,25 @@ class CBT_Auth
      */
     public static function get_global_exam_token(bool $auto_rotate = true): array
     {
+        $raw_refresh_minutes = get_option(self::OPTION_GLOBAL_EXAM_TOKEN_REFRESH_MINUTES, null);
         $refresh_minutes = self::normalize_token_refresh_minutes(
-            (int) get_option(self::OPTION_GLOBAL_EXAM_TOKEN_REFRESH_MINUTES, self::DEFAULT_TOKEN_REFRESH_MINUTES)
+            $raw_refresh_minutes === null ? self::DEFAULT_TOKEN_REFRESH_MINUTES : (int) $raw_refresh_minutes
         );
-        update_option(self::OPTION_GLOBAL_EXAM_TOKEN_REFRESH_MINUTES, $refresh_minutes);
+        self::update_integer_option_if_changed(
+            self::OPTION_GLOBAL_EXAM_TOKEN_REFRESH_MINUTES,
+            $raw_refresh_minutes,
+            $refresh_minutes
+        );
+
+        $raw_frontend_auto_apply = get_option(self::OPTION_GLOBAL_EXAM_TOKEN_FRONTEND_AUTO_APPLY, null);
         $frontend_auto_apply = self::normalize_frontend_auto_apply_setting(
-            (int) get_option(self::OPTION_GLOBAL_EXAM_TOKEN_FRONTEND_AUTO_APPLY, 0)
+            $raw_frontend_auto_apply === null ? 0 : (int) $raw_frontend_auto_apply
         );
-        update_option(self::OPTION_GLOBAL_EXAM_TOKEN_FRONTEND_AUTO_APPLY, $frontend_auto_apply);
+        self::update_integer_option_if_changed(
+            self::OPTION_GLOBAL_EXAM_TOKEN_FRONTEND_AUTO_APPLY,
+            $raw_frontend_auto_apply,
+            $frontend_auto_apply
+        );
 
         $token = self::normalize_exam_token((string) get_option(self::OPTION_GLOBAL_EXAM_TOKEN, ''));
         $generated_at = (int) get_option(self::OPTION_GLOBAL_EXAM_TOKEN_GENERATED_AT, 0);
@@ -489,6 +500,33 @@ class CBT_Auth
     private static function normalize_frontend_auto_apply_setting(int $value): int
     {
         return ($value === 1) ? 1 : 0;
+    }
+
+    private static function update_integer_option_if_changed(string $option, $raw_value, int $normalized_value): void
+    {
+        if (self::raw_integer_option_matches($raw_value, $normalized_value)) {
+            return;
+        }
+
+        update_option($option, (string) $normalized_value);
+    }
+
+    private static function raw_integer_option_matches($raw_value, int $normalized_value): bool
+    {
+        if (is_int($raw_value)) {
+            return $raw_value === $normalized_value;
+        }
+
+        if (!is_string($raw_value)) {
+            return false;
+        }
+
+        $raw_value = trim($raw_value);
+        if ($raw_value === '' || !preg_match('/^-?\d+$/', $raw_value)) {
+            return false;
+        }
+
+        return (int) $raw_value === $normalized_value;
     }
 
     private static function normalize_exam_token(string $token): string

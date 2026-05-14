@@ -23,4 +23,34 @@ final class AuthTokenNormalizationTest extends TestCase
 
         self::assertSame('ABCDEF', $normalized);
     }
+
+    public function test_get_global_exam_token_does_not_rewrite_canonical_integer_settings_on_read(): void
+    {
+        $GLOBALS['cbt_test_wp_options']['cbt_global_exam_token_refresh_minutes'] = '15';
+        $GLOBALS['cbt_test_wp_options']['cbt_global_exam_token_frontend_auto_apply'] = '0';
+        $GLOBALS['cbt_test_wp_options']['cbt_global_exam_token_value'] = 'ABC123';
+        $GLOBALS['cbt_test_wp_options']['cbt_global_exam_token_generated_at'] = (string) (time() - 60);
+
+        $meta = \CBT_Auth::get_global_exam_token(false);
+
+        self::assertSame(15, $meta['refresh_minutes']);
+        self::assertSame(0, $meta['frontend_auto_apply']);
+        self::assertSame('15', $GLOBALS['cbt_test_wp_options']['cbt_global_exam_token_refresh_minutes']);
+        self::assertSame('0', $GLOBALS['cbt_test_wp_options']['cbt_global_exam_token_frontend_auto_apply']);
+    }
+
+    public function test_get_global_exam_token_canonicalizes_invalid_integer_settings_on_read(): void
+    {
+        $GLOBALS['cbt_test_wp_options']['cbt_global_exam_token_refresh_minutes'] = '7';
+        $GLOBALS['cbt_test_wp_options']['cbt_global_exam_token_frontend_auto_apply'] = 'enabled';
+        $GLOBALS['cbt_test_wp_options']['cbt_global_exam_token_value'] = 'ABC123';
+        $GLOBALS['cbt_test_wp_options']['cbt_global_exam_token_generated_at'] = (string) (time() - 60);
+
+        $meta = \CBT_Auth::get_global_exam_token(false);
+
+        self::assertSame(15, $meta['refresh_minutes']);
+        self::assertSame(0, $meta['frontend_auto_apply']);
+        self::assertSame('15', $GLOBALS['cbt_test_wp_options']['cbt_global_exam_token_refresh_minutes']);
+        self::assertSame('0', $GLOBALS['cbt_test_wp_options']['cbt_global_exam_token_frontend_auto_apply']);
+    }
 }

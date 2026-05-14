@@ -95,7 +95,7 @@ trait CBT_REST_Finish_Exam_Routes
         $attempt_table = $wpdb->prefix . 'cbt_attempts';
         $attempt = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT id, exam_id, student_id, status, question_order, option_order, score, max_score, started_at, extra_time_minutes
+                "SELECT id, exam_id, student_id, status, question_order, option_order, score, max_score, started_at, duration_seconds, extra_time_minutes, created_at
                  FROM {$attempt_table}
                  WHERE id = %d
                  LIMIT 1",
@@ -114,7 +114,22 @@ trait CBT_REST_Finish_Exam_Routes
         if ($duration_minutes > 0) {
             self::ensure_runtime_attempt_state($attempt, $duration_minutes);
         }
-        CBT_Runtime::flush_attempt($attempt_id, true);
+        $flush_result = CBT_Runtime::flush_attempt($attempt_id, true);
+        if (
+            is_array($flush_result) &&
+            (int) ($flush_result['runtime_used'] ?? 0) === 1 &&
+            (int) ($flush_result['pending_count'] ?? 0) > 0
+        ) {
+            return new WP_Error(
+                'runtime_flush_pending',
+                'Finalisasi ujian menunggu sinkronisasi jawaban. Coba lagi beberapa detik.',
+                [
+                    'status' => 409,
+                    'pending_count' => (int) ($flush_result['pending_count'] ?? 0),
+                    'flushed' => (int) ($flush_result['flushed'] ?? 0),
+                ]
+            );
+        }
 
         $score_snapshot = self::build_attempt_score_snapshot($attempt);
         $score = (float) ($score_snapshot['score'] ?? 0.0);
@@ -128,8 +143,7 @@ trait CBT_REST_Finish_Exam_Routes
         $pass_meta = self::build_result_pass_meta($score, $max_score, $kkm_percentage);
         $finished_at = is_string($finished_at) && $finished_at !== '' ? $finished_at : current_time('mysql');
 
-        $started_ts = self::local_datetime_to_timestamp((string) ($attempt['started_at'] ?? ''));
-        $duration_seconds = max(0, time() - (int) ($started_ts ?? time()));
+        $duration_seconds = self::calculate_attempt_duration_seconds($attempt, $finished_at);
 
         $updated = $wpdb->update(
             $attempt_table,
@@ -207,6 +221,26 @@ trait CBT_REST_Finish_Exam_Routes
 
         return $response;
     }
+
+    /**
+     * @param array<string,mixed> $attempt
+     */
+    private static function calculate_attempt_duration_seconds(array $attempt, string $finished_at): int
+    {
+        $finished_ts = self::local_datetime_to_timestamp($finished_at) ?? time();
+        $started_ts = self::local_datetime_to_timestamp((string) ($attempt['started_at'] ?? ''));
+
+        if ($started_ts === null) {
+            $started_ts = self::local_datetime_to_timestamp((string) ($attempt['created_at'] ?? ''));
+        }
+
+        if ($started_ts === null) {
+            return max(0, (int) ($attempt['duration_seconds'] ?? 0));
+        }
+
+        return max(0, $finished_ts - $started_ts);
+    }
+
     /**
      * @param array<string,mixed> $attempt
      * @return array<string,mixed>
