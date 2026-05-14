@@ -51,8 +51,64 @@ export default defineConfig(({ command }) => ({
                 chunkFileNames: 'assets/[name]-[hash].js',
                 assetFileNames: 'assets/[name]-[hash][extname]',
                 manualChunks(id) {
+                    if (
+                        id.includes('/src/frontend/app/core/config')
+                        || id.includes('/src/frontend/app/core/browser-storage')
+                        || id.includes('/src/frontend/app/core/auth-session')
+                        || id.includes('/src/frontend/app/core/html')
+                    ) {
+                        return 'frontend-shell-auth-core';
+                    }
+                    if (
+                        id.includes('/src/frontend/app/core/api')
+                        || id.includes('/src/frontend/app/core/app-meta')
+                        || id.includes('/src/frontend/app/core/app-shell')
+                        || id.includes('/src/frontend/app/core/auth-stages')
+                        || id.includes('/src/frontend/app/core/format')
+                        || id.includes('/src/frontend/app/core/ui-preferences')
+                    ) {
+                        return 'frontend-stage-auth-core';
+                    }
+                    if (id.includes('/src/frontend/app/shell/')) {
+                        return 'frontend-student-shell';
+                    }
+                    if (id.includes('/src/frontend/app/stages/login-runtime')) {
+                        return 'frontend-stage-login';
+                    }
+                    if (id.includes('/src/frontend/app/stages/confirm-runtime')) {
+                        return 'frontend-stage-confirm';
+                    }
+                    if (id.includes('/src/frontend/app/stages/exam-runtime')) {
+                        return 'frontend-stage-exam';
+                    }
+                    if (id.includes('/src/frontend/app/stages/result-runtime')) {
+                        return 'frontend-stage-result';
+                    }
+                    if (
+                        id.includes('/src/frontend/app/core/security-logging')
+                        || id.includes('/src/frontend/app/core/idle-detection')
+                        || id.includes('/src/frontend/app/exam/security')
+                        || id.includes('/src/frontend/app/core/fullscreen-state')
+                    ) {
+                        return 'frontend-exam-security';
+                    }
+                    if (
+                        id.includes('/src/frontend/app/core/session-heartbeat')
+                        || id.includes('/src/frontend/app/core/session-lifecycle')
+                        || id.includes('/src/frontend/app/core/sync-lifecycle-bridge')
+                        || id.includes('/src/frontend/app/core/attempt-ui-sync')
+                    ) {
+                        return 'frontend-exam-session';
+                    }
                     if (id.includes('/src/frontend/app/exam/question-helpers')) {
                         return 'frontend-exam-shared-helpers';
+                    }
+                    if (
+                        id.includes('/src/frontend/app/exam/question-render')
+                        || id.includes('/src/frontend/app/exam/question-input')
+                        || id.includes('/src/frontend/app/exam/question-stem')
+                    ) {
+                        return 'frontend-exam-question-runtime';
                     }
                     if (id.includes('/src/frontend/app/exam/runtime-bundle')) {
                         return 'frontend-exam-runtime';

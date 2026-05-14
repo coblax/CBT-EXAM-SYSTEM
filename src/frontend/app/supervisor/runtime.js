@@ -2,6 +2,7 @@ import { getFrontendConfig } from '../core/config.js';
 import { createBrowserStorageAccess } from '../core/browser-storage.js';
 import { createApiClient } from '../core/api.js';
 import { escapeHtml } from '../core/html.js';
+import '../../styles/supervisor-dashboard.css';
 
 var SUPERVISOR_AUTH_STORAGE_KEY = 'cbt_exam_frontend_supervisor_auth_v1';
 var SUPERVISOR_AUTO_REFRESH_MS = 15000;
