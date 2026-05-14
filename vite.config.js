@@ -51,6 +51,9 @@ export default defineConfig(({ command }) => ({
                 chunkFileNames: 'assets/[name]-[hash].js',
                 assetFileNames: 'assets/[name]-[hash][extname]',
                 manualChunks(id) {
+                    if (id.includes('/src/frontend/app/core/dynamic-loader')) {
+                        return 'frontend-dynamic-loader';
+                    }
                     if (
                         id.includes('/src/frontend/app/core/config')
                         || id.includes('/src/frontend/app/core/browser-storage')
@@ -123,7 +126,7 @@ export default defineConfig(({ command }) => ({
                         return 'frontend-stage-exam';
                     }
                     if (id.includes('/src/frontend/app/stages/result')) {
-                        return 'frontend-stage-result';
+                        return 'frontend-result-renderer';
                     }
                     return undefined;
                 }

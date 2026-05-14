@@ -97,10 +97,14 @@ describe('student runtime static import guard', function () {
         var checkedSources = [
             'src/frontend/app/runtime.js',
             'src/frontend/app/shell/bootstrap-student-shell.js',
-            'src/frontend/app/stages/login-runtime.js'
+            'src/frontend/app/stages/login-runtime.js',
+            'src/frontend/app/stages/confirm-runtime.js',
+            'src/frontend/app/stages/result-runtime.js',
+            'src/frontend/app/stages/authenticated-runtime.js'
         ].map(readSource).join('\n');
         var forbiddenStaticImports = [
             '../legacy-runtime.js',
+            './legacy-runtime.js',
             '../core/exam-session',
             '../core/security-logging',
             '../core/idle-detection',
@@ -110,7 +114,9 @@ describe('student runtime static import guard', function () {
             '../core/sync-lifecycle-bridge',
             '../exam/runtime-bundle',
             '../exam/security',
-            '../features/calculator'
+            '../features/calculator',
+            './result.js',
+            './exam.js'
         ];
 
         forbiddenStaticImports.forEach(function (specifier) {

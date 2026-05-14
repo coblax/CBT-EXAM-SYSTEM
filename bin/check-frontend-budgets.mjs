@@ -79,7 +79,10 @@ if (runtimeLineCount > hardRuntimeSourceLineBudget) {
 assertForbiddenStaticSourceImports([
     'src/frontend/app/runtime.js',
     'src/frontend/app/shell/bootstrap-student-shell.js',
-    'src/frontend/app/stages/login-runtime.js'
+    'src/frontend/app/stages/login-runtime.js',
+    'src/frontend/app/stages/confirm-runtime.js',
+    'src/frontend/app/stages/result-runtime.js',
+    'src/frontend/app/stages/authenticated-runtime.js'
 ]);
 assertForbiddenManifestStaticImports(studentRuntimeStaticKeys);
 assertRequiredDynamicChunks(frontendEntry);
@@ -287,6 +290,7 @@ function assertForbiddenManifestStaticImports(keys) {
         'frontend-exam-session',
         'frontend-exam-question-runtime',
         'frontend-feature-calculator',
+        'frontend-result-renderer',
         'frontend-stage-exam',
         'frontend-stage-result'
     ];

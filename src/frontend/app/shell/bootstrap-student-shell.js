@@ -5,7 +5,15 @@ import {
 } from '../core/config.js';
 import { createBrowserStorageAccess } from '../core/browser-storage.js';
 import { createAuthSessionManager } from '../core/auth-session.js';
+import {
+    loadConfirmStageModule,
+    loadExamStageModule,
+    loadLegacyRuntimeModule,
+    loadLoginStageModule,
+    loadResultStageModule
+} from '../core/dynamic-loader.js';
 import { escapeHtml } from '../core/html.js';
+import { writeLegacyHandoffIntent } from '../core/legacy-handoff.js';
 
 var VALID_STAGES = ['login', 'confirm', 'exam', 'result'];
 
@@ -115,7 +123,8 @@ export function bootstrapStudentShell() {
         }
     }
 
-    async function loadLegacyRuntime(reason) {
+    async function loadLegacyRuntime(reasonOrOptions) {
+        var options = normalizeLegacyRuntimeOptions(reasonOrOptions);
         transitionSerial += 1;
         if (currentController && typeof currentController.unmount === 'function') {
             currentController.unmount();
@@ -125,10 +134,14 @@ export function bootstrapStudentShell() {
         root.removeAttribute('data-cbt-student-runtime-mounted');
         renderBootShell('legacy');
 
+        if (options.handoffIntent) {
+            writeLegacyHandoffIntent(browserStorage.getSessionStorage, options.handoffIntent);
+        }
+
         try {
-            var module = await import('../legacy-runtime.js');
+            var module = await loadLegacyRuntimeModule();
             return module.bootstrapFrontendApp({
-                handoffReason: String(reason || '')
+                handoffReason: String(options.reason || '')
             });
         } catch (error) {
             renderFatalError('legacy-runtime', error);
@@ -178,19 +191,19 @@ export function bootstrapStudentShell() {
 
 async function loadStageRuntime(stage, context, options) {
     if (stage === 'login') {
-        var loginModule = await import('../stages/login-runtime.js');
+        var loginModule = await loadLoginStageModule();
         return loginModule.mountLoginStage(context, options || {});
     }
     if (stage === 'confirm') {
-        var confirmModule = await import('../stages/confirm-runtime.js');
+        var confirmModule = await loadConfirmStageModule();
         return confirmModule.mountConfirmStage(context, options || {});
     }
     if (stage === 'exam') {
-        var examModule = await import('../stages/exam-runtime.js');
+        var examModule = await loadExamStageModule();
         return examModule.mountExamStage(context, options || {});
     }
     if (stage === 'result') {
-        var resultModule = await import('../stages/result-runtime.js');
+        var resultModule = await loadResultStageModule();
         return resultModule.mountResultStage(context, options || {});
     }
 
@@ -237,6 +250,20 @@ function syncBodyStageClass(stage) {
         document.body.classList.remove('cbt-stage-' + name);
     });
     document.body.classList.add('cbt-stage-' + normalizeStage(stage, 'login'));
+}
+
+function normalizeLegacyRuntimeOptions(reasonOrOptions) {
+    if (reasonOrOptions && typeof reasonOrOptions === 'object') {
+        return {
+            handoffIntent: reasonOrOptions.handoffIntent || null,
+            reason: String(reasonOrOptions.reason || '')
+        };
+    }
+
+    return {
+        handoffIntent: null,
+        reason: String(reasonOrOptions || '')
+    };
 }
 
 function createNoopDebugManager() {

@@ -1,1 +1,0 @@
-import{t as e}from"./rolldown-runtime-CmsrGqdA.js";var t=e({mountConfirmStage:()=>n});async function n(e,t){return await e.loadLegacyRuntime(t&&t.reason||`confirm-stage`),r()}function r(){return{render:function(){},unmount:function(){}}}export{t};

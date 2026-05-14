@@ -68,6 +68,7 @@ import { createUiPreferencesManager } from './core/ui-preferences';
 import { createAuthSessionManager } from './core/auth-session';
 import { createApiClient } from './core/api';
 import { escapeHtml } from './core/html';
+import { consumeLegacyHandoffIntent } from './core/legacy-handoff';
 import { createFullscreenStateManager } from './core/fullscreen-state';
 import { createDoubtfulStateStorage } from './storage/doubtful-state';
 import { createQuestionRenderManager } from './exam/question-render';
@@ -1564,6 +1565,40 @@ export function bootstrapFrontendApp() {
     var refreshOpeningAttemptStatus = examSessionManager.refreshOpeningAttemptStatus;
     var cancelOpeningAttemptFlow = examSessionManager.cancelOpeningAttemptFlow;
     var tryResumeActiveAttemptFromExamList = examSessionManager.tryResumeActiveAttemptFromExamList;
+
+    function consumeLegacyHandoffIntentAfterBootstrap() {
+        var intent = consumeLegacyHandoffIntent(getSessionStorage);
+        if (!intent || intent.action !== 'start-exam') {
+            return;
+        }
+
+        var selectedExamId = Number(intent.selected_exam_id) || 0;
+        if (selectedExamId > 0) {
+            state.selectedExamId = selectedExamId;
+        }
+        state.examToken = normalizeExamToken(intent.exam_token || state.examToken);
+
+        var selectedExam = getSelectedExam();
+        if (!selectedExam) {
+            state.error = 'Exam yang dipilih tidak tersedia.';
+            render('legacy-handoff-missing-exam', {
+                selectedExamId: selectedExamId
+            });
+            return;
+        }
+
+        Promise.resolve(handleStartExam({
+            selectedExam: selectedExam,
+            skipExamRefresh: intent.skip_exam_refresh === true,
+            submittedToken: state.examToken
+        })).catch(function (error) {
+            state.error = error instanceof Error ? error.message : 'Gagal membuka sesi ujian.';
+            render('legacy-handoff-start-error', {
+                selectedExamId: selectedExamId
+            });
+        });
+    }
+
     authStageManager = createAuthStageManager({
         clearMessages: clearMessages,
         escapeHtml: escapeHtml,
@@ -1888,7 +1923,13 @@ export function bootstrapFrontendApp() {
     try {
         startFrontendApp({
             applyUiPreferences: applyUiPreferences,
-            bootstrapFromPersistedSession: startupManager.bootstrapFromPersistedSession,
+            bootstrapFromPersistedSession: function (options) {
+                return Promise.resolve(startupManager.bootstrapFromPersistedSession(options))
+                    .then(function (result) {
+                        consumeLegacyHandoffIntentAfterBootstrap();
+                        return result;
+                    });
+            },
             isCompactViewport: isCompactViewport,
             readPersistedUiPreferences: readPersistedUiPreferences,
             setCompactViewportState: function (nextState) {
