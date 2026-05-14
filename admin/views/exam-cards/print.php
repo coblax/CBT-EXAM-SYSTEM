@@ -13,6 +13,29 @@
         } else {
             $document_title = 'Kartu Peserta ' . $card_program_title . ' - ' . $kelas_label;
         }
+
+        $actual_classes = [];
+        $actual_rooms = [];
+        foreach ((array) $students as $student) {
+            $c = trim((string) ($student['kelas'] ?? ''));
+            if ($c !== '' && !in_array($c, $actual_classes, true)) {
+                $actual_classes[] = $c;
+            }
+            $r = trim((string) ($student['ruang'] ?? ''));
+            if ($r !== '' && !in_array($r, $actual_rooms, true)) {
+                $actual_rooms[] = $r;
+            }
+        }
+        sort($actual_classes);
+        sort($actual_rooms);
+        
+        $display_kelas_label = ($kelas_label === 'Semua Kelas' && !empty($actual_classes)) 
+            ? implode(', ', $actual_classes) 
+            : $kelas_label;
+            
+        $display_ruang_label = ($ruang_label === 'Semua Ruang' && !empty($actual_rooms))
+            ? implode(', ', $actual_rooms)
+            : $ruang_label;
         ?>
         <!doctype html>
         <html lang="id">
@@ -534,21 +557,23 @@
                 <a class="button button-secondary" href="<?php echo esc_url($back_url); ?>">Kembali ke Form Cetak</a>
             </div>
             <main class="cards-wrap">
-                <div class="cards-meta">
-                    <div><strong>Mode Cetak</strong>: <?php echo esc_html($is_desk_number_mode ? 'Nomor Meja' : ($is_attendance_mode ? 'Daftar Hadir Peserta Ujian' : ($is_minutes_mode ? 'Berita Acara Pelaksanaan' : 'Kartu Peserta'))); ?></div>
-                    <?php if ($is_desk_number_mode): ?>
-                        <div><strong>Nomor Awal</strong>: <?php echo esc_html((string) $seat_start_number); ?></div>
-                    <?php else: ?>
-                        <div><strong>Total Peserta</strong>: <?php echo esc_html((string) $student_total); ?></div>
-                    <?php endif; ?>
-                    <div><strong>Tanggal Cetak</strong>: <?php echo esc_html($printed_at); ?></div>
-                    <div><strong>Kelas</strong>: <?php echo esc_html($kelas_label); ?></div>
-                    <div><strong>Ruang</strong>: <?php echo esc_html($ruang_label); ?></div>
-                    <?php if ($is_desk_number_mode): ?>
-                        <div><strong>Digit Padding</strong>: <?php echo esc_html((string) $seat_padding); ?></div>
-                        <div><strong>Total Kartu</strong>: <?php echo esc_html((string) $student_total); ?></div>
-                    <?php endif; ?>
-                </div>
+                <?php if (!$is_attendance_mode && !$is_minutes_mode): ?>
+                    <div class="cards-meta">
+                        <div><strong>Mode Cetak</strong>: <?php echo esc_html($is_desk_number_mode ? 'Nomor Meja' : 'Kartu Peserta'); ?></div>
+                        <?php if ($is_desk_number_mode): ?>
+                            <div><strong>Nomor Awal</strong>: <?php echo esc_html((string) $seat_start_number); ?></div>
+                        <?php else: ?>
+                            <div><strong>Total Peserta</strong>: <?php echo esc_html((string) $student_total); ?></div>
+                        <?php endif; ?>
+                        <div><strong>Tanggal Cetak</strong>: <?php echo esc_html($printed_at); ?></div>
+                        <div><strong>Kelas</strong>: <?php echo esc_html($kelas_label); ?></div>
+                        <div><strong>Ruang</strong>: <?php echo esc_html($ruang_label); ?></div>
+                        <?php if ($is_desk_number_mode): ?>
+                            <div><strong>Digit Padding</strong>: <?php echo esc_html((string) $seat_padding); ?></div>
+                            <div><strong>Total Kartu</strong>: <?php echo esc_html((string) $student_total); ?></div>
+                        <?php endif; ?>
+                    </div>
+                <?php endif; ?>
                 <?php
                 $field_visibility = array_fill_keys(is_array($selected_display_fields ?? null) ? $selected_display_fields : [], true);
                 $card_header_region_segments = array_values(array_filter(array_map('trim', explode(',', (string) ($card_header_region_line ?? ''))), static function ($segment): bool {
@@ -615,17 +640,17 @@
                                     <td class="admin-document-meta-label">Program</td>
                                     <td class="admin-document-meta-separator">:</td>
                                     <td><?php echo esc_html($card_program_title); ?></td>
-                                    <td class="admin-document-meta-label">Tanggal Cetak</td>
+                                    <td class="admin-document-meta-label">Hari / Tanggal</td>
                                     <td class="admin-document-meta-separator">:</td>
-                                    <td><?php echo esc_html($printed_at); ?></td>
+                                    <td>...................................................</td>
                                 </tr>
                                 <tr>
                                     <td class="admin-document-meta-label">Kelas</td>
                                     <td class="admin-document-meta-separator">:</td>
-                                    <td><?php echo esc_html($kelas_label); ?></td>
+                                    <td><?php echo esc_html($display_kelas_label); ?></td>
                                     <td class="admin-document-meta-label">Ruang</td>
                                     <td class="admin-document-meta-separator">:</td>
-                                    <td><?php echo esc_html($ruang_label); ?></td>
+                                    <td><?php echo esc_html($display_ruang_label); ?></td>
                                 </tr>
                                 <tr>
                                     <td class="admin-document-meta-label">Total Peserta</td>
@@ -640,8 +665,12 @@
                                     <th style="width:9mm;">No</th>
                                     <th>Nama Peserta</th>
                                     <th style="width:35mm;">NISN / Username</th>
-                                    <th style="width:24mm;">Kelas</th>
-                                    <th style="width:24mm;">Ruang</th>
+                                    <?php if ($kelas_label === 'Semua Kelas'): ?>
+                                        <th style="width:24mm;">Kelas</th>
+                                    <?php endif; ?>
+                                    <?php if ($ruang_label === 'Semua Ruang'): ?>
+                                        <th style="width:24mm;">Ruang</th>
+                                    <?php endif; ?>
                                     <th style="width:42mm;">Tanda Tangan</th>
                                 </tr>
                             </thead>
@@ -661,13 +690,80 @@
                                         <td style="text-align:center;"><?php echo esc_html((string) ($student_index + 1)); ?></td>
                                         <td><?php echo esc_html($student_name !== '' ? $student_name : '-'); ?></td>
                                         <td><?php echo esc_html($student_identifier !== '' ? $student_identifier : '-'); ?></td>
-                                        <td><?php echo esc_html(trim((string) ($student['kelas'] ?? '')) !== '' ? trim((string) ($student['kelas'] ?? '')) : '-'); ?></td>
-                                        <td><?php echo esc_html(trim((string) ($student['ruang'] ?? '')) !== '' ? trim((string) ($student['ruang'] ?? '')) : '-'); ?></td>
+                                        <?php if ($kelas_label === 'Semua Kelas'): ?>
+                                            <td><?php echo esc_html(trim((string) ($student['kelas'] ?? '')) !== '' ? trim((string) ($student['kelas'] ?? '')) : '-'); ?></td>
+                                        <?php endif; ?>
+                                        <?php if ($ruang_label === 'Semua Ruang'): ?>
+                                            <td><?php echo esc_html(trim((string) ($student['ruang'] ?? '')) !== '' ? trim((string) ($student['ruang'] ?? '')) : '-'); ?></td>
+                                        <?php endif; ?>
                                         <td class="attendance-signature-cell"></td>
                                     </tr>
                                 <?php endforeach; ?>
                             </tbody>
                         </table>
+                        <div style="page-break-inside: avoid;">
+                            <div style="margin-top: 10mm; font-size: 11px; font-weight: 700;">
+                                <div style="margin-bottom: 2mm; text-decoration: underline;">Rekapitulasi Kehadiran:</div>
+                                <table style="border-collapse: collapse; font-size: 11px;">
+                                    <tbody>
+                                        <tr>
+                                            <td style="padding: 1.5mm 0; width: 45mm;">Jumlah Peserta Seharusnya</td>
+                                            <td style="padding: 1.5mm 2mm;">:</td>
+                                            <td style="padding: 1.5mm 0;">................................. Orang</td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding: 1.5mm 0;">Jumlah Peserta Hadir</td>
+                                            <td style="padding: 1.5mm 2mm;">:</td>
+                                            <td style="padding: 1.5mm 0;">................................. Orang</td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding: 1.5mm 0;">Jumlah Peserta Tidak Hadir</td>
+                                            <td style="padding: 1.5mm 2mm;">:</td>
+                                            <td style="padding: 1.5mm 0;">................................. Orang</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            
+                            <table style="width: 100%; text-align: center; margin-top: 15mm; margin-bottom: 10mm; font-size: 11px;">
+                                <tbody>
+                                    <tr>
+                                        <td style="width: 50%; font-weight: 700; padding-bottom: 18mm;">Pengawas 1</td>
+                                        <td style="width: 50%; font-weight: 700; padding-bottom: 18mm;">Pengawas 2</td>
+                                    </tr>
+                                    <tr>
+                                        <td>
+                                            <table style="margin: 0 auto; text-align: left; font-weight: 700; font-size: 11px;">
+                                                <tbody>
+                                                    <tr>
+                                                        <td style="padding-right: 2mm;">Nama</td>
+                                                        <td>: ....................................................</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td style="padding-top: 2mm; padding-right: 2mm;">NIP</td>
+                                                        <td style="padding-top: 2mm;">: ....................................................</td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </td>
+                                        <td>
+                                            <table style="margin: 0 auto; text-align: left; font-weight: 700; font-size: 11px;">
+                                                <tbody>
+                                                    <tr>
+                                                        <td style="padding-right: 2mm;">Nama</td>
+                                                        <td>: ....................................................</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td style="padding-top: 2mm; padding-right: 2mm;">NIP</td>
+                                                        <td style="padding-top: 2mm;">: ....................................................</td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </section>
                 <?php elseif ($is_minutes_mode): ?>
                     <?php
@@ -729,10 +825,10 @@
                                     <tr>
                                         <td class="admin-document-meta-label">Kelas</td>
                                         <td class="admin-document-meta-separator">:</td>
-                                        <td><?php echo esc_html($kelas_label); ?></td>
+                                        <td><?php echo esc_html($display_kelas_label); ?></td>
                                         <td class="admin-document-meta-label">Ruang</td>
                                         <td class="admin-document-meta-separator">:</td>
-                                        <td><?php echo esc_html($minutes_room !== '' ? $minutes_room : $ruang_label); ?></td>
+                                        <td><?php echo esc_html($minutes_room !== '' ? $minutes_room : $display_ruang_label); ?></td>
                                     </tr>
                                     <tr>
                                         <td class="admin-document-meta-label">Tanggal</td>
@@ -746,9 +842,9 @@
                                         <td class="admin-document-meta-label">Total Peserta</td>
                                         <td class="admin-document-meta-separator">:</td>
                                         <td><?php echo esc_html((string) $student_total); ?></td>
-                                        <td class="admin-document-meta-label">Tanggal Cetak</td>
+                                        <td class="admin-document-meta-label">Hari / Tanggal</td>
                                         <td class="admin-document-meta-separator">:</td>
-                                        <td><?php echo esc_html($printed_at); ?></td>
+                                        <td>...................................................</td>
                                     </tr>
                                 </tbody>
                             </table>

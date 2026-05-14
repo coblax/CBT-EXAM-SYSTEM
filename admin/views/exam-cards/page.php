@@ -758,10 +758,10 @@
                                     <p class="description">Opsional untuk mempersempit hasil siswa yang akan masuk ke dokumen.</p>
                                 </td>
                             </tr>
-                            <tr>
+                            <tr id="cbt-card-seat-row"<?php echo !$is_desk_number_mode ? ' class="cbt-exam-cards-row-hidden"' : ''; ?>>
                                 <th><label for="cbt-card-seat-start">Pengaturan Nomor</label></th>
                                 <td>
-                                    <div id="cbt-card-seat-settings" class="cbt-exam-cards-seat-grid<?php echo !$is_desk_number_mode ? ' cbt-exam-cards-row-hidden' : ''; ?>">
+                                    <div id="cbt-card-seat-settings" class="cbt-exam-cards-seat-grid">
                                         <div class="cbt-exam-cards-seat-field">
                                             <label for="cbt-card-seat-start">Nomor Awal</label>
                                             <input type="number" min="1" step="1" id="cbt-card-seat-start" name="cbt_card_seat_start" value="<?php echo esc_attr((string) $seat_start_number); ?>" />
@@ -771,7 +771,7 @@
                                             <input type="number" min="1" max="12" step="1" id="cbt-card-seat-padding" name="cbt_card_seat_padding" value="<?php echo esc_attr((string) $seat_padding); ?>" />
                                         </div>
                                     </div>
-                                    <p id="cbt-card-seat-settings-note" class="description<?php echo !$is_desk_number_mode ? ' cbt-exam-cards-row-hidden' : ''; ?>">Nomor meja dibentuk otomatis dari hasil filter siswa dengan urutan existing `kelas -> nama -> username`, lalu dimulai dari angka awal yang Anda tentukan.</p>
+                                    <p id="cbt-card-seat-settings-note" class="description">Nomor meja dibentuk otomatis dari hasil filter siswa dengan urutan existing `kelas -> nama -> username`, lalu dimulai dari angka awal yang Anda tentukan.</p>
                                 </td>
                             </tr>
                             <tr id="cbt-card-fields-row"<?php echo !$is_participant_mode ? ' class="cbt-exam-cards-row-hidden"' : ''; ?>>
@@ -1206,8 +1206,7 @@
                     const modeInput = root.querySelector('#cbt-card-print-mode');
                     const fieldsRow = root.querySelector('#cbt-card-fields-row');
                     const minutesRow = root.querySelector('#cbt-card-minutes-row');
-                    const seatSettings = root.querySelector('#cbt-card-seat-settings');
-                    const seatSettingsNote = root.querySelector('#cbt-card-seat-settings-note');
+                    const seatRow = root.querySelector('#cbt-card-seat-row');
                     const participantNote = root.querySelector('#cbt-card-participant-note');
                     const deskNote = root.querySelector('#cbt-card-desk-note');
                     const attendanceNote = root.querySelector('#cbt-card-attendance-note');
@@ -1218,7 +1217,7 @@
                     const modeSummary = root.querySelector('#cbt-card-mode-summary');
                     const submitButton = root.querySelector('#cbt-card-submit-button');
                     const fieldInputs = fieldsRow ? fieldsRow.querySelectorAll('input[type="checkbox"]') : [];
-                    const seatInputs = seatSettings ? seatSettings.querySelectorAll('input') : [];
+                    const seatInputs = seatRow ? seatRow.querySelectorAll('input') : [];
                     const minutesInputs = minutesRow ? minutesRow.querySelectorAll('input, textarea') : [];
                     const modeTabs = root.querySelectorAll('[data-print-mode-tab]');
                     const form = root.querySelector('[data-cbt-exam-cards-print-form]');
@@ -1241,11 +1240,8 @@
                         if (minutesRow) {
                             minutesRow.classList.toggle('cbt-exam-cards-row-hidden', !isMinutesMode);
                         }
-                        if (seatSettings) {
-                            seatSettings.classList.toggle('cbt-exam-cards-row-hidden', !isDeskMode);
-                        }
-                        if (seatSettingsNote) {
-                            seatSettingsNote.classList.toggle('cbt-exam-cards-row-hidden', !isDeskMode);
+                        if (seatRow) {
+                            seatRow.classList.toggle('cbt-exam-cards-row-hidden', !isDeskMode);
                         }
                         if (participantNote) {
                             participantNote.classList.toggle('cbt-exam-cards-row-hidden', !isParticipantMode);
