@@ -93,7 +93,7 @@ final class ExamQuestionDeliverySnapshotTest extends TestCase
 
         self::assertSame(1, $producerCalls);
         self::assertSame($first, $second);
-        self::assertCount(1, $this->storedRedisKeys());
+        self::assertGreaterThanOrEqual(3, count($this->storedRedisKeys()));
 
         CBT_Cache::invalidate_exam(55);
         $third = CBT_Exam_Question_Delivery_Cache::get_exam_payload(55, $producer);
@@ -175,13 +175,13 @@ final class ExamQuestionDeliverySnapshotTest extends TestCase
         };
 
         CBT_Exam_Question_Delivery_Cache::get_exam_payload(55, $producer);
-        $storageKey = $this->storedRedisKeys()[0] ?? '';
-        self::assertNotSame('', $storageKey);
-        $payload = json_decode((string) ($GLOBALS['cbt_test_redis_storage'][$storageKey] ?? ''), true);
-        self::assertIsArray($payload);
-        self::assertSame(2, (int) ($payload['snapshot_payload_version'] ?? 0));
-        unset($payload['snapshot_payload_version']);
-        $GLOBALS['cbt_test_redis_storage'][$storageKey] = wp_json_encode($payload);
+        foreach ($this->storedRedisKeys() as $storageKey) {
+            $payload = json_decode((string) ($GLOBALS['cbt_test_redis_storage'][$storageKey] ?? ''), true);
+            self::assertIsArray($payload);
+            self::assertSame(2, (int) ($payload['snapshot_payload_version'] ?? 0));
+            unset($payload['snapshot_payload_version']);
+            $GLOBALS['cbt_test_redis_storage'][$storageKey] = wp_json_encode($payload);
+        }
 
         $second = CBT_Exam_Question_Delivery_Cache::get_exam_payload(55, $producer);
 
@@ -556,7 +556,7 @@ final class ExamQuestionDeliverySnapshotTest extends TestCase
 
         $deleted = CBT_Exam_Question_Delivery_Cache::clear_exam_payload(55);
 
-        self::assertSame(1, $deleted);
+        self::assertGreaterThan(0, $deleted);
         self::assertSame([], $this->storedRedisKeys());
     }
 
@@ -615,8 +615,9 @@ final class ExamQuestionDeliverySnapshotTest extends TestCase
                 ],
             ];
         });
-        $currentStorageKey = (string) CBT_Exam_Question_Delivery_Cache::get_exam_payload_diagnostics(55)['storage_key'];
-        unset($GLOBALS['cbt_test_redis_storage'][$currentStorageKey]);
+        foreach ($this->storedRedisKeys() as $storedKey) {
+            unset($GLOBALS['cbt_test_redis_storage'][$storedKey]);
+        }
         $afterKeyMissing = CBT_Exam_Question_Delivery_Cache::get_exam_payload_diagnostics(55);
         self::assertSame('miss', $afterKeyMissing['snapshot_status']);
         self::assertSame('expired_or_evicted', $afterKeyMissing['snapshot_miss_reason']);
@@ -682,8 +683,9 @@ final class ExamQuestionDeliverySnapshotTest extends TestCase
                 ],
             ];
         });
-        $currentStorageKey = (string) CBT_Exam_Question_Delivery_Cache::get_exam_payload_diagnostics(55)['storage_key'];
-        $GLOBALS['cbt_test_redis_storage'][$currentStorageKey] = '{"broken":';
+        foreach ($this->storedRedisKeys() as $storedKey) {
+            $GLOBALS['cbt_test_redis_storage'][$storedKey] = '{"broken":';
+        }
 
         $invalidRepair = CBT_Exam_Question_Delivery_Cache::maybe_auto_heal_snapshot(55, 'admin');
 
@@ -703,8 +705,9 @@ final class ExamQuestionDeliverySnapshotTest extends TestCase
                 ],
             ];
         });
-        $currentStorageKey = (string) CBT_Exam_Question_Delivery_Cache::get_exam_payload_diagnostics(55)['storage_key'];
-        unset($GLOBALS['cbt_test_redis_storage'][$currentStorageKey]);
+        foreach ($this->storedRedisKeys() as $storedKey) {
+            unset($GLOBALS['cbt_test_redis_storage'][$storedKey]);
+        }
 
         $expiredRepair = CBT_Exam_Question_Delivery_Cache::maybe_auto_heal_snapshot(55, 'admin');
 

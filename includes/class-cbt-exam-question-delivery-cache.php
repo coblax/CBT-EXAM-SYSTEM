@@ -15,6 +15,8 @@ if (!class_exists('CBT_Snapshot_Auto_Heal_Queue_Service')) {
 class CBT_Exam_Question_Delivery_Cache
 {
     private const SNAPSHOT_PAYLOAD_VERSION = 2;
+    private const SNAPSHOT_V2_INDEX_VERSION = 1;
+    private const SNAPSHOT_V2_STORAGE_SHAPE = 'per_question_v2';
     private const SENSITIVE_DELIVERY_KEYS = [
         'correct_text',
         'short_answer_correct_text',
@@ -40,6 +42,7 @@ class CBT_Exam_Question_Delivery_Cache
     ];
     private const DIAGNOSTIC_PREVIEW_DEFAULT_PER_PAGE = 5;
     private const DELIVERY_REDIS_TTL_SECONDS = 44100;
+    private const DELIVERY_BLOB_REDIS_TTL_SECONDS = 604800;
     private const DELIVERY_EVENT_REDIS_TTL_SECONDS = 604800;
     private const DELIVERY_REDIS_DEFAULT_HOST = '127.0.0.1';
     private const DELIVERY_REDIS_DEFAULT_PORT = 6379;
@@ -109,6 +112,12 @@ class CBT_Exam_Question_Delivery_Cache
         $preview_items = [];
         $snapshot_status = 'idle';
         $snapshot_message = 'Masukkan Exam ID untuk memeriksa snapshot delivery.';
+        $storage_shape = 'none';
+        $v2_index_status = self::snapshot_v2_disabled() ? 'disabled' : 'v2_index_miss';
+        $v2_blob_count = 0;
+        $v2_missing_blob_count = 0;
+        $raw_fast_available = false;
+        $fallback_reason = '';
 
         if ($exam_id <= 0) {
             return [
@@ -127,6 +136,12 @@ class CBT_Exam_Question_Delivery_Cache
                 'snapshot_message' => $snapshot_message,
                 'repair_status' => '',
                 'repair_message' => '',
+                'storage_shape' => $storage_shape,
+                'v2_index_status' => $v2_index_status,
+                'v2_blob_count' => $v2_blob_count,
+                'v2_missing_blob_count' => $v2_missing_blob_count,
+                'raw_fast_available' => false,
+                'fallback_reason' => 'idle',
                 'snapshot_item_count' => 0,
                 'snapshot_payload_bytes' => 0,
                 'snapshot_ttl_seconds' => -2,
@@ -155,6 +170,12 @@ class CBT_Exam_Question_Delivery_Cache
                 'snapshot_message' => 'Redis exam delivery tidak tersedia. Jalur student akan fallback ke DB/cache biasa.',
                 'repair_status' => '',
                 'repair_message' => '',
+                'storage_shape' => $storage_shape,
+                'v2_index_status' => $v2_index_status,
+                'v2_blob_count' => $v2_blob_count,
+                'v2_missing_blob_count' => $v2_missing_blob_count,
+                'raw_fast_available' => false,
+                'fallback_reason' => 'redis_unavailable',
                 'snapshot_item_count' => 0,
                 'snapshot_payload_bytes' => 0,
                 'snapshot_ttl_seconds' => -2,
@@ -166,12 +187,46 @@ class CBT_Exam_Question_Delivery_Cache
             ];
         }
 
-        $raw_payload = $storage_key !== '' ? $redis->get($storage_key) : false;
+        if (!self::snapshot_v2_disabled()) {
+            $v2_payload = self::read_exam_payload_v2($exam_id, $redis, $revision_meta, $v2_meta);
+            $v2_index_status = (string) ($v2_meta['reason'] ?? $v2_index_status);
+            if ($v2_payload !== null) {
+                $snapshot_exists = true;
+                $snapshot_valid = true;
+                $storage_shape = self::SNAPSHOT_V2_STORAGE_SHAPE;
+                $v2_index_status = 'ready';
+                $storage_key = (string) ($v2_meta['storage_key'] ?? $storage_key);
+                if (method_exists($redis, 'ttl')) {
+                    $snapshot_ttl_seconds = (int) $redis->ttl($storage_key);
+                }
+                $snapshot_payload_bytes = strlen((string) $redis->get($storage_key));
+                $items = self::normalize_items($v2_payload);
+                $snapshot_item_count = count($items);
+                $v2_blob_count = $snapshot_item_count;
+                $raw_fast_available = $snapshot_item_count > 0;
+                $preview_total_pages = max(1, (int) ceil($snapshot_item_count / $preview_per_page));
+                $preview_current_page = min($preview_total_pages, max(1, $preview_page));
+                $preview_offset = ($preview_current_page - 1) * $preview_per_page;
+                $preview_slice = array_slice($items, $preview_offset, $preview_per_page);
+                $preview_question_ids = array_values(array_filter(array_map(static function ($item): int {
+                    return absint(is_array($item) ? ($item['id'] ?? 0) : 0);
+                }, $preview_slice)));
+                $preview_items = self::build_preview_items($preview_slice);
+            }
+        }
+
+        $raw_payload = (!$snapshot_valid && $storage_key !== '') ? $redis->get(self::storage_key($exam_id, $revision_meta)) : false;
         if (is_string($raw_payload) && trim($raw_payload) !== '') {
             $snapshot_exists = true;
+            if ($storage_shape === 'none') {
+                $storage_shape = 'legacy_monolith';
+            }
+            if ($fallback_reason === '' && $v2_index_status !== 'ready') {
+                $fallback_reason = $v2_index_status;
+            }
             $snapshot_payload_bytes = strlen($raw_payload);
             if (method_exists($redis, 'ttl')) {
-                $snapshot_ttl_seconds = (int) $redis->ttl($storage_key);
+                $snapshot_ttl_seconds = (int) $redis->ttl(self::storage_key($exam_id, $revision_meta));
             }
 
             $decoded = json_decode($raw_payload, true);
@@ -225,6 +280,9 @@ class CBT_Exam_Question_Delivery_Cache
         if (in_array($snapshot_status, ['miss', 'invalid'], true)) {
             self::maybe_enqueue_auto_heal($exam_id, $snapshot_miss_reason, 'diagnostics');
         }
+        if ($fallback_reason === '' && $v2_index_status !== 'ready') {
+            $fallback_reason = $v2_index_status;
+        }
         $queue_meta = self::build_queue_repair_meta($exam_id);
 
         return [
@@ -243,6 +301,12 @@ class CBT_Exam_Question_Delivery_Cache
             'snapshot_message' => $snapshot_message,
             'repair_status' => (string) ($queue_meta['status'] ?? ''),
             'repair_message' => (string) ($queue_meta['message'] ?? ''),
+            'storage_shape' => $storage_shape,
+            'v2_index_status' => $v2_index_status,
+            'v2_blob_count' => $v2_blob_count,
+            'v2_missing_blob_count' => $v2_missing_blob_count,
+            'raw_fast_available' => $raw_fast_available,
+            'fallback_reason' => $fallback_reason,
             'snapshot_item_count' => $snapshot_item_count,
             'snapshot_payload_bytes' => $snapshot_payload_bytes,
             'snapshot_ttl_seconds' => $snapshot_ttl_seconds,
@@ -427,6 +491,247 @@ class CBT_Exam_Question_Delivery_Cache
      *   revision_signature:string,
      *   storage_key:string,
      *   ttl_seconds:int,
+     *   index:array<string,mixed>
+     * }
+     */
+    public static function read_current_exam_payload_v2_index_envelope(int $exam_id): array
+    {
+        $exam_id = absint($exam_id);
+        $empty_revision = [
+            'exam_id' => $exam_id,
+            'version' => 0,
+            'invalidated_at' => '',
+            'signature' => '',
+        ];
+        $default = [
+            'success' => false,
+            'reason' => $exam_id > 0 ? 'v2_index_miss' : 'invalid_exam',
+            'exam_id' => $exam_id,
+            'revision_meta' => $empty_revision,
+            'revision_signature' => '',
+            'storage_key' => '',
+            'ttl_seconds' => -2,
+            'index' => [],
+        ];
+        if ($exam_id <= 0) {
+            return $default;
+        }
+
+        if (self::snapshot_v2_disabled()) {
+            $default['reason'] = 'v2_disabled';
+            return $default;
+        }
+
+        $redis = self::delivery_redis();
+        if (!$redis instanceof Redis) {
+            $default['reason'] = 'redis_unavailable';
+            return $default;
+        }
+
+        $revision_meta = self::exam_revision_meta($exam_id);
+        $revision_signature = self::revision_signature($revision_meta);
+        $default['revision_meta'] = $revision_meta;
+        $default['revision_signature'] = $revision_signature;
+        if ((int) ($revision_meta['exam_id'] ?? 0) !== $exam_id) {
+            $default['reason'] = 'revision_unavailable';
+            return $default;
+        }
+
+        $index_key = self::v2_index_storage_key($exam_id, $revision_meta);
+        $default['storage_key'] = $index_key;
+        $raw_index = $redis->get($index_key);
+        if (method_exists($redis, 'ttl')) {
+            $default['ttl_seconds'] = (int) $redis->ttl($index_key);
+        }
+        if (!is_string($raw_index) || trim($raw_index) === '') {
+            $default['reason'] = 'v2_index_miss';
+            return $default;
+        }
+
+        $index = json_decode($raw_index, true);
+        if (!is_array($index) || !self::validate_v2_index($index, $exam_id, $revision_signature)) {
+            self::write_delivery_event_marker($exam_id, 'invalid_payload');
+            $default['reason'] = 'v2_index_invalid';
+            return $default;
+        }
+
+        $default['success'] = true;
+        $default['reason'] = 'ready';
+        $default['index'] = self::normalize_v2_index($index);
+
+        return $default;
+    }
+
+    /**
+     * @param array<int,int> $question_ids
+     * @return array{
+     *   success:bool,
+     *   reason:string,
+     *   exam_id:int,
+     *   index:array<string,mixed>,
+     *   blobs_by_id:array<int,array<string,mixed>>
+     * }
+     */
+    public static function read_current_exam_raw_item_blobs(int $exam_id, array $question_ids): array
+    {
+        $question_ids = array_values(array_unique(array_filter(array_map('intval', $question_ids), static function (int $question_id): bool {
+            return $question_id > 0;
+        })));
+        $default = [
+            'success' => false,
+            'reason' => empty($question_ids) ? 'empty_question_ids' : 'v2_index_unavailable',
+            'exam_id' => absint($exam_id),
+            'index' => [],
+            'blobs_by_id' => [],
+        ];
+        if ($exam_id <= 0 || empty($question_ids)) {
+            return $default;
+        }
+
+        $redis = self::delivery_redis();
+        if (!$redis instanceof Redis) {
+            $default['reason'] = 'redis_unavailable';
+            return $default;
+        }
+
+        $index_envelope = self::read_current_exam_payload_v2_index_envelope($exam_id);
+        if (empty($index_envelope['success'])) {
+            $default['reason'] = sanitize_key((string) ($index_envelope['reason'] ?? 'v2_index_unavailable'));
+            return $default;
+        }
+
+        $index = (array) ($index_envelope['index'] ?? []);
+        $item_key_by_question_id = self::normalize_v2_string_map($index['item_key_by_question_id'] ?? []);
+        $item_hash_by_question_id = self::normalize_v2_string_map($index['item_hash_by_question_id'] ?? []);
+        $blobs_by_id = [];
+        foreach ($question_ids as $question_id) {
+            $key = (string) ($item_key_by_question_id[$question_id] ?? '');
+            $hash = (string) ($item_hash_by_question_id[$question_id] ?? '');
+            if ($key === '' || $hash === '') {
+                $default['reason'] = 'v2_question_missing';
+                return $default;
+            }
+
+            $raw_blob = $redis->get($key);
+            if (!is_string($raw_blob) || trim($raw_blob) === '') {
+                $default['reason'] = 'v2_blob_miss';
+                return $default;
+            }
+
+            $blob = json_decode($raw_blob, true);
+            if (!is_array($blob) || !self::validate_v2_item_blob($blob, $exam_id, $question_id, $hash)) {
+                $default['reason'] = 'v2_blob_invalid';
+                return $default;
+            }
+
+            $blobs_by_id[$question_id] = $blob;
+        }
+
+        return [
+            'success' => true,
+            'reason' => 'ready',
+            'exam_id' => absint($exam_id),
+            'index' => $index,
+            'blobs_by_id' => $blobs_by_id,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $previous_index
+     * @param array<int,array<string,mixed>> $replacement_items_by_id
+     */
+    public static function write_current_exam_payload_v2_partial_index(
+        int $exam_id,
+        array $previous_index,
+        array $replacement_items_by_id,
+        int $ttl_seconds = 0
+    ): bool {
+        $exam_id = absint($exam_id);
+        if ($exam_id <= 0 || empty($previous_index) || self::snapshot_v2_disabled()) {
+            return false;
+        }
+
+        $redis = self::delivery_redis();
+        if (!$redis instanceof Redis) {
+            return false;
+        }
+
+        $revision_meta = self::exam_revision_meta($exam_id);
+        if ((int) ($revision_meta['exam_id'] ?? 0) !== $exam_id) {
+            return false;
+        }
+
+        $question_ids = self::normalize_question_ids($previous_index['question_ids'] ?? []);
+        if (empty($question_ids)) {
+            return false;
+        }
+
+        $item_key_by_question_id = self::normalize_v2_string_map($previous_index['item_key_by_question_id'] ?? []);
+        $item_hash_by_question_id = self::normalize_v2_string_map($previous_index['item_hash_by_question_id'] ?? []);
+        $question_meta_by_id = self::normalize_v2_array_map($previous_index['question_meta_by_id'] ?? []);
+
+        $normalized_replacements = [];
+        foreach ($replacement_items_by_id as $question_id => $item) {
+            $safe_question_id = (int) $question_id;
+            if ($safe_question_id <= 0 || !in_array($safe_question_id, $question_ids, true) || !is_array($item)) {
+                return false;
+            }
+
+            $normalized_replacements[$safe_question_id] = self::redact_delivery_payload($item);
+        }
+
+        $write_ttl = $ttl_seconds > 0 ? $ttl_seconds : self::DELIVERY_REDIS_TTL_SECONDS;
+        foreach ($normalized_replacements as $question_id => $item) {
+            $blob = self::build_v2_item_blob_payload($exam_id, $item);
+            if (empty($blob)) {
+                return false;
+            }
+
+            $blob_key = (string) ($blob['item_key'] ?? '');
+            $encoded_blob = wp_json_encode($blob);
+            if ($blob_key === '' || !is_string($encoded_blob) || $encoded_blob === '') {
+                return false;
+            }
+
+            if (!$redis->setEx($blob_key, self::blob_ttl_seconds($write_ttl), $encoded_blob)) {
+                return false;
+            }
+
+            $item_key_by_question_id[$question_id] = $blob_key;
+            $item_hash_by_question_id[$question_id] = (string) ($blob['item_hash'] ?? '');
+            $question_meta_by_id[$question_id] = (array) ($blob['meta'] ?? []);
+        }
+
+        $index = self::build_v2_index_payload(
+            $exam_id,
+            $revision_meta,
+            $question_ids,
+            $item_key_by_question_id,
+            $item_hash_by_question_id,
+            $question_meta_by_id
+        );
+        $encoded_index = wp_json_encode($index);
+        if (!is_string($encoded_index) || $encoded_index === '') {
+            return false;
+        }
+
+        $written = (bool) $redis->setEx(self::v2_index_storage_key($exam_id, $revision_meta), max(1, $write_ttl), $encoded_index);
+        if ($written) {
+            self::write_delivery_event_marker($exam_id, 'written');
+        }
+
+        return $written;
+    }
+
+    /**
+     * @return array{
+     *   success:bool,
+     *   reason:string,
+     *   exam_id:int,
+     *   revision_meta:array{exam_id:int,version:int,invalidated_at:string,signature:string},
+     *   revision_signature:string,
+     *   storage_key:string,
+     *   ttl_seconds:int,
      *   items:array<int,array<string,mixed>>
      * }
      */
@@ -466,6 +771,19 @@ class CBT_Exam_Question_Delivery_Cache
         if ((int) ($revision_meta['exam_id'] ?? 0) !== $exam_id) {
             $default['reason'] = 'revision_unavailable';
             return $default;
+        }
+
+        if (!self::snapshot_v2_disabled()) {
+            $v2_payload = self::read_exam_payload_v2($exam_id, $redis, $revision_meta, $v2_meta);
+            if ($v2_payload !== null) {
+                $default['success'] = true;
+                $default['reason'] = 'ready';
+                $default['storage_key'] = (string) ($v2_meta['storage_key'] ?? self::v2_index_storage_key($exam_id, $revision_meta));
+                $default['ttl_seconds'] = (int) ($v2_meta['ttl_seconds'] ?? -2);
+                $default['items'] = $v2_payload;
+
+                return $default;
+            }
         }
 
         $storage_key = self::storage_key($exam_id, $revision_meta);
@@ -562,6 +880,18 @@ class CBT_Exam_Question_Delivery_Cache
             return null;
         }
 
+        if (!self::snapshot_v2_disabled()) {
+            $v2_payload = self::read_exam_payload_v2($exam_id, $redis, $revision_meta, $v2_meta);
+            if ($v2_payload !== null) {
+                $ttl_seconds = (int) ($v2_meta['ttl_seconds'] ?? 0);
+                if ($ttl_seconds > 0) {
+                    $redis->expire((string) ($v2_meta['storage_key'] ?? self::v2_index_storage_key($exam_id, $revision_meta)), self::DELIVERY_REDIS_TTL_SECONDS);
+                }
+
+                return $v2_payload;
+            }
+        }
+
         $storage_key = self::storage_key($exam_id, $revision_meta);
         $raw_payload = $redis->get($storage_key);
         if (!is_string($raw_payload) || trim($raw_payload) === '') {
@@ -595,6 +925,9 @@ class CBT_Exam_Question_Delivery_Cache
 
         $items = self::normalize_items($decoded['items'] ?? []);
         $redis->expire($storage_key, self::DELIVERY_REDIS_TTL_SECONDS);
+        if (!self::snapshot_v2_disabled()) {
+            self::write_exam_payload_v2_with_ttl($exam_id, $items, self::DELIVERY_REDIS_TTL_SECONDS);
+        }
 
         return $items;
     }
@@ -638,7 +971,393 @@ class CBT_Exam_Question_Delivery_Cache
             self::write_delivery_event_marker($exam_id, 'written');
         }
 
-        return $written;
+        $v2_written = self::snapshot_v2_disabled()
+            ? false
+            : self::write_exam_payload_v2_with_ttl($exam_id, $items, $ttl_seconds);
+
+        return $written || $v2_written;
+    }
+
+    /**
+     * @param array{exam_id:int,version:int,invalidated_at:string,signature:string} $revision_meta
+     * @param array<string,mixed>|null $meta
+     * @return array<int,array<string,mixed>>|null
+     */
+    private static function read_exam_payload_v2(int $exam_id, Redis $redis, array $revision_meta, ?array &$meta = null): ?array
+    {
+        $meta = [
+            'storage_key' => '',
+            'ttl_seconds' => -2,
+            'reason' => 'v2_index_miss',
+        ];
+        $revision_signature = self::revision_signature($revision_meta);
+        $index_key = self::v2_index_storage_key($exam_id, $revision_meta);
+        $meta['storage_key'] = $index_key;
+        if (method_exists($redis, 'ttl')) {
+            $meta['ttl_seconds'] = (int) $redis->ttl($index_key);
+        }
+
+        $raw_index = $redis->get($index_key);
+        if (!is_string($raw_index) || trim($raw_index) === '') {
+            return null;
+        }
+
+        $index = json_decode($raw_index, true);
+        if (!is_array($index) || !self::validate_v2_index($index, $exam_id, $revision_signature)) {
+            self::write_delivery_event_marker($exam_id, 'invalid_payload');
+            $meta['reason'] = 'v2_index_invalid';
+            return null;
+        }
+
+        $index = self::normalize_v2_index($index);
+        $question_ids = self::normalize_question_ids($index['question_ids'] ?? []);
+        $item_key_by_question_id = self::normalize_v2_string_map($index['item_key_by_question_id'] ?? []);
+        $item_hash_by_question_id = self::normalize_v2_string_map($index['item_hash_by_question_id'] ?? []);
+        if (empty($question_ids)) {
+            $meta['reason'] = 'v2_index_empty';
+            return null;
+        }
+
+        $items = [];
+        foreach ($question_ids as $question_id) {
+            $blob_key = (string) ($item_key_by_question_id[$question_id] ?? '');
+            $item_hash = (string) ($item_hash_by_question_id[$question_id] ?? '');
+            if ($blob_key === '' || $item_hash === '') {
+                $meta['reason'] = 'v2_question_missing';
+                return null;
+            }
+
+            $raw_blob = $redis->get($blob_key);
+            if (!is_string($raw_blob) || trim($raw_blob) === '') {
+                $meta['reason'] = 'v2_blob_miss';
+                return null;
+            }
+
+            $blob = json_decode($raw_blob, true);
+            if (!is_array($blob) || !self::validate_v2_item_blob($blob, $exam_id, $question_id, $item_hash)) {
+                $meta['reason'] = 'v2_blob_invalid';
+                return null;
+            }
+
+            $item_raw = (string) ($blob['item_raw'] ?? '');
+            $item = json_decode($item_raw, true);
+            if (!is_array($item)) {
+                $meta['reason'] = 'v2_item_invalid';
+                return null;
+            }
+
+            $items[] = self::redact_delivery_payload($item);
+        }
+
+        $meta['reason'] = 'ready';
+        return array_values($items);
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $items
+     */
+    private static function write_exam_payload_v2_with_ttl(int $exam_id, array $items, int $ttl_seconds): bool
+    {
+        if (self::snapshot_v2_disabled()) {
+            return false;
+        }
+
+        $redis = self::delivery_redis();
+        if (!$redis instanceof Redis) {
+            return false;
+        }
+
+        $revision_meta = self::exam_revision_meta($exam_id);
+        if ((int) ($revision_meta['exam_id'] ?? 0) !== $exam_id) {
+            return false;
+        }
+
+        $items = self::normalize_items($items);
+        if (empty($items)) {
+            return false;
+        }
+
+        $question_ids = [];
+        $item_key_by_question_id = [];
+        $item_hash_by_question_id = [];
+        $question_meta_by_id = [];
+        $blob_ttl = self::blob_ttl_seconds($ttl_seconds);
+
+        foreach ($items as $item) {
+            $question_id = (int) ($item['id'] ?? 0);
+            if ($question_id <= 0) {
+                return false;
+            }
+
+            $blob = self::build_v2_item_blob_payload($exam_id, $item);
+            if (empty($blob)) {
+                return false;
+            }
+
+            $blob_key = (string) ($blob['item_key'] ?? '');
+            $encoded_blob = wp_json_encode($blob);
+            if ($blob_key === '' || !is_string($encoded_blob) || $encoded_blob === '') {
+                return false;
+            }
+
+            if (!$redis->setEx($blob_key, $blob_ttl, $encoded_blob)) {
+                return false;
+            }
+
+            $question_ids[] = $question_id;
+            $item_key_by_question_id[$question_id] = $blob_key;
+            $item_hash_by_question_id[$question_id] = (string) ($blob['item_hash'] ?? '');
+            $question_meta_by_id[$question_id] = (array) ($blob['meta'] ?? []);
+        }
+
+        $index = self::build_v2_index_payload(
+            $exam_id,
+            $revision_meta,
+            $question_ids,
+            $item_key_by_question_id,
+            $item_hash_by_question_id,
+            $question_meta_by_id
+        );
+        $encoded_index = wp_json_encode($index);
+        if (!is_string($encoded_index) || $encoded_index === '') {
+            return false;
+        }
+
+        return (bool) $redis->setEx(
+            self::v2_index_storage_key($exam_id, $revision_meta),
+            max(1, $ttl_seconds),
+            $encoded_index
+        );
+    }
+
+    /**
+     * @param array<int,int> $question_ids
+     * @param array<int,string> $item_key_by_question_id
+     * @param array<int,string> $item_hash_by_question_id
+     * @param array<int,array<string,mixed>> $question_meta_by_id
+     * @return array<string,mixed>
+     */
+    private static function build_v2_index_payload(
+        int $exam_id,
+        array $revision_meta,
+        array $question_ids,
+        array $item_key_by_question_id,
+        array $item_hash_by_question_id,
+        array $question_meta_by_id
+    ): array {
+        $safe_question_ids = self::normalize_question_ids($question_ids);
+
+        return [
+            'snapshot_payload_version' => self::SNAPSHOT_PAYLOAD_VERSION,
+            'snapshot_storage_version' => self::SNAPSHOT_V2_INDEX_VERSION,
+            'storage_shape' => self::SNAPSHOT_V2_STORAGE_SHAPE,
+            'exam_id' => $exam_id,
+            'revision_signature' => self::revision_signature($revision_meta),
+            'question_ids' => $safe_question_ids,
+            'question_count' => count($safe_question_ids),
+            'item_key_by_question_id' => self::normalize_v2_string_map($item_key_by_question_id),
+            'item_hash_by_question_id' => self::normalize_v2_string_map($item_hash_by_question_id),
+            'question_meta_by_id' => self::normalize_v2_array_map($question_meta_by_id),
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $item
+     * @return array<string,mixed>
+     */
+    private static function build_v2_item_blob_payload(int $exam_id, array $item): array
+    {
+        $item = self::redact_delivery_payload($item);
+        $question_id = (int) ($item['id'] ?? 0);
+        if ($exam_id <= 0 || $question_id <= 0) {
+            return [];
+        }
+
+        $has_options = array_key_exists('options', $item) && is_array($item['options']);
+        $options = $has_options ? array_values((array) $item['options']) : [];
+        $item_without_options = $item;
+        unset($item_without_options['options']);
+
+        $item_raw = wp_json_encode($item);
+        $item_without_options_raw = wp_json_encode($item_without_options);
+        $default_options_raw = wp_json_encode($options);
+        if (
+            !is_string($item_raw) || $item_raw === ''
+            || !is_string($item_without_options_raw) || $item_without_options_raw === ''
+            || !is_string($default_options_raw) || $default_options_raw === ''
+        ) {
+            return [];
+        }
+
+        $option_raw_by_token = [];
+        $option_token_order = [];
+        foreach ($options as $option_row) {
+            if (!is_array($option_row)) {
+                continue;
+            }
+
+            $option = (array) $option_row;
+            $option_id = (int) ($option['id'] ?? 0);
+            if ($option_id <= 0) {
+                continue;
+            }
+
+            $option_raw = wp_json_encode($option);
+            if (!is_string($option_raw) || $option_raw === '') {
+                continue;
+            }
+
+            $token = (string) $option_id;
+            $option_raw_by_token[$token] = $option_raw;
+            $option_token_order[] = $token;
+        }
+
+        $short_answer_input_keys = [];
+        if (isset($item['short_answer_meta']['input_keys']) && is_array($item['short_answer_meta']['input_keys'])) {
+            $short_answer_input_keys = array_values(array_filter(array_map('strval', $item['short_answer_meta']['input_keys']), static function (string $key): bool {
+                return trim($key) !== '';
+            }));
+        }
+
+        $item_hash = hash('sha256', $item_raw);
+        $meta = [
+            'id' => $question_id,
+            'question_type' => sanitize_key((string) ($item['question_type'] ?? '')),
+            'points' => (float) ($item['points'] ?? 0),
+            'updated_at' => is_scalar($item['updated_at'] ?? null) ? (string) $item['updated_at'] : '',
+            'option_count' => count($options),
+            'has_options' => $has_options ? 1 : 0,
+            'short_answer_input_keys' => $short_answer_input_keys,
+        ];
+
+        return [
+            'snapshot_payload_version' => self::SNAPSHOT_PAYLOAD_VERSION,
+            'snapshot_storage_version' => self::SNAPSHOT_V2_INDEX_VERSION,
+            'storage_shape' => self::SNAPSHOT_V2_STORAGE_SHAPE . '_item',
+            'exam_id' => $exam_id,
+            'question_id' => $question_id,
+            'item_hash' => $item_hash,
+            'item_key' => self::v2_item_blob_storage_key($exam_id, $item_hash),
+            'item_raw' => $item_raw,
+            'item_without_options_raw' => $item_without_options_raw,
+            'default_options_raw' => $default_options_raw,
+            'has_options' => $has_options ? 1 : 0,
+            'option_raw_by_token' => $option_raw_by_token,
+            'option_token_order' => $option_token_order,
+            'meta' => $meta,
+        ];
+    }
+
+    private static function validate_v2_index(array $index, int $exam_id, string $revision_signature): bool
+    {
+        return (int) ($index['snapshot_payload_version'] ?? 0) === self::SNAPSHOT_PAYLOAD_VERSION
+            && (int) ($index['snapshot_storage_version'] ?? 0) === self::SNAPSHOT_V2_INDEX_VERSION
+            && (string) ($index['storage_shape'] ?? '') === self::SNAPSHOT_V2_STORAGE_SHAPE
+            && absint($index['exam_id'] ?? 0) === $exam_id
+            && (string) ($index['revision_signature'] ?? '') === $revision_signature
+            && !empty($index['question_ids'])
+            && is_array($index['item_key_by_question_id'] ?? null)
+            && is_array($index['item_hash_by_question_id'] ?? null);
+    }
+
+    private static function validate_v2_item_blob(array $blob, int $exam_id, int $question_id, string $item_hash): bool
+    {
+        return (int) ($blob['snapshot_payload_version'] ?? 0) === self::SNAPSHOT_PAYLOAD_VERSION
+            && (int) ($blob['snapshot_storage_version'] ?? 0) === self::SNAPSHOT_V2_INDEX_VERSION
+            && (string) ($blob['storage_shape'] ?? '') === self::SNAPSHOT_V2_STORAGE_SHAPE . '_item'
+            && absint($blob['exam_id'] ?? 0) === $exam_id
+            && absint($blob['question_id'] ?? 0) === $question_id
+            && (string) ($blob['item_hash'] ?? '') === $item_hash
+            && is_string($blob['item_raw'] ?? null)
+            && trim((string) ($blob['item_raw'] ?? '')) !== '';
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function normalize_v2_index(array $index): array
+    {
+        $index['question_ids'] = self::normalize_question_ids($index['question_ids'] ?? []);
+        $index['question_count'] = count($index['question_ids']);
+        $index['item_key_by_question_id'] = self::normalize_v2_string_map($index['item_key_by_question_id'] ?? []);
+        $index['item_hash_by_question_id'] = self::normalize_v2_string_map($index['item_hash_by_question_id'] ?? []);
+        $index['question_meta_by_id'] = self::normalize_v2_array_map($index['question_meta_by_id'] ?? []);
+
+        return $index;
+    }
+
+    /**
+     * @param mixed $values
+     * @return array<int,int>
+     */
+    private static function normalize_question_ids($values): array
+    {
+        if (!is_array($values)) {
+            return [];
+        }
+
+        return array_values(array_unique(array_filter(array_map('intval', $values), static function (int $question_id): bool {
+            return $question_id > 0;
+        })));
+    }
+
+    /**
+     * @param mixed $values
+     * @return array<int,string>
+     */
+    private static function normalize_v2_string_map($values): array
+    {
+        if (!is_array($values)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($values as $key => $value) {
+            $question_id = (int) $key;
+            if ($question_id <= 0 || !is_scalar($value)) {
+                continue;
+            }
+
+            $string_value = trim((string) $value);
+            if ($string_value !== '') {
+                $normalized[$question_id] = $string_value;
+            }
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @param mixed $values
+     * @return array<int,array<string,mixed>>
+     */
+    private static function normalize_v2_array_map($values): array
+    {
+        if (!is_array($values)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($values as $key => $value) {
+            $question_id = (int) $key;
+            if ($question_id <= 0 || !is_array($value)) {
+                continue;
+            }
+
+            $normalized[$question_id] = (array) $value;
+        }
+
+        return $normalized;
+    }
+
+    private static function snapshot_v2_disabled(): bool
+    {
+        return defined('CBT_SNAPSHOT_V2_DISABLED') && CBT_SNAPSHOT_V2_DISABLED;
+    }
+
+    private static function blob_ttl_seconds(int $ttl_seconds): int
+    {
+        return max(self::DELIVERY_BLOB_REDIS_TTL_SECONDS, max(1, $ttl_seconds));
     }
 
     /**
@@ -869,6 +1588,10 @@ class CBT_Exam_Question_Delivery_Cache
         }
 
         foreach (array_values($keys) as $key) {
+            if (strpos($key, ':item:') !== false) {
+                continue;
+            }
+
             if ($key !== '' && $key !== $current_storage_key) {
                 return true;
             }
@@ -948,6 +1671,21 @@ class CBT_Exam_Question_Delivery_Cache
             . 'exam:' . $exam_id
             . ':rev:' . max(1, (int) ($revision_meta['version'] ?? 1))
             . ':' . md5(self::revision_signature($revision_meta));
+    }
+
+    /**
+     * @param array{exam_id:int,version:int,invalidated_at:string,signature:string} $revision_meta
+     */
+    private static function v2_index_storage_key(int $exam_id, array $revision_meta): string
+    {
+        return self::storage_key($exam_id, $revision_meta) . ':v2:index';
+    }
+
+    private static function v2_item_blob_storage_key(int $exam_id, string $item_hash): string
+    {
+        return self::DELIVERY_REDIS_PREFIX
+            . 'exam:' . max(0, $exam_id)
+            . ':item:' . preg_replace('/[^a-f0-9]/', '', strtolower($item_hash));
     }
 
     private static function delivery_event_storage_key(int $exam_id): string

@@ -247,7 +247,7 @@ final class RestQuestionDeliverySnapshotTest extends TestCase
 
         self::assertTrue($result['success']);
         self::assertSame('full_rebuild', $result['mode']);
-        self::assertSame('delivery_snapshot_miss', $result['reason']);
+        self::assertSame('delivery_v2_index_miss', $result['reason']);
         self::assertSame(2, $wpdb->questionHydrateCalls);
         self::assertSame(2, $wpdb->optionHydrateCalls);
     }
@@ -309,6 +309,47 @@ final class RestQuestionDeliverySnapshotTest extends TestCase
         self::assertMatchesRegularExpression('/^"[a-f0-9]{64}"$/', (string) ($headers['ETag'] ?? ''));
         self::assertSame('private, no-cache, must-revalidate', $headers['Cache-Control'] ?? null);
         self::assertSame('Authorization, Cookie', $headers['Vary'] ?? null);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_get_questions_uses_raw_v2_response_when_delivery_blobs_and_contract_are_ready(): void
+    {
+        $this->bootstrapRestDeliverySnapshotScaffold();
+        $this->registerStudentFixture();
+        $this->useDeliveryFakeRedis();
+        $this->useAttemptContractFakeRedis();
+        $this->setRuntimeRedisUnavailable();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+
+        global $wpdb;
+        $wpdb = new RestQuestionDeliverySnapshotFakeWpdb();
+
+        CBT_REST::warm_exam_question_delivery_snapshot(55);
+
+        $request = new WP_REST_Request([
+            'exam_id' => 55,
+            'attempt_id' => 77,
+            'offset' => 0,
+            'limit' => 1,
+        ], [], [], '/cbt/v1/questions', 'GET');
+
+        $first = CBT_REST::get_questions($request);
+        self::assertFalse(is_wp_error($first));
+        self::assertArrayHasKey('cbt_attempt_contract:attempt:77', (array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
+
+        $second = CBT_REST::get_questions($request);
+
+        self::assertInstanceOf(CBT_Raw_JSON_REST_Response::class, $second);
+        self::assertSame('v2-raw', ($second->get_headers())['X-CBT-Questions-Storage'] ?? null);
+        $decoded = json_decode($second->get_raw_json(), true);
+        self::assertIsArray($decoded);
+        self::assertSame('Ibu Kota Indonesia?', $decoded['items'][0]['question_text'] ?? null);
+        self::assertSame(9002, $decoded['items'][0]['existing_answer'] ?? null);
+        self::assertSame($decoded, $second->get_data());
+        self::assertSame(1, $wpdb->questionHydrateCalls);
+        self::assertSame(1, $wpdb->optionHydrateCalls);
     }
 
     #[RunInSeparateProcess]

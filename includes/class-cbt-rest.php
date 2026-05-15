@@ -24,6 +24,10 @@ if (!class_exists('CBT_Exam_Start_Attempt_Snapshot_Cache')) {
     require_once __DIR__ . '/class-cbt-exam-start-attempt-snapshot-cache.php';
 }
 
+if (!class_exists('CBT_Raw_JSON_REST_Response')) {
+    require_once __DIR__ . '/class-cbt-raw-json-rest-response.php';
+}
+
 if (!class_exists('CBT_Start_Attempt_Gate_Service')) {
     require_once __DIR__ . '/class-cbt-start-attempt-gate-service.php';
 }
@@ -142,6 +146,7 @@ class CBT_REST
     public static function init(): void
     {
         add_action('rest_api_init', [self::class, 'register_routes']);
+        CBT_Raw_JSON_REST_Response::register_rest_filter();
     }
 
     public static function register_routes(): void

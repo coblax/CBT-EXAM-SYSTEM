@@ -15,7 +15,10 @@ if (!class_exists('CBT_Snapshot_Auto_Heal_Queue_Service')) {
 class CBT_Exam_Start_Attempt_Snapshot_Cache
 {
     private const SNAPSHOT_PAYLOAD_VERSION = 2;
+    private const SNAPSHOT_V2_INDEX_VERSION = 1;
+    private const SNAPSHOT_V2_STORAGE_SHAPE = 'start_per_question_v2';
     private const START_REDIS_TTL_SECONDS = 44100;
+    private const START_FRAGMENT_REDIS_TTL_SECONDS = 604800;
     private const START_EVENT_REDIS_TTL_SECONDS = 604800;
     private const START_REDIS_DEFAULT_HOST = '127.0.0.1';
     private const START_REDIS_DEFAULT_PORT = 6379;
@@ -82,6 +85,11 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
         $enable_calculator = 0;
         $snapshot_status = 'idle';
         $snapshot_message = 'Masukkan Exam ID untuk memeriksa start snapshot.';
+        $storage_shape = 'none';
+        $v2_index_status = self::snapshot_v2_disabled() ? 'disabled' : 'v2_index_miss';
+        $v2_fragment_count = 0;
+        $v2_missing_fragment_count = 0;
+        $fallback_reason = '';
 
         if ($exam_id <= 0) {
             return [
@@ -100,6 +108,11 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
                 'snapshot_message' => $snapshot_message,
                 'repair_status' => '',
                 'repair_message' => '',
+                'storage_shape' => $storage_shape,
+                'v2_index_status' => $v2_index_status,
+                'v2_fragment_count' => $v2_fragment_count,
+                'v2_missing_fragment_count' => $v2_missing_fragment_count,
+                'fallback_reason' => 'idle',
                 'snapshot_item_count' => 0,
                 'snapshot_payload_bytes' => 0,
                 'snapshot_ttl_seconds' => -2,
@@ -127,6 +140,11 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
                 'snapshot_message' => 'Redis start snapshot tidak tersedia. Start attempt akan fallback ke jalur legacy.',
                 'repair_status' => '',
                 'repair_message' => '',
+                'storage_shape' => $storage_shape,
+                'v2_index_status' => $v2_index_status,
+                'v2_fragment_count' => $v2_fragment_count,
+                'v2_missing_fragment_count' => $v2_missing_fragment_count,
+                'fallback_reason' => 'redis_unavailable',
                 'snapshot_item_count' => 0,
                 'snapshot_payload_bytes' => 0,
                 'snapshot_ttl_seconds' => -2,
@@ -137,12 +155,43 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
             ];
         }
 
-        $raw_payload = $storage_key !== '' ? $redis->get($storage_key) : false;
+        if (!self::snapshot_v2_disabled()) {
+            $v2_payload = self::read_exam_snapshot_v2($exam_id, $redis, $revision_meta, $v2_meta);
+            $v2_index_status = (string) ($v2_meta['reason'] ?? $v2_index_status);
+            if ($v2_payload !== null) {
+                $snapshot_exists = true;
+                $snapshot_valid = true;
+                $storage_shape = self::SNAPSHOT_V2_STORAGE_SHAPE;
+                $v2_index_status = 'ready';
+                $storage_key = (string) ($v2_meta['storage_key'] ?? $storage_key);
+                $raw_index = $redis->get($storage_key);
+                $snapshot_payload_bytes = is_string($raw_index) ? strlen($raw_index) : 0;
+                if (method_exists($redis, 'ttl')) {
+                    $snapshot_ttl_seconds = (int) $redis->ttl($storage_key);
+                }
+                $question_ids = self::normalize_question_ids($v2_payload['question_ids'] ?? []);
+                $snapshot_item_count = count($question_ids);
+                $v2_fragment_count = $snapshot_item_count;
+                $question_count = max(0, (int) ($v2_payload['question_count'] ?? $snapshot_item_count));
+                $duration_minutes = max(0, (int) ($v2_payload['duration_minutes'] ?? 0));
+                $show_student_result = !empty($v2_payload['show_student_result']) ? 1 : 0;
+                $enable_calculator = !empty($v2_payload['enable_calculator']) ? 1 : 0;
+            }
+        }
+
+        $legacy_storage_key = self::storage_key($exam_id, $revision_meta);
+        $raw_payload = (!$snapshot_valid && $legacy_storage_key !== '') ? $redis->get($legacy_storage_key) : false;
         if (is_string($raw_payload) && trim($raw_payload) !== '') {
             $snapshot_exists = true;
+            if ($storage_shape === 'none') {
+                $storage_shape = 'legacy_monolith';
+            }
+            if ($fallback_reason === '' && $v2_index_status !== 'ready') {
+                $fallback_reason = $v2_index_status;
+            }
             $snapshot_payload_bytes = strlen($raw_payload);
             if (method_exists($redis, 'ttl')) {
-                $snapshot_ttl_seconds = (int) $redis->ttl($storage_key);
+                $snapshot_ttl_seconds = (int) $redis->ttl($legacy_storage_key);
             }
 
             $decoded = json_decode($raw_payload, true);
@@ -192,6 +241,9 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
         if (in_array($snapshot_status, ['miss', 'invalid'], true)) {
             self::maybe_enqueue_auto_heal($exam_id, $snapshot_miss_reason, 'diagnostics');
         }
+        if ($fallback_reason === '' && $v2_index_status !== 'ready') {
+            $fallback_reason = $v2_index_status;
+        }
         $queue_meta = self::build_queue_repair_meta($exam_id);
 
         return [
@@ -210,6 +262,11 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
             'snapshot_message' => $snapshot_message,
             'repair_status' => (string) ($queue_meta['status'] ?? ''),
             'repair_message' => (string) ($queue_meta['message'] ?? ''),
+            'storage_shape' => $storage_shape,
+            'v2_index_status' => $v2_index_status,
+            'v2_fragment_count' => $v2_fragment_count,
+            'v2_missing_fragment_count' => $v2_missing_fragment_count,
+            'fallback_reason' => $fallback_reason,
             'snapshot_item_count' => $snapshot_item_count,
             'snapshot_payload_bytes' => $snapshot_payload_bytes,
             'snapshot_ttl_seconds' => $snapshot_ttl_seconds,
@@ -357,6 +414,163 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
      *   revision_signature:string,
      *   storage_key:string,
      *   ttl_seconds:int,
+     *   index:array<string,mixed>
+     * }
+     */
+    public static function read_current_exam_snapshot_v2_index_envelope(int $exam_id): array
+    {
+        $exam_id = absint($exam_id);
+        $empty_revision = [
+            'exam_id' => $exam_id,
+            'version' => 0,
+            'invalidated_at' => '',
+            'signature' => '',
+        ];
+        $default = [
+            'success' => false,
+            'reason' => $exam_id > 0 ? 'v2_index_miss' : 'invalid_exam',
+            'exam_id' => $exam_id,
+            'revision_meta' => $empty_revision,
+            'revision_signature' => '',
+            'storage_key' => '',
+            'ttl_seconds' => -2,
+            'index' => [],
+        ];
+        if ($exam_id <= 0) {
+            return $default;
+        }
+        if (self::snapshot_v2_disabled()) {
+            $default['reason'] = 'v2_disabled';
+            return $default;
+        }
+
+        $redis = self::start_snapshot_redis();
+        if (!$redis instanceof Redis) {
+            $default['reason'] = 'redis_unavailable';
+            return $default;
+        }
+
+        $revision_meta = self::exam_revision_meta($exam_id);
+        $revision_signature = self::revision_signature($revision_meta);
+        $default['revision_meta'] = $revision_meta;
+        $default['revision_signature'] = $revision_signature;
+        if ((int) ($revision_meta['exam_id'] ?? 0) !== $exam_id) {
+            $default['reason'] = 'revision_unavailable';
+            return $default;
+        }
+
+        $index_key = self::v2_index_storage_key($exam_id, $revision_meta);
+        $default['storage_key'] = $index_key;
+        $raw_index = $redis->get($index_key);
+        if (method_exists($redis, 'ttl')) {
+            $default['ttl_seconds'] = (int) $redis->ttl($index_key);
+        }
+        if (!is_string($raw_index) || trim($raw_index) === '') {
+            $default['reason'] = 'v2_index_miss';
+            return $default;
+        }
+
+        $index = json_decode($raw_index, true);
+        if (!is_array($index) || !self::validate_v2_index($index, $exam_id, $revision_signature)) {
+            self::write_start_event_marker($exam_id, 'invalid_payload');
+            $default['reason'] = 'v2_index_invalid';
+            return $default;
+        }
+
+        $default['success'] = true;
+        $default['reason'] = 'ready';
+        $default['index'] = self::normalize_v2_index($index);
+
+        return $default;
+    }
+
+    /**
+     * @param array<string,mixed> $previous_index
+     * @param array<int,array{manifest:array<string,mixed>,option_tokens:array<int,string>,force_shuffle:bool}> $fragments_by_id
+     */
+    public static function write_current_exam_snapshot_v2_partial_index(
+        int $exam_id,
+        array $previous_index,
+        array $fragments_by_id,
+        int $ttl_seconds = 0
+    ): bool {
+        $exam_id = absint($exam_id);
+        if ($exam_id <= 0 || empty($previous_index) || empty($fragments_by_id) || self::snapshot_v2_disabled()) {
+            return false;
+        }
+
+        $redis = self::start_snapshot_redis();
+        if (!$redis instanceof Redis) {
+            return false;
+        }
+
+        $revision_meta = self::exam_revision_meta($exam_id);
+        if ((int) ($revision_meta['exam_id'] ?? 0) !== $exam_id) {
+            return false;
+        }
+
+        $question_ids = self::normalize_question_ids($previous_index['question_ids'] ?? []);
+        $fragment_key_by_question_id = self::normalize_v2_string_map($previous_index['fragment_key_by_question_id'] ?? []);
+        $fragment_hash_by_question_id = self::normalize_v2_string_map($previous_index['fragment_hash_by_question_id'] ?? []);
+        if (empty($question_ids) || empty($fragment_key_by_question_id) || empty($fragment_hash_by_question_id)) {
+            return false;
+        }
+
+        $write_ttl = $ttl_seconds > 0 ? $ttl_seconds : self::START_REDIS_TTL_SECONDS;
+        foreach ($fragments_by_id as $question_id => $fragment) {
+            $safe_question_id = (int) $question_id;
+            if ($safe_question_id <= 0 || !in_array($safe_question_id, $question_ids, true) || !is_array($fragment)) {
+                return false;
+            }
+
+            $blob = self::build_v2_fragment_payload($exam_id, $safe_question_id, $fragment);
+            if (empty($blob)) {
+                return false;
+            }
+
+            $blob_key = (string) ($blob['fragment_key'] ?? '');
+            $encoded_blob = wp_json_encode($blob);
+            if ($blob_key === '' || !is_string($encoded_blob) || $encoded_blob === '') {
+                return false;
+            }
+
+            if (!$redis->setEx($blob_key, self::fragment_ttl_seconds($write_ttl), $encoded_blob)) {
+                return false;
+            }
+
+            $fragment_key_by_question_id[$safe_question_id] = $blob_key;
+            $fragment_hash_by_question_id[$safe_question_id] = (string) ($blob['fragment_hash'] ?? '');
+        }
+
+        $index = self::build_v2_index_payload(
+            $exam_id,
+            $revision_meta,
+            self::normalize_snapshot_payload($previous_index),
+            $fragment_key_by_question_id,
+            $fragment_hash_by_question_id
+        );
+        $encoded_index = wp_json_encode($index);
+        if (!is_string($encoded_index) || $encoded_index === '') {
+            return false;
+        }
+
+        $written = (bool) $redis->setEx(self::v2_index_storage_key($exam_id, $revision_meta), max(1, $write_ttl), $encoded_index);
+        if ($written) {
+            self::write_start_event_marker($exam_id, 'written');
+        }
+
+        return $written;
+    }
+
+    /**
+     * @return array{
+     *   success:bool,
+     *   reason:string,
+     *   exam_id:int,
+     *   revision_meta:array{exam_id:int,version:int,invalidated_at:string,signature:string},
+     *   revision_signature:string,
+     *   storage_key:string,
+     *   ttl_seconds:int,
      *   payload:array<string,mixed>
      * }
      */
@@ -396,6 +610,19 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
         if ((int) ($revision_meta['exam_id'] ?? 0) !== $exam_id) {
             $default['reason'] = 'revision_unavailable';
             return $default;
+        }
+
+        if (!self::snapshot_v2_disabled()) {
+            $v2_payload = self::read_exam_snapshot_v2($exam_id, $redis, $revision_meta, $v2_meta);
+            if ($v2_payload !== null) {
+                $default['success'] = true;
+                $default['reason'] = 'ready';
+                $default['storage_key'] = (string) ($v2_meta['storage_key'] ?? self::v2_index_storage_key($exam_id, $revision_meta));
+                $default['ttl_seconds'] = (int) ($v2_meta['ttl_seconds'] ?? -2);
+                $default['payload'] = $v2_payload;
+
+                return $default;
+            }
         }
 
         $storage_key = self::storage_key($exam_id, $revision_meta);
@@ -494,6 +721,14 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
             return null;
         }
 
+        if (!self::snapshot_v2_disabled()) {
+            $v2_payload = self::read_exam_snapshot_v2($exam_id, $redis, $revision_meta, $v2_meta);
+            if ($v2_payload !== null) {
+                $redis->expire((string) ($v2_meta['storage_key'] ?? self::v2_index_storage_key($exam_id, $revision_meta)), self::START_REDIS_TTL_SECONDS);
+                return $v2_payload;
+            }
+        }
+
         $storage_key = self::storage_key($exam_id, $revision_meta);
         $raw_payload = $redis->get($storage_key);
         if (!is_string($raw_payload) || trim($raw_payload) === '') {
@@ -527,6 +762,9 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
 
         $payload = self::normalize_snapshot_payload($decoded);
         $redis->expire($storage_key, self::START_REDIS_TTL_SECONDS);
+        if (!self::snapshot_v2_disabled()) {
+            self::write_exam_snapshot_v2_with_ttl($exam_id, $payload, self::START_REDIS_TTL_SECONDS);
+        }
 
         return $payload;
     }
@@ -569,7 +807,324 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
             self::write_start_event_marker($exam_id, 'written');
         }
 
-        return $written;
+        $v2_written = self::snapshot_v2_disabled()
+            ? false
+            : self::write_exam_snapshot_v2_with_ttl($exam_id, $payload, $ttl_seconds);
+
+        return $written || $v2_written;
+    }
+
+    /**
+     * @param array{exam_id:int,version:int,invalidated_at:string,signature:string} $revision_meta
+     * @param array<string,mixed>|null $meta
+     * @return array<string,mixed>|null
+     */
+    private static function read_exam_snapshot_v2(int $exam_id, Redis $redis, array $revision_meta, ?array &$meta = null): ?array
+    {
+        $meta = [
+            'storage_key' => '',
+            'ttl_seconds' => -2,
+            'reason' => 'v2_index_miss',
+        ];
+        $revision_signature = self::revision_signature($revision_meta);
+        $index_key = self::v2_index_storage_key($exam_id, $revision_meta);
+        $meta['storage_key'] = $index_key;
+        if (method_exists($redis, 'ttl')) {
+            $meta['ttl_seconds'] = (int) $redis->ttl($index_key);
+        }
+
+        $raw_index = $redis->get($index_key);
+        if (!is_string($raw_index) || trim($raw_index) === '') {
+            return null;
+        }
+
+        $index = json_decode($raw_index, true);
+        if (!is_array($index) || !self::validate_v2_index($index, $exam_id, $revision_signature)) {
+            self::write_start_event_marker($exam_id, 'invalid_payload');
+            $meta['reason'] = 'v2_index_invalid';
+            return null;
+        }
+
+        $index = self::normalize_v2_index($index);
+        $question_ids = self::normalize_question_ids($index['question_ids'] ?? []);
+        $fragment_key_by_question_id = self::normalize_v2_string_map($index['fragment_key_by_question_id'] ?? []);
+        $fragment_hash_by_question_id = self::normalize_v2_string_map($index['fragment_hash_by_question_id'] ?? []);
+        if (empty($question_ids)) {
+            $meta['reason'] = 'v2_index_empty';
+            return null;
+        }
+
+        $question_manifest = [];
+        $option_tokens_by_question = [];
+        $force_shuffle_lookup = [];
+        foreach ($question_ids as $question_id) {
+            $fragment_key = (string) ($fragment_key_by_question_id[$question_id] ?? '');
+            $fragment_hash = (string) ($fragment_hash_by_question_id[$question_id] ?? '');
+            if ($fragment_key === '' || $fragment_hash === '') {
+                $meta['reason'] = 'v2_fragment_missing';
+                return null;
+            }
+
+            $raw_fragment = $redis->get($fragment_key);
+            if (!is_string($raw_fragment) || trim($raw_fragment) === '') {
+                $meta['reason'] = 'v2_fragment_miss';
+                return null;
+            }
+
+            $fragment = json_decode($raw_fragment, true);
+            if (!is_array($fragment) || !self::validate_v2_fragment($fragment, $exam_id, $question_id, $fragment_hash)) {
+                $meta['reason'] = 'v2_fragment_invalid';
+                return null;
+            }
+
+            $manifest_item = isset($fragment['manifest']) && is_array($fragment['manifest'])
+                ? (array) $fragment['manifest']
+                : [];
+            if (empty($manifest_item)) {
+                $meta['reason'] = 'v2_fragment_manifest_missing';
+                return null;
+            }
+
+            $question_manifest[] = $manifest_item;
+            $tokens = self::normalize_option_randomization_tokens_map([$question_id => $fragment['option_tokens'] ?? []]);
+            if (!empty($tokens[$question_id])) {
+                $option_tokens_by_question[$question_id] = $tokens[$question_id];
+            }
+            if (!empty($fragment['force_shuffle'])) {
+                $force_shuffle_lookup[$question_id] = true;
+            }
+        }
+
+        $payload = self::normalize_snapshot_payload(array_merge($index, [
+            'question_manifest' => $question_manifest,
+            'option_randomization_tokens_by_question' => $option_tokens_by_question,
+            'force_option_shuffle_question_ids' => array_keys($force_shuffle_lookup),
+        ]));
+        $meta['reason'] = 'ready';
+
+        return $payload;
+    }
+
+    /**
+     * @param array<string,mixed> $payload
+     */
+    private static function write_exam_snapshot_v2_with_ttl(int $exam_id, array $payload, int $ttl_seconds): bool
+    {
+        if (self::snapshot_v2_disabled()) {
+            return false;
+        }
+
+        $redis = self::start_snapshot_redis();
+        if (!$redis instanceof Redis) {
+            return false;
+        }
+
+        $revision_meta = self::exam_revision_meta($exam_id);
+        if ((int) ($revision_meta['exam_id'] ?? 0) !== $exam_id) {
+            return false;
+        }
+
+        $payload = self::normalize_snapshot_payload($payload);
+        $question_ids = self::normalize_question_ids($payload['question_ids'] ?? []);
+        if (empty($question_ids)) {
+            return false;
+        }
+
+        $manifest_by_id = [];
+        foreach ((array) ($payload['question_manifest'] ?? []) as $manifest_item) {
+            if (!is_array($manifest_item)) {
+                continue;
+            }
+
+            $question_id = (int) ($manifest_item['id'] ?? 0);
+            if ($question_id > 0) {
+                $manifest_by_id[$question_id] = (array) $manifest_item;
+            }
+        }
+
+        $tokens_by_question = self::normalize_option_randomization_tokens_map($payload['option_randomization_tokens_by_question'] ?? []);
+        $force_shuffle_lookup = array_fill_keys(self::normalize_question_ids($payload['force_option_shuffle_question_ids'] ?? []), true);
+        $fragment_key_by_question_id = [];
+        $fragment_hash_by_question_id = [];
+        $fragment_ttl = self::fragment_ttl_seconds($ttl_seconds);
+
+        foreach ($question_ids as $question_id) {
+            $manifest_item = (array) ($manifest_by_id[$question_id] ?? ['id' => $question_id]);
+            $fragment = [
+                'manifest' => $manifest_item,
+                'option_tokens' => (array) ($tokens_by_question[$question_id] ?? []),
+                'force_shuffle' => !empty($force_shuffle_lookup[$question_id]),
+            ];
+            $blob = self::build_v2_fragment_payload($exam_id, $question_id, $fragment);
+            if (empty($blob)) {
+                return false;
+            }
+
+            $blob_key = (string) ($blob['fragment_key'] ?? '');
+            $encoded_blob = wp_json_encode($blob);
+            if ($blob_key === '' || !is_string($encoded_blob) || $encoded_blob === '') {
+                return false;
+            }
+
+            if (!$redis->setEx($blob_key, $fragment_ttl, $encoded_blob)) {
+                return false;
+            }
+
+            $fragment_key_by_question_id[$question_id] = $blob_key;
+            $fragment_hash_by_question_id[$question_id] = (string) ($blob['fragment_hash'] ?? '');
+        }
+
+        $index = self::build_v2_index_payload(
+            $exam_id,
+            $revision_meta,
+            $payload,
+            $fragment_key_by_question_id,
+            $fragment_hash_by_question_id
+        );
+        $encoded_index = wp_json_encode($index);
+        if (!is_string($encoded_index) || $encoded_index === '') {
+            return false;
+        }
+
+        return (bool) $redis->setEx(self::v2_index_storage_key($exam_id, $revision_meta), max(1, $ttl_seconds), $encoded_index);
+    }
+
+    /**
+     * @param array<int,string> $fragment_key_by_question_id
+     * @param array<int,string> $fragment_hash_by_question_id
+     * @return array<string,mixed>
+     */
+    private static function build_v2_index_payload(
+        int $exam_id,
+        array $revision_meta,
+        array $payload,
+        array $fragment_key_by_question_id,
+        array $fragment_hash_by_question_id
+    ): array {
+        $payload = self::normalize_snapshot_payload($payload);
+        return [
+            'snapshot_payload_version' => self::SNAPSHOT_PAYLOAD_VERSION,
+            'snapshot_storage_version' => self::SNAPSHOT_V2_INDEX_VERSION,
+            'storage_shape' => self::SNAPSHOT_V2_STORAGE_SHAPE,
+            'exam_id' => $exam_id,
+            'revision_signature' => self::revision_signature($revision_meta),
+            'question_ids' => self::normalize_question_ids($payload['question_ids'] ?? []),
+            'question_count' => max(0, (int) ($payload['question_count'] ?? 0)),
+            'question_number_map' => self::normalize_question_number_map($payload['question_number_map'] ?? []),
+            'randomize_questions' => !empty($payload['randomize_questions']) ? 1 : 0,
+            'randomize_options' => !empty($payload['randomize_options']) ? 1 : 0,
+            'duration_minutes' => max(0, (int) ($payload['duration_minutes'] ?? 0)),
+            'show_student_result' => !empty($payload['show_student_result']) ? 1 : 0,
+            'enable_calculator' => !empty($payload['enable_calculator']) ? 1 : 0,
+            'fragment_key_by_question_id' => self::normalize_v2_string_map($fragment_key_by_question_id),
+            'fragment_hash_by_question_id' => self::normalize_v2_string_map($fragment_hash_by_question_id),
+        ];
+    }
+
+    /**
+     * @param array{manifest:array<string,mixed>,option_tokens:array<int,string>,force_shuffle:bool} $fragment
+     * @return array<string,mixed>
+     */
+    private static function build_v2_fragment_payload(int $exam_id, int $question_id, array $fragment): array
+    {
+        $manifest = isset($fragment['manifest']) && is_array($fragment['manifest'])
+            ? self::normalize_question_manifest([(array) $fragment['manifest']])
+            : [];
+        $manifest_item = (array) ($manifest[0] ?? ['id' => $question_id]);
+        $manifest_item['id'] = $question_id;
+        $option_tokens = self::normalize_option_randomization_tokens_map([$question_id => $fragment['option_tokens'] ?? []]);
+        $payload = [
+            'manifest' => $manifest_item,
+            'option_tokens' => array_values((array) ($option_tokens[$question_id] ?? [])),
+            'force_shuffle' => !empty($fragment['force_shuffle']) ? 1 : 0,
+        ];
+        $encoded_payload = wp_json_encode($payload);
+        if (!is_string($encoded_payload) || $encoded_payload === '') {
+            return [];
+        }
+
+        $fragment_hash = hash('sha256', $encoded_payload);
+        return array_merge($payload, [
+            'snapshot_payload_version' => self::SNAPSHOT_PAYLOAD_VERSION,
+            'snapshot_storage_version' => self::SNAPSHOT_V2_INDEX_VERSION,
+            'storage_shape' => self::SNAPSHOT_V2_STORAGE_SHAPE . '_fragment',
+            'exam_id' => $exam_id,
+            'question_id' => $question_id,
+            'fragment_hash' => $fragment_hash,
+            'fragment_key' => self::v2_fragment_storage_key($exam_id, $fragment_hash),
+        ]);
+    }
+
+    private static function validate_v2_index(array $index, int $exam_id, string $revision_signature): bool
+    {
+        return (int) ($index['snapshot_payload_version'] ?? 0) === self::SNAPSHOT_PAYLOAD_VERSION
+            && (int) ($index['snapshot_storage_version'] ?? 0) === self::SNAPSHOT_V2_INDEX_VERSION
+            && (string) ($index['storage_shape'] ?? '') === self::SNAPSHOT_V2_STORAGE_SHAPE
+            && absint($index['exam_id'] ?? 0) === $exam_id
+            && (string) ($index['revision_signature'] ?? '') === $revision_signature
+            && !empty($index['question_ids'])
+            && is_array($index['fragment_key_by_question_id'] ?? null)
+            && is_array($index['fragment_hash_by_question_id'] ?? null);
+    }
+
+    private static function validate_v2_fragment(array $fragment, int $exam_id, int $question_id, string $fragment_hash): bool
+    {
+        return (int) ($fragment['snapshot_payload_version'] ?? 0) === self::SNAPSHOT_PAYLOAD_VERSION
+            && (int) ($fragment['snapshot_storage_version'] ?? 0) === self::SNAPSHOT_V2_INDEX_VERSION
+            && (string) ($fragment['storage_shape'] ?? '') === self::SNAPSHOT_V2_STORAGE_SHAPE . '_fragment'
+            && absint($fragment['exam_id'] ?? 0) === $exam_id
+            && absint($fragment['question_id'] ?? 0) === $question_id
+            && (string) ($fragment['fragment_hash'] ?? '') === $fragment_hash
+            && is_array($fragment['manifest'] ?? null);
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function normalize_v2_index(array $index): array
+    {
+        $index['question_ids'] = self::normalize_question_ids($index['question_ids'] ?? []);
+        $index['question_count'] = max(0, (int) ($index['question_count'] ?? count($index['question_ids'])));
+        $index['question_number_map'] = self::normalize_question_number_map($index['question_number_map'] ?? []);
+        $index['fragment_key_by_question_id'] = self::normalize_v2_string_map($index['fragment_key_by_question_id'] ?? []);
+        $index['fragment_hash_by_question_id'] = self::normalize_v2_string_map($index['fragment_hash_by_question_id'] ?? []);
+
+        return $index;
+    }
+
+    /**
+     * @param mixed $values
+     * @return array<int,string>
+     */
+    private static function normalize_v2_string_map($values): array
+    {
+        if (!is_array($values)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($values as $key => $value) {
+            $question_id = (int) $key;
+            if ($question_id <= 0 || !is_scalar($value)) {
+                continue;
+            }
+            $string_value = trim((string) $value);
+            if ($string_value !== '') {
+                $normalized[$question_id] = $string_value;
+            }
+        }
+
+        return $normalized;
+    }
+
+    private static function snapshot_v2_disabled(): bool
+    {
+        return defined('CBT_SNAPSHOT_V2_DISABLED') && CBT_SNAPSHOT_V2_DISABLED;
+    }
+
+    private static function fragment_ttl_seconds(int $ttl_seconds): int
+    {
+        return max(self::START_FRAGMENT_REDIS_TTL_SECONDS, max(1, $ttl_seconds));
     }
 
     /**
@@ -800,6 +1355,10 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
         }
 
         foreach (array_values($keys) as $key) {
+            if (strpos($key, ':fragment:') !== false) {
+                continue;
+            }
+
             if ($key !== '' && $key !== $current_storage_key) {
                 return true;
             }
@@ -879,6 +1438,21 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
             . 'exam:' . $exam_id
             . ':rev:' . max(1, (int) ($revision_meta['version'] ?? 1))
             . ':' . md5(self::revision_signature($revision_meta));
+    }
+
+    /**
+     * @param array{exam_id:int,version:int,invalidated_at:string,signature:string} $revision_meta
+     */
+    private static function v2_index_storage_key(int $exam_id, array $revision_meta): string
+    {
+        return self::storage_key($exam_id, $revision_meta) . ':v2:index';
+    }
+
+    private static function v2_fragment_storage_key(int $exam_id, string $fragment_hash): string
+    {
+        return self::START_REDIS_PREFIX
+            . 'exam:' . max(0, $exam_id)
+            . ':fragment:' . preg_replace('/[^a-f0-9]/', '', strtolower($fragment_hash));
     }
 
     private static function start_event_storage_key(int $exam_id): string

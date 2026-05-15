@@ -505,16 +505,16 @@ trait CBT_REST_Question_Snapshot_Helpers
         $partial_result = $default;
 
         try {
-            $delivery_envelope = CBT_Exam_Question_Delivery_Cache::read_current_exam_payload_envelope($exam_id);
+            $delivery_envelope = CBT_Exam_Question_Delivery_Cache::read_current_exam_payload_v2_index_envelope($exam_id);
             if (empty($delivery_envelope['success'])) {
-                $fallback_reason = 'delivery_' . sanitize_key((string) ($delivery_envelope['reason'] ?? 'snapshot_unavailable'));
+                $fallback_reason = 'delivery_' . sanitize_key((string) ($delivery_envelope['reason'] ?? 'v2_index_unavailable'));
             }
 
             $start_envelope = [];
             if ($fallback_reason === '') {
-                $start_envelope = CBT_Exam_Start_Attempt_Snapshot_Cache::read_current_exam_snapshot_envelope($exam_id);
+                $start_envelope = CBT_Exam_Start_Attempt_Snapshot_Cache::read_current_exam_snapshot_v2_index_envelope($exam_id);
                 if (empty($start_envelope['success'])) {
-                    $fallback_reason = 'start_' . sanitize_key((string) ($start_envelope['reason'] ?? 'snapshot_unavailable'));
+                    $fallback_reason = 'start_' . sanitize_key((string) ($start_envelope['reason'] ?? 'v2_index_unavailable'));
                 }
             }
 
@@ -526,51 +526,29 @@ trait CBT_REST_Question_Snapshot_Helpers
                 }
             }
 
-            $patched_delivery = [];
-            if ($fallback_reason === '') {
-                $patched_delivery = self::patch_partial_delivery_snapshot_items(
-                    (array) ($delivery_envelope['items'] ?? []),
-                    (array) ($fragments['delivery_items_by_id'] ?? []),
-                    $question_ids
-                );
-                if (empty($patched_delivery['success'])) {
-                    $fallback_reason = sanitize_key((string) ($patched_delivery['reason'] ?? 'delivery_patch_failed'));
-                }
-            }
-
-            $patched_start = [];
-            if ($fallback_reason === '') {
-                $patched_start = self::patch_partial_start_attempt_snapshot_payload(
-                    (array) ($start_envelope['payload'] ?? []),
-                    (array) ($fragments['start_fragments_by_id'] ?? []),
-                    $question_ids
-                );
-                if (empty($patched_start['success'])) {
-                    $fallback_reason = sanitize_key((string) ($patched_start['reason'] ?? 'start_patch_failed'));
-                }
-            }
-
             if ($fallback_reason === '') {
                 CBT_Cache::invalidate_exam($exam_id);
 
-                $delivery_written = CBT_Exam_Question_Delivery_Cache::write_current_exam_payload(
+                $delivery_written = CBT_Exam_Question_Delivery_Cache::write_current_exam_payload_v2_partial_index(
                     $exam_id,
-                    (array) ($patched_delivery['items'] ?? []),
+                    (array) ($delivery_envelope['index'] ?? []),
+                    (array) ($fragments['delivery_items_by_id'] ?? []),
                     (int) ($delivery_envelope['ttl_seconds'] ?? 0)
                 );
                 if (!$delivery_written) {
-                    $fallback_reason = 'delivery_write_failed';
+                    $fallback_reason = 'delivery_v2_write_failed';
                 }
             }
 
             if ($fallback_reason === '') {
-                $start_written = CBT_Exam_Start_Attempt_Snapshot_Cache::write_current_exam_snapshot(
+                $start_written = CBT_Exam_Start_Attempt_Snapshot_Cache::write_current_exam_snapshot_v2_partial_index(
                     $exam_id,
-                    (array) ($patched_start['payload'] ?? []),
+                    (array) ($start_envelope['index'] ?? []),
+                    (array) ($fragments['start_fragments_by_id'] ?? []),
                     (int) ($start_envelope['ttl_seconds'] ?? 0)
                 );
                 if (!$start_written) {
-                    $fallback_reason = 'start_write_failed';
+                    $fallback_reason = 'start_v2_write_failed';
                 }
             }
 
