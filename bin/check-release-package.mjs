@@ -152,7 +152,7 @@ function validateBuildManifest(root) {
   const hasStageExamJs = entryValues.some((entry) => typeof entry.file === 'string' && /assets\/frontend-stage-exam-.+\.js$/.test(entry.file));
   const hasStageExamCss = entryValues.some((entry) => Array.isArray(entry.css) && entry.css.some((file) => /assets\/frontend-stage-exam-.+\.css$/.test(String(file))));
   const hasStageResultJs = entryValues.some((entry) => typeof entry.file === 'string' && /assets\/frontend-stage-result-.+\.js$/.test(entry.file));
-  const hasStageResultCss = entryValues.some((entry) => Array.isArray(entry.css) && entry.css.some((file) => /assets\/frontend-stage-result-.+\.css$/.test(String(file))));
+  const hasStageResultCss = entryValues.some((entry) => Array.isArray(entry.css) && entry.css.some((file) => /assets\/(?:frontend-stage-result|frontend-result-renderer)-.+\.css$/.test(String(file))));
 
   if (!hasStageExamJs || !hasStageExamCss) {
     fail('Stage exam JS/CSS assets are missing from the Vite manifest.');
