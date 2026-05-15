@@ -192,7 +192,9 @@ function validateRequiredPackageFiles(root) {
   const requiredDirs = [
     'admin',
     'includes',
+    'performance',
     'public/build/assets',
+    'tests',
     'vendor/composer',
     'vendor/firebase',
     'vendor/phpoffice',
@@ -213,8 +215,6 @@ function validateStagedRoot(root) {
     '.git',
     '.github',
     'node_modules',
-    'tests',
-    'performance',
     'coverage',
     'playwright-results',
     'test-results',
