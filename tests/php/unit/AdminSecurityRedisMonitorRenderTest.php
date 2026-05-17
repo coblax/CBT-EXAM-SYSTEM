@@ -104,4 +104,60 @@ final class AdminSecurityRedisMonitorRenderTest extends TestCase
 
         return (string) ob_get_clean();
     }
+
+    public function test_render_panel_shows_dead_letter_warning_when_count_is_positive(): void
+    {
+        $html = $this->renderMonitorPanel([
+            'feature_enabled' => 1,
+            'available' => 1,
+            'stream_supported' => 1,
+            'worker_scheduled' => 1,
+            'backlog_count' => 0,
+            'dead_letter_count' => 5,
+            'oldest_pending_age_seconds' => 0,
+            'last_stream_id' => '',
+            'last_enqueue_at' => '',
+            'last_enqueue_status' => '',
+            'last_flush_at' => '',
+            'last_flush_status' => '',
+            'last_flush_result' => '',
+            'next_flush_at' => '',
+            'live_label' => 'Live Redis',
+            'ingest_label' => 'Ingest Redis-first',
+            'persist_label' => 'Persist batch MySQL',
+            'status_label' => 'Active',
+        ]);
+
+        self::assertStringContainsString('Dead Letter', $html);
+        self::assertStringContainsString('5', $html);
+    }
+
+    public function test_render_panel_renders_action_buttons(): void
+    {
+        $html = $this->renderMonitorPanel([
+            'feature_enabled' => 1,
+            'available' => 1,
+            'stream_supported' => 1,
+            'worker_scheduled' => 1,
+            'backlog_count' => 3,
+            'dead_letter_count' => 0,
+            'oldest_pending_age_seconds' => 30,
+            'last_stream_id' => '123-0',
+            'last_enqueue_at' => '2026-04-10 08:15:00',
+            'last_enqueue_status' => 'ok',
+            'last_flush_at' => '',
+            'last_flush_status' => '',
+            'last_flush_result' => '',
+            'next_flush_at' => '',
+            'live_label' => 'Live Redis',
+            'ingest_label' => 'Ingest',
+            'persist_label' => 'Persist',
+            'status_label' => 'Active',
+        ]);
+
+        self::assertStringContainsString('Run Micro-Drain', $html);
+        self::assertStringContainsString('Force Flush Now', $html);
+        self::assertStringContainsString('Clear Live Roster', $html);
+        self::assertStringContainsString('Copy Diagnostics', $html);
+    }
 }

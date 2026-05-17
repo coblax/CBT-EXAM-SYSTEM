@@ -66,4 +66,43 @@ final class MaintenanceLoadTestStudentPoolTest extends TestCase
         self::assertSame(1, (int) ($pool['missing_password_count'] ?? 0));
         self::assertSame(1, (int) ($pool['reserved_excluded_count'] ?? 0));
     }
+
+    #[RunInSeparateProcess]
+    public function test_load_test_student_pool_returns_empty_when_no_siswa_users_exist(): void
+    {
+        $service = new \ReflectionClass(\CBT_Admin_Maintenance_Load_Test_Service::class);
+        $method = $service->getMethod('get_load_test_student_pool');
+        $method->setAccessible(true);
+
+        $pool = $method->invoke(null);
+
+        self::assertSame(0, (int) ($pool['total_count'] ?? 0));
+        self::assertSame(0, (int) ($pool['valid_count'] ?? 0));
+        self::assertSame([], (array) ($pool['rows'] ?? []));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_load_test_student_pool_counts_all_missing_password_users(): void
+    {
+        for ($i = 1; $i <= 3; $i++) {
+            $userId = wp_insert_user([
+                'ID' => 80 + $i,
+                'user_login' => "nopwd{$i}",
+                'user_email' => "nopwd{$i}@example.local",
+                'display_name' => "No Password {$i}",
+                'role' => 'siswa_cbt',
+            ]);
+            update_user_meta($userId, 'kode_kelas', 'KELAS_TEST_01');
+        }
+
+        $service = new \ReflectionClass(\CBT_Admin_Maintenance_Load_Test_Service::class);
+        $method = $service->getMethod('get_load_test_student_pool');
+        $method->setAccessible(true);
+
+        $pool = $method->invoke(null);
+
+        self::assertSame(3, (int) ($pool['total_count'] ?? 0));
+        self::assertSame(0, (int) ($pool['valid_count'] ?? 0));
+        self::assertSame(3, (int) ($pool['missing_password_count'] ?? 0));
+    }
 }

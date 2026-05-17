@@ -99,6 +99,42 @@ final class QuestionsSyncObjectMapAnswerTest extends TestCase
         return $reflectionMethod->invokeArgs(null, $args);
     }
 
+    public function test_question_answer_contract_changed_returns_false_for_identical_minimal_snapshots(): void
+    {
+        $snapshot = [
+            'question_type' => 'multiple_choice',
+            'correct_text' => 'A',
+            'normalized_detail_text' => '',
+            'options' => [],
+        ];
+
+        self::assertFalse($this->invokeSyncHelper('question_answer_contract_changed', [$snapshot, $snapshot]));
+    }
+
+    public function test_question_answer_contract_changed_detects_removed_option(): void
+    {
+        $before = [
+            'question_type' => 'multiple_choice',
+            'correct_text' => 'A',
+            'normalized_detail_text' => '',
+            'options' => [
+                ['id' => 10, 'option_key' => '1', 'option_text' => 'Mamalia', 'is_correct' => 1],
+                ['id' => 11, 'option_key' => '2', 'option_text' => 'Reptil', 'is_correct' => 0],
+            ],
+        ];
+
+        $after = [
+            'question_type' => 'multiple_choice',
+            'correct_text' => 'A',
+            'normalized_detail_text' => '',
+            'options' => [
+                ['id' => 10, 'option_key' => '1', 'option_text' => 'Mamalia', 'is_correct' => 1],
+            ],
+        ];
+
+        self::assertTrue($this->invokeSyncHelper('question_answer_contract_changed', [$before, $after]));
+    }
+
     private function bootstrapCacheStub(): void
     {
         if (class_exists('CBT_Cache')) {

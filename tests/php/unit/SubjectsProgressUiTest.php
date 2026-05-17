@@ -51,6 +51,22 @@ final class SubjectsProgressUiTest extends TestCase
         self::assertStringNotContainsString('location.reload', $html);
     }
 
+    public function test_subjects_page_renders_import_panel_with_preview_state(): void
+    {
+        $html = $this->renderSubjectsView();
+
+        self::assertStringContainsString('data-cbt-subject-progress-profile="import"', $html);
+        self::assertStringContainsString('data-cbt-subject-refresh-areas="notices,overview,import-panel,list-panel"', $html);
+    }
+
+    public function test_subjects_page_renders_delete_action_with_local_progress(): void
+    {
+        $html = $this->renderSubjectsView();
+
+        self::assertStringContainsString('data-cbt-subject-progress-profile="delete"', $html);
+        self::assertStringContainsString('data-cbt-subject-refresh-areas="notices,overview,list-panel"', $html);
+    }
+
     private function renderSubjectsView(): string
     {
         $default_subject_tab = 'list';

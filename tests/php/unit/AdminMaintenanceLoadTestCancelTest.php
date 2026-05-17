@@ -115,4 +115,47 @@ final class AdminMaintenanceLoadTestCancelTest extends TestCase
         self::assertSame('success', $job['status'] ?? '');
         self::assertSame(0, $job['exit_code'] ?? null);
     }
+
+    #[RunInSeparateProcess]
+    public function test_handle_cancel_load_test_handles_nonexistent_job_gracefully(): void
+    {
+        update_option('cbt_load_test_jobs', []);
+
+        $_POST = [
+            'job_id' => 'nonexistent_job',
+            'cbt_maintenance_tab' => 'load',
+        ];
+        $_REQUEST = $_POST;
+
+        try {
+            CBT_Admin_Maintenance_Load_Test_Service::handle_cancel_load_test();
+            self::fail('Expected maintenance redirect signal was not thrown.');
+        } catch (RuntimeException $runtimeException) {
+            self::assertSame('__cbt_admin_maintenance_redirect__', $runtimeException->getMessage());
+        }
+
+        $redirectUrl = (string) ($GLOBALS['cbt_test_last_redirect'] ?? '');
+        self::assertStringContainsString('page=cbt-maintenance', $redirectUrl);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_handle_cancel_load_test_handles_missing_job_id_param(): void
+    {
+        update_option('cbt_load_test_jobs', []);
+
+        $_POST = [
+            'cbt_maintenance_tab' => 'load',
+        ];
+        $_REQUEST = $_POST;
+
+        try {
+            CBT_Admin_Maintenance_Load_Test_Service::handle_cancel_load_test();
+            self::fail('Expected maintenance redirect signal was not thrown.');
+        } catch (RuntimeException $runtimeException) {
+            self::assertSame('__cbt_admin_maintenance_redirect__', $runtimeException->getMessage());
+        }
+
+        $redirectUrl = (string) ($GLOBALS['cbt_test_last_redirect'] ?? '');
+        self::assertStringContainsString('page=cbt-maintenance', $redirectUrl);
+    }
 }

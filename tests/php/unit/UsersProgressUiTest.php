@@ -57,6 +57,24 @@ final class UsersProgressUiTest extends TestCase
         self::assertStringNotContainsString('form.submit()', $html);
     }
 
+    public function test_users_page_renders_import_progress_with_running_state(): void
+    {
+        $html = $this->renderUsersView();
+
+        self::assertStringContainsString('data-cbt-users-import-progress', $html);
+        self::assertStringContainsString('data-cbt-users-import-running="1"', $html);
+        self::assertStringContainsString('bindUsersImportContinuation();', $html);
+    }
+
+    public function test_users_page_renders_diagnostic_and_subject_choice_hooks(): void
+    {
+        $html = $this->renderUsersView();
+
+        self::assertStringContainsString('diagnose: {', $html);
+        self::assertStringContainsString('data-cbt-users-progress-profile="subject-choice"', $html);
+        self::assertStringContainsString('cbt_users_local_refresh', $html);
+    }
+
     private function renderUsersView(): string
     {
         $agama_options = ['Islam', 'Kristen'];

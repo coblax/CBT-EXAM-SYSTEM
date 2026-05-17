@@ -90,4 +90,81 @@ final class AdminSecurityLiveRosterRenderTest extends TestCase
 
         return (string) ob_get_clean();
     }
+
+    public function test_render_panel_outputs_filter_controls_for_search_and_exam_info(): void
+    {
+        $html = $this->renderRosterPanel([
+            [
+                'exam_title' => 'Exam A',
+                'kelas_label' => 'X-A',
+                'ruang_label' => 'R1',
+                'active_total' => 2,
+                'online_total' => 2,
+                'stale_total' => 0,
+                'offline_total' => 0,
+                'watch_total' => 0,
+                'high_risk_total' => 0,
+                'attempts' => [
+                    [
+                        'attempt_id' => 1,
+                        'exam_id' => 10,
+                        'student_name' => 'A',
+                        'student_login' => 'a',
+                        'presence_status' => 'online',
+                        'last_seen_at' => '2026-04-03 06:00:00',
+                        'connection_status' => 'ok',
+                        'visibility_state' => 'visible',
+                        'has_focus' => 1,
+                        'pending_sync_count' => 0,
+                        'heartbeat_lost_active' => 0,
+                        'risk_tone' => 'normal',
+                        'risk_score' => 0,
+                    ],
+                ],
+            ],
+        ]);
+
+        self::assertStringContainsString('Exam A', $html);
+        self::assertStringContainsString('X-A', $html);
+        self::assertStringContainsString('R1', $html);
+        self::assertStringContainsString('>Online<', $html);
+    }
+
+    public function test_render_panel_outputs_pagination_controls(): void
+    {
+        $html = $this->renderRosterPanel([
+            [
+                'exam_title' => 'Exam Pagination',
+                'kelas_label' => 'XII-A',
+                'ruang_label' => 'R2',
+                'active_total' => 1,
+                'online_total' => 1,
+                'stale_total' => 0,
+                'offline_total' => 0,
+                'watch_total' => 0,
+                'high_risk_total' => 0,
+                'attempts' => [
+                    [
+                        'attempt_id' => 100,
+                        'exam_id' => 50,
+                        'student_name' => 'Test',
+                        'student_login' => 'test',
+                        'presence_status' => 'online',
+                        'last_seen_at' => '2026-04-03 06:00:00',
+                        'connection_status' => 'ok',
+                        'visibility_state' => 'visible',
+                        'has_focus' => 1,
+                        'pending_sync_count' => 0,
+                        'heartbeat_lost_active' => 0,
+                        'risk_tone' => 'normal',
+                        'risk_score' => 0,
+                    ],
+                ],
+            ],
+        ]);
+
+        self::assertStringContainsString('data-security-log-roster-page-prev', $html);
+        self::assertStringContainsString('data-security-log-roster-page-next', $html);
+        self::assertStringContainsString('Halaman 1 / 1', $html);
+    }
 }

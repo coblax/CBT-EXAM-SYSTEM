@@ -57,6 +57,33 @@ final class AdminReportExamRowsTest extends TestCase
         self::assertSame('75.00', $rows[1]['nilai_display']);
         self::assertTrue($rows[1]['is_present']);
     }
+
+    #[RunInSeparateProcess]
+    public function test_exam_report_rows_handle_exam_with_no_attempts_or_students(): void
+    {
+        require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-report-exam-service.php';
+
+        global $wpdb;
+        $wpdb = new AdminReportExamRowsFakeWpdb();
+
+        $rows = CBT_Admin_Report_Exam_Service::get_exam_report_rows(44, 'NONEXISTENT_CLASS', true, 1);
+
+        self::assertIsArray($rows);
+        self::assertCount(0, $rows);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_exam_report_rows_return_empty_for_nonexistent_exam(): void
+    {
+        require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-report-exam-service.php';
+
+        global $wpdb;
+        $wpdb = new AdminReportExamRowsFakeWpdb();
+
+        $rows = CBT_Admin_Report_Exam_Service::get_exam_report_rows(999, 'XI-A', true, 1);
+
+        self::assertIsArray($rows);
+    }
 }
 
 final class AdminReportExamRowsFakeWpdb
