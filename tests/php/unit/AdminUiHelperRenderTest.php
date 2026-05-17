@@ -39,4 +39,37 @@ final class AdminUiHelperRenderTest extends TestCase
         self::assertStringContainsString('cbt-admin-empty-state', $html);
         self::assertStringContainsString('Belum ada hasil', $html);
     }
+
+    public function test_render_empty_state_escapes_html_in_title_and_message(): void
+    {
+        $html = \CBT_Admin_UI_Helper::render_empty_state([
+            'title' => '<script>alert("xss")</script>',
+            'message' => 'Test <b>bold</b> & "quotes"',
+        ]);
+
+        self::assertStringNotContainsString('<script>', $html);
+        self::assertStringContainsString('&lt;script&gt;', $html);
+        self::assertStringContainsString('cbt-admin-empty-state', $html);
+    }
+
+    public function test_render_empty_state_handles_minimal_config(): void
+    {
+        $html = \CBT_Admin_UI_Helper::render_empty_state([
+            'title' => 'Kosong',
+        ]);
+
+        self::assertStringContainsString('Kosong', $html);
+        self::assertStringContainsString('cbt-admin-empty-state', $html);
+    }
+
+    public function test_render_table_empty_state_handles_single_column(): void
+    {
+        $html = \CBT_Admin_UI_Helper::render_table_empty_state(1, [
+            'title' => 'Satu kolom',
+            'message' => 'Tes satu kolom.',
+        ]);
+
+        self::assertStringContainsString('colspan="1"', $html);
+        self::assertStringContainsString('Satu kolom', $html);
+    }
 }

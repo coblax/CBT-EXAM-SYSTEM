@@ -165,4 +165,35 @@ final class SubmitFlowMetricsServiceTest extends TestCase
         $errorProperty->setAccessible(true);
         $errorProperty->setValue(null, '');
     }
+
+    public function test_get_window_summary_returns_unavailable_when_redis_is_down(): void
+    {
+        $reflection = new ReflectionClass(CBT_Submit_Flow_Metrics_Service::class);
+
+        $redisProperty = $reflection->getProperty('metrics_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, false);
+
+        $attemptedProperty = $reflection->getProperty('metrics_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('metrics_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, 'Redis submit metrics unavailable');
+
+        $window = CBT_Submit_Flow_Metrics_Service::get_window_summary(15);
+
+        self::assertFalse($window['available']);
+        self::assertSame(0, $window['submit_started_total']);
+        self::assertSame('Redis submit metrics unavailable', $window['redis_error']);
+    }
+
+    public function test_get_today_summary_returns_zero_counts_when_no_events_recorded(): void
+    {
+        $today = CBT_Submit_Flow_Metrics_Service::get_today_summary();
+
+        self::assertTrue($today['available']);
+        self::assertSame(0, $today['finish_result_ready_total']);
+    }
 }

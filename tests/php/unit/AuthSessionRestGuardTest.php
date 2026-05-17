@@ -33,6 +33,52 @@ final class AuthSessionRestGuardTest extends TestCase
         self::assertSame(['status' => 403], $result->get_error_data());
     }
 
+    #[RunInSeparateProcess]
+    public function test_finish_exam_rejects_missing_attempt_id(): void
+    {
+        $this->bootstrapRestScaffold();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
+
+        global $wpdb;
+        $wpdb = new AuthSessionRestGuardFakeWpdb([]);
+
+        $result = \CBT_REST::finish_exam(new \WP_REST_Request([]));
+
+        self::assertTrue(is_wp_error($result));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_finish_exam_rejects_nonexistent_attempt(): void
+    {
+        $this->bootstrapRestScaffold();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
+
+        global $wpdb;
+        $wpdb = new AuthSessionRestGuardFakeWpdb([]);
+
+        $result = \CBT_REST::finish_exam(new \WP_REST_Request([
+            'attempt_id' => 99999,
+        ]));
+
+        self::assertTrue(is_wp_error($result));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_finish_exam_rejects_zero_attempt_id(): void
+    {
+        $this->bootstrapRestScaffold();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
+
+        global $wpdb;
+        $wpdb = new AuthSessionRestGuardFakeWpdb([]);
+
+        $result = \CBT_REST::finish_exam(new \WP_REST_Request([
+            'attempt_id' => 0,
+        ]));
+
+        self::assertTrue(is_wp_error($result));
+    }
+
     private function bootstrapRestScaffold(): void
     {
         if (!class_exists('CBT_Auth')) {
@@ -111,5 +157,11 @@ final class AuthSessionRestGuardFakeWpdb
         $attemptId = isset($args[0]) ? (int) $args[0] : 0;
 
         return $this->attemptRows[$attemptId] ?? null;
+    }
+
+    /** @param array<string,mixed>|string $prepared */
+    public function get_var($prepared)
+    {
+        return 0;
     }
 }

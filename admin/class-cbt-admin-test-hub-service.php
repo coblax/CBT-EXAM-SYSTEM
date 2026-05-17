@@ -230,6 +230,7 @@ final class CBT_Admin_Test_Hub_Service
         $e2e_readiness = self::get_e2e_readiness_snapshot();
         $unit_test_tabs = self::get_unit_test_tab_definitions();
         $unit_test_runners = self::get_unit_test_runner_definitions();
+        $unit_test_inventory = self::get_unit_test_inventory();
         $active_unit_test_tab = self::normalize_unit_test_tab(isset($query['cbt_unit_test_tab']) ? $query['cbt_unit_test_tab'] : '');
         $active_checklist_scope = self::normalize_unit_test_scope(isset($query['cbt_checklist_scope']) ? $query['cbt_checklist_scope'] : '');
         $active_unit_test_panel = isset($unit_test_tabs[$active_unit_test_tab]) ? (array) $unit_test_tabs[$active_unit_test_tab] : [];
@@ -262,6 +263,11 @@ final class CBT_Admin_Test_Hub_Service
             }
         }
         $global_unit_run_summary = self::build_global_unit_run_summary($global_unit_run_result);
+        $unit_test_inventory_context = self::build_unit_test_inventory_context(
+            $unit_test_inventory,
+            is_array($unit_test_run_result) ? $unit_test_run_result : null,
+            is_array($global_unit_run_result) ? $global_unit_run_result : null
+        );
         $unit_test_area_count = count($unit_test_tabs);
         $unit_test_total_checklist_items = 0;
 
@@ -321,6 +327,8 @@ final class CBT_Admin_Test_Hub_Service
             'global_unit_run_available' => !empty($global_unit_run_result),
             'global_unit_run_active' => is_array($global_unit_run_state) && self::is_active_global_unit_run_state($global_unit_run_state),
             'global_unit_run_token' => $global_unit_run_token,
+            'unit_test_inventory' => $unit_test_inventory_context['items'],
+            'unit_test_inventory_summary' => $unit_test_inventory_context['summary'],
             'unit_test_area_count' => $unit_test_area_count,
             'unit_test_total_checklist_items' => $unit_test_total_checklist_items,
             'has_active_flow_jobs' => self::has_active_flow_jobs($latest_flow_jobs),
@@ -420,38 +428,383 @@ final class CBT_Admin_Test_Hub_Service
      */
     private static function build_global_unit_run_command_queue(): array
     {
-        $runner_definitions = self::get_unit_test_runner_definitions();
-        $tab_definitions = self::get_unit_test_tab_definitions();
+        $inventory = self::get_unit_test_inventory();
         $queue = [];
 
-        foreach (array_keys($tab_definitions) as $tab_key) {
-            $tab_key = self::normalize_unit_test_tab((string) $tab_key);
-            $runner = isset($runner_definitions[$tab_key]['unit_tests']) && is_array($runner_definitions[$tab_key]['unit_tests'])
-                ? (array) $runner_definitions[$tab_key]['unit_tests']
-                : [];
-            $commands = isset($runner['commands']) && is_array($runner['commands']) ? array_values((array) $runner['commands']) : [];
+        foreach ($inventory as $item) {
+            if (!is_array($item) || empty($item['runnable'])) {
+                continue;
+            }
 
-            foreach ($commands as $command_definition) {
+            $command = trim((string) ($item['command'] ?? ''));
+            if ($command === '') {
+                continue;
+            }
+
+            $queue[] = [
+                'tab' => (string) ($item['run_tab'] ?? self::normalize_unit_test_tab((string) ($item['mapped_tab'] ?? ''))),
+                'runner_label' => 'Run All Unit Tests',
+                'runner_description' => 'Menjalankan seluruh file unit test yang ditemukan otomatis oleh CBT Test Hub.',
+                'label' => (string) ($item['runner_label'] ?? 'Unit Test File'),
+                'command' => $command,
+                'inventory_file' => self::unit_test_inventory_file_meta($item),
+                'mapping_status' => (string) ($item['mapping_status'] ?? 'auto_mapped'),
+            ];
+        }
+
+        return $queue;
+    }
+
+    /**
+     * @return array<int,array<string,mixed>>
+     */
+    private static function get_unit_test_inventory(): array
+    {
+        $curated_map = self::build_curated_unit_test_file_map();
+        $tab_definitions = self::get_unit_test_tab_definitions();
+        $files = [];
+
+        foreach (['tests/php/unit/*Test.php', 'tests/js/unit/*.test.js'] as $pattern) {
+            $matched = glob(rtrim(CBT_EXAM_SYSTEM_PATH, '/\\') . '/' . $pattern);
+            if (is_array($matched)) {
+                $files = array_merge($files, $matched);
+            }
+        }
+
+        $items = [];
+        foreach (array_values(array_unique($files)) as $absolute_path) {
+            $relative_path = self::normalize_unit_test_relative_path((string) $absolute_path);
+            if ($relative_path === '') {
+                continue;
+            }
+
+            $type = str_starts_with($relative_path, 'tests/js/unit/') ? 'js' : 'php';
+            $basename = basename($relative_path);
+            $curated = isset($curated_map[$relative_path]) && is_array($curated_map[$relative_path])
+                ? (array) $curated_map[$relative_path]
+                : [];
+            $guess = empty($curated) ? self::guess_unit_test_inventory_area($relative_path, $basename) : [];
+            $mapped_tab = !empty($curated)
+                ? self::normalize_unit_test_tab((string) ($curated['tab'] ?? ''))
+                : (string) ($guess['tab'] ?? 'general_unclassified');
+            $run_tab = isset($tab_definitions[$mapped_tab]) ? $mapped_tab : 'recovery_persistence';
+            $area_label = isset($tab_definitions[$mapped_tab]) && is_array($tab_definitions[$mapped_tab])
+                ? (string) ($tab_definitions[$mapped_tab]['label'] ?? $mapped_tab)
+                : (string) ($guess['label'] ?? 'General / Unclassified');
+            $mapping_status = !empty($curated) ? 'curated' : 'auto_mapped';
+            $runner_label = !empty($curated)
+                ? (string) ($curated['runner_label'] ?? ($type === 'js' ? 'Vitest Unit File' : 'PHPUnit Unit File'))
+                : ($type === 'js' ? 'Vitest ' . $basename : 'PHPUnit ' . preg_replace('/Test\.php$/', '', $basename));
+
+            $items[] = [
+                'id' => sanitize_key($type . '-' . substr(md5($relative_path), 0, 12)),
+                'type' => $type,
+                'path' => $relative_path,
+                'basename' => $basename,
+                'mapped_tab' => $mapped_tab,
+                'mapped_tab_label' => $area_label,
+                'run_tab' => $run_tab,
+                'mapping_status' => $mapping_status,
+                'mapping_status_label' => $mapping_status === 'curated' ? 'Curated' : 'Auto-mapped',
+                'runner_label' => $runner_label,
+                'curated_runner_label' => (string) ($curated['runner_label'] ?? ''),
+                'command' => self::build_unit_test_inventory_command($relative_path, $type),
+                'runnable' => true,
+            ];
+        }
+
+        usort($items, static function (array $left, array $right): int {
+            $area = strcmp((string) ($left['mapped_tab_label'] ?? ''), (string) ($right['mapped_tab_label'] ?? ''));
+            if ($area !== 0) {
+                return $area;
+            }
+
+            return strcmp((string) ($left['path'] ?? ''), (string) ($right['path'] ?? ''));
+        });
+
+        return $items;
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private static function get_unit_test_inventory_item(string $id): ?array
+    {
+        $id = sanitize_key($id);
+        if ($id === '') {
+            return null;
+        }
+
+        foreach (self::get_unit_test_inventory() as $item) {
+            if ((string) ($item['id'] ?? '') === $id) {
+                return $item;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array<string,array<string,string>>
+     */
+    private static function build_curated_unit_test_file_map(): array
+    {
+        $runner_definitions = self::get_unit_test_runner_definitions();
+        $map = [];
+
+        foreach ($runner_definitions as $tab_key => $runner_by_scope) {
+            if (!is_array($runner_by_scope)) {
+                continue;
+            }
+
+            $unit_runner = isset($runner_by_scope['unit_tests']) && is_array($runner_by_scope['unit_tests'])
+                ? (array) $runner_by_scope['unit_tests']
+                : [];
+            foreach ((array) ($unit_runner['commands'] ?? []) as $command_definition) {
                 if (!is_array($command_definition)) {
                     continue;
                 }
 
-                $command = trim((string) ($command_definition['command'] ?? ''));
-                if ($command === '') {
-                    continue;
+                $command = (string) ($command_definition['command'] ?? '');
+                $label = (string) ($command_definition['label'] ?? 'Unit Test Command');
+                foreach (self::extract_unit_test_files_from_command($command) as $relative_path) {
+                    if (!isset($map[$relative_path])) {
+                        $map[$relative_path] = [
+                            'tab' => (string) $tab_key,
+                            'runner_label' => $label,
+                            'command' => $command,
+                        ];
+                    }
                 }
-
-                $queue[] = [
-                    'tab' => $tab_key,
-                    'runner_label' => (string) ($runner['label'] ?? 'Run Tests'),
-                    'runner_description' => (string) ($runner['description'] ?? ''),
-                    'label' => (string) ($command_definition['label'] ?? 'Test Command'),
-                    'command' => $command,
-                ];
             }
         }
 
-        return $queue;
+        return $map;
+    }
+
+    /**
+     * @return string[]
+     */
+    private static function extract_unit_test_files_from_command(string $command): array
+    {
+        preg_match_all('/(?:^|\s)(tests\/(?:js\/unit|php\/unit)\/[A-Za-z0-9_.\/-]+\.(?:js|php))/', $command, $matches);
+
+        return array_values(array_unique(array_map('strval', $matches[1] ?? [])));
+    }
+
+    private static function normalize_unit_test_relative_path(string $path): string
+    {
+        $normalized = wp_normalize_path($path);
+        $root = rtrim(wp_normalize_path(CBT_EXAM_SYSTEM_PATH), '/') . '/';
+        if (str_starts_with($normalized, $root)) {
+            $normalized = substr($normalized, strlen($root));
+        }
+
+        if (!preg_match('#^tests/(?:php/unit/[^/]+Test\.php|js/unit/[^/]+\.test\.js)$#', $normalized)) {
+            return '';
+        }
+
+        return $normalized;
+    }
+
+    private static function build_unit_test_inventory_command(string $relative_path, string $type): string
+    {
+        return $type === 'js'
+            ? './node_modules/.bin/vitest run ' . $relative_path . ' --reporter=verbose'
+            : 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never ' . $relative_path;
+    }
+
+    /**
+     * @return array{tab:string,label:string}
+     */
+    private static function guess_unit_test_inventory_area(string $relative_path, string $basename): array
+    {
+        $needle = strtolower((string) preg_replace('/[^a-zA-Z0-9]+/', ' ', $relative_path . ' ' . $basename));
+        $rules = [
+            'submit_finalization' => ['finish exam', 'finalize', 'expired attempt', 'submit watchlist', 'submit flow', 'entry flow', 'durable answer', 'answer sync batch', 'confirm result'],
+            'security_event_pipeline' => ['security event', 'security ingest', 'security live counter', 'security user agent', 'incident report', 'security roster', 'security must watch', 'security redis monitor', 'security context', 'security logging', 'security shortcut', 'fullscreen state', 'idle detection'],
+            'admin_exam_management' => ['admin exams', 'admin question', 'admin tokens', 'admin analytics', 'admin cache', 'admin ui helper', 'exams service validation', 'analytics charts'],
+            'attempt_runtime_envelope' => ['runtime attempt', 'runtime buffer', 'active attempt index', 'snapshot auto heal', 'adaptive load', 'rest attempt envelope', 'rest question delivery', 'rest session presence', 'rest live profile', 'raw json rest', 'exam runtime loader', 'exam session', 'exam stage', 'stage runtime', 'render cycle', 'sync lifecycle', 'readonly api', 'lazy math', 'exam start attempt snapshot'],
+            'app_shell_bootstrap' => ['app bootstrap', 'app shell', 'app meta', 'app events', 'bootstrap student', 'browser storage', 'config security', 'service worker', 'frontend diagnostics', 'debug manager', 'format test', 'html test', 'calculator', 'legacy handoff', 'ui preferences', 'frontend service worker', 'vite asset'],
+            'login_student_profile' => ['login auth snapshot', 'login rate limit', 'login readiness', 'student profile', 'student cohort', 'exam audience', 'exam cards', 'doubtful state', 'api client', 'heartbeat lost'],
+            'developer_setup_tooling' => ['activator', 'deactivator', 'maintenance', 'load test', 'branding', 'setup branding', 'setup security', 'developer', 'dev server', 'build output', 'progress ui', 'subjects service', 'users service', 'users progress', 'subjects progress', 'questions progress', 'analytics progress', 'ordering question', 'flow job worker', 'test hub'],
+            'security_log_observability' => ['security', 'native', 'incident', 'user agent', 'must watch', 'observability'],
+            'supervisor_proctoring' => ['supervisor', 'proctor', 'roster', 'presence'],
+            'update_health' => ['update', 'release', 'backup', 'health'],
+            'cache_redis' => ['cache', 'redis', 'snapshot', 'pipeline', 'cohort', 'profile', 'metrics'],
+            'exam_preflight_availability' => ['preflight', 'availability', 'gate', 'start attempt', 'audience', 'exam start'],
+            'scoring_grading' => ['scoring', 'grading', 'essay ai'],
+            'result_scoring' => ['result', 'report', 'finish', 'export', 'score'],
+            'import_preview' => ['import', 'preview', 'authoring', 'question helper', 'questions helper', 'template'],
+            'auth_session' => ['auth', 'login', 'token', 'session'],
+            'timer_lifecycle' => ['timer', 'heartbeat', 'lifecycle', 'idle', 'fullscreen'],
+            'question_runtime' => ['question', 'navigation', 'render', 'input', 'ordering', 'runtime'],
+            'sync_rest' => ['sync', 'rest', 'submit', 'answer', 'api client', 'raw json'],
+            'recovery_persistence' => ['recovery', 'persistence', 'durable', 'doubtful', 'storage'],
+        ];
+
+        $tab_definitions = self::get_unit_test_tab_definitions();
+        foreach ($rules as $tab => $keywords) {
+            foreach ($keywords as $keyword) {
+                if (str_contains($needle, $keyword)) {
+                    return [
+                        'tab' => $tab,
+                        'label' => isset($tab_definitions[$tab]) && is_array($tab_definitions[$tab])
+                            ? (string) ($tab_definitions[$tab]['label'] ?? $tab)
+                            : $tab,
+                    ];
+                }
+            }
+        }
+
+        return [
+            'tab' => 'general_unclassified',
+            'label' => 'General / Unclassified',
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $item
+     * @return array<string,string>
+     */
+    private static function unit_test_inventory_file_meta(array $item): array
+    {
+        return [
+            'id' => (string) ($item['id'] ?? ''),
+            'type' => (string) ($item['type'] ?? ''),
+            'path' => (string) ($item['path'] ?? ''),
+            'basename' => (string) ($item['basename'] ?? ''),
+            'mapped_tab' => (string) ($item['mapped_tab'] ?? ''),
+            'mapped_tab_label' => (string) ($item['mapped_tab_label'] ?? ''),
+            'mapping_status' => (string) ($item['mapping_status'] ?? ''),
+        ];
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $inventory
+     * @return array{items:array<int,array<string,mixed>>,summary:array<string,int>}
+     */
+    private static function build_unit_test_inventory_context(array $inventory, ?array $unit_test_run_result, ?array $global_unit_run_result): array
+    {
+        $items = [];
+        $summary = [
+            'total_count' => 0,
+            'php_count' => 0,
+            'js_count' => 0,
+            'curated_count' => 0,
+            'auto_mapped_count' => 0,
+            'failed_count' => 0,
+        ];
+
+        foreach ($inventory as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $summary['total_count']++;
+            $type = (string) ($item['type'] ?? '');
+            if ($type === 'php') {
+                $summary['php_count']++;
+            } elseif ($type === 'js') {
+                $summary['js_count']++;
+            }
+
+            $mapping_status = (string) ($item['mapping_status'] ?? 'auto_mapped');
+            if ($mapping_status === 'curated') {
+                $summary['curated_count']++;
+            } else {
+                $summary['auto_mapped_count']++;
+            }
+
+            $run_results = self::resolve_unit_test_inventory_run_results($item, $unit_test_run_result, $global_unit_run_result);
+            $failed_run_results = array_values(array_filter($run_results, static function ($run_result): bool {
+                return is_array($run_result) && empty($run_result['success']);
+            }));
+            if (!empty($failed_run_results)) {
+                $summary['failed_count']++;
+            }
+
+            $item['run_results'] = $run_results;
+            $item['failed_run_results'] = $failed_run_results;
+            $item['has_failed_run_results'] = !empty($failed_run_results);
+            $item['mapping_status_tone'] = $mapping_status === 'curated' ? 'done' : 'planned';
+            $item['type_label'] = $type === 'js' ? 'Vitest' : 'PHPUnit';
+            $items[] = $item;
+        }
+
+        return [
+            'items' => $items,
+            'summary' => $summary,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $item
+     * @return array<int,array<string,mixed>>
+     */
+    private static function resolve_unit_test_inventory_run_results(array $item, ?array $unit_test_run_result, ?array $global_unit_run_result): array
+    {
+        $results = [];
+        foreach ([$unit_test_run_result, $global_unit_run_result] as $result_payload) {
+            if (!is_array($result_payload)) {
+                continue;
+            }
+
+            foreach (self::flatten_unit_test_run_result_commands($result_payload) as $command_result) {
+                if (self::unit_test_command_result_matches_inventory_item($command_result, $item)) {
+                    $results[] = $command_result;
+                }
+            }
+        }
+
+        return $results;
+    }
+
+    /**
+     * @return array<int,array<string,mixed>>
+     */
+    private static function flatten_unit_test_run_result_commands(array $result_payload): array
+    {
+        $commands = [];
+        foreach ((array) ($result_payload['commands'] ?? []) as $command_result) {
+            if (is_array($command_result)) {
+                $commands[] = $command_result;
+            }
+        }
+
+        foreach ((array) ($result_payload['tabs'] ?? []) as $tab_result) {
+            if (!is_array($tab_result)) {
+                continue;
+            }
+            foreach ((array) ($tab_result['commands'] ?? []) as $command_result) {
+                if (is_array($command_result)) {
+                    $commands[] = $command_result;
+                }
+            }
+        }
+
+        return $commands;
+    }
+
+    /**
+     * @param array<string,mixed> $command_result
+     * @param array<string,mixed> $item
+     */
+    private static function unit_test_command_result_matches_inventory_item(array $command_result, array $item): bool
+    {
+        $path = (string) ($item['path'] ?? '');
+        if ($path === '') {
+            return false;
+        }
+
+        $inventory_file = isset($command_result['inventory_file']) && is_array($command_result['inventory_file'])
+            ? (array) $command_result['inventory_file']
+            : [];
+        if ((string) ($inventory_file['path'] ?? '') === $path) {
+            return true;
+        }
+
+        return in_array($path, self::extract_unit_test_files_from_command((string) ($command_result['command'] ?? '')), true);
     }
 
     /**
@@ -567,6 +920,12 @@ final class CBT_Admin_Test_Hub_Service
         self::save_global_unit_run_state($state);
 
         $result = self::run_unit_test_command($label, $command, self::build_runner_environment());
+        if (isset($command_definition['inventory_file']) && is_array($command_definition['inventory_file'])) {
+            $result['inventory_file'] = (array) $command_definition['inventory_file'];
+        }
+        if (isset($command_definition['mapping_status'])) {
+            $result['mapping_status'] = sanitize_key((string) $command_definition['mapping_status']);
+        }
         $tabs = isset($state['tabs']) && is_array($state['tabs']) ? (array) $state['tabs'] : [];
         if (!isset($tabs[$tab_key]) || !is_array($tabs[$tab_key])) {
             $tabs[$tab_key] = [
@@ -1126,6 +1485,326 @@ final class CBT_Admin_Test_Hub_Service
                     ],
                 ],
             ],
+            'supervisor_proctoring' => [
+                'unit_tests' => [
+                    'label' => 'Run Checklist Unit Supervisor & Proctoring',
+                    'description' => 'Menjalankan suite JS dan PHP yang saat ini dipetakan ke Checklist Unit Test untuk Supervisor & Proctoring.',
+                    'commands' => [
+                        [
+                            'label' => 'Vitest Supervisor',
+                            'command' => './node_modules/.bin/vitest run tests/js/unit/supervisor-runtime.test.js --reporter=verbose',
+                        ],
+                        [
+                            'label' => 'PHPUnit Supervisor Dashboard',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/SupervisorDashboardServiceTest.php tests/php/unit/SupervisorRestRoutesTest.php',
+                        ],
+                        [
+                            'label' => 'PHPUnit Roster & Presence',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/LiveAttemptRosterIndexTest.php tests/php/unit/LiveProctoringPresenceTest.php',
+                        ],
+                    ],
+                ],
+            ],
+            'exam_preflight_availability' => [
+                'unit_tests' => [
+                    'label' => 'Run Checklist Unit Exam Preflight & Availability',
+                    'description' => 'Menjalankan suite PHP yang saat ini dipetakan ke Checklist Unit Test untuk Exam Preflight & Availability.',
+                    'commands' => [
+                        [
+                            'label' => 'PHPUnit Preflight Service',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/ExamPreflightServiceTest.php',
+                        ],
+                        [
+                            'label' => 'PHPUnit Availability Snapshot',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/ExamAvailabilitySnapshotTest.php tests/php/unit/ExamAvailabilityAutoWarmServiceTest.php tests/php/unit/RestExamAvailabilitySnapshotTest.php',
+                        ],
+                        [
+                            'label' => 'PHPUnit Gate & Start Attempt',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/StartAttemptGateServiceTest.php tests/php/unit/StartAttemptGateBucketTest.php tests/php/unit/StartAttemptOpeningStateServiceTest.php tests/php/unit/StartAttemptIdempotencyServiceTest.php',
+                        ],
+                        [
+                            'label' => 'PHPUnit Start Attempt Metrics & Index',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/StartAttemptMetricsServiceTest.php tests/php/unit/RestStartAttemptActiveIndexTest.php',
+                        ],
+                    ],
+                ],
+            ],
+            'scoring_grading' => [
+                'unit_tests' => [
+                    'label' => 'Run Checklist Unit Scoring & Grading',
+                    'description' => 'Menjalankan suite PHP yang saat ini dipetakan ke Checklist Unit Test untuk Scoring & Grading Engine.',
+                    'commands' => [
+                        [
+                            'label' => 'PHPUnit Scoring All Types',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/ScoringAllQuestionTypesTest.php',
+                        ],
+                        [
+                            'label' => 'PHPUnit AI Grading',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/EssayAIGradingServiceTest.php tests/php/unit/AdminResultsBulkEssayGradingTest.php tests/php/unit/AdminResultsBulkJobServiceTest.php',
+                        ],
+                        [
+                            'label' => 'PHPUnit Submission Context',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/QuestionSubmissionContextSnapshotTest.php tests/php/unit/RestQuestionSubmissionContextSnapshotTest.php tests/php/unit/QuestionsSyncObjectMapAnswerTest.php',
+                        ],
+                    ],
+                ],
+            ],
+            'update_health' => [
+                'unit_tests' => [
+                    'label' => 'Run Checklist Unit Update & Health',
+                    'description' => 'Menjalankan suite PHP yang saat ini dipetakan ke Checklist Unit Test untuk Plugin Update & Health.',
+                    'commands' => [
+                        [
+                            'label' => 'PHPUnit Update Job',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/UpdateJobServiceTest.php',
+                        ],
+                        [
+                            'label' => 'PHPUnit Update Backup',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/UpdateBackupServiceTest.php',
+                        ],
+                        [
+                            'label' => 'PHPUnit Update Health',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/UpdateHealthServiceTest.php',
+                        ],
+                        [
+                            'label' => 'PHPUnit Release Helper',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/UpdateReleaseHelperTest.php',
+                        ],
+                    ],
+                ],
+            ],
+            'cache_redis' => [
+                'unit_tests' => [
+                    'label' => 'Run Checklist Unit Cache & Redis',
+                    'description' => 'Menjalankan suite PHP yang saat ini dipetakan ke Checklist Unit Test untuk Cache & Redis Infrastructure.',
+                    'commands' => [
+                        [
+                            'label' => 'PHPUnit Cache Namespace',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/CacheNamespaceConsistencyTest.php',
+                        ],
+                        [
+                            'label' => 'PHPUnit Redis Pipeline',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/RedisPipelineHelperTest.php tests/php/unit/PluginRedisResetServiceTest.php',
+                        ],
+                        [
+                            'label' => 'PHPUnit Attempt Cache',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/AttemptQuestionContractCacheTest.php tests/php/unit/AttemptRuntimeSnapshotCacheTest.php tests/php/unit/AttemptRuntimeSnapshotServiceTest.php',
+                        ],
+                    ],
+                ],
+            ],
+            'submit_finalization' => [
+                'unit_tests' => [
+                    'label' => 'Run Checklist Unit Submit & Finalization',
+                    'description' => 'Menjalankan suite PHP dan JS yang dipetakan ke Checklist Unit Test untuk Submit & Finalization Flow.',
+                    'commands' => [
+                        [
+                            'label' => 'PHPUnit Finish Idempotency',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/FinishExamIdempotencyAndRecoveryTest.php',
+                        ],
+                        [
+                            'label' => 'PHPUnit Expired Finalize',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/ExpiredAttemptFinalizeServiceTest.php tests/php/unit/AdminResultsExpiredAutoFinalizeTest.php',
+                        ],
+                        [
+                            'label' => 'PHPUnit Submit Watchlist & Presence',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/AdminResultsSubmitWatchlistTest.php tests/php/unit/AdminResultsPresenceMonitoringTest.php tests/php/unit/AdminResultsResetRuntimeCleanupTest.php',
+                        ],
+                        [
+                            'label' => 'PHPUnit Flow Metrics',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/SubmitFlowMetricsServiceTest.php tests/php/unit/RestSubmitFlowMetricTest.php tests/php/unit/EntryFlowMetricsServiceTest.php tests/php/unit/RestEntryFlowMetricTest.php',
+                        ],
+                        [
+                            'label' => 'Vitest Finish Flow',
+                            'command' => './node_modules/.bin/vitest run tests/js/unit/finish-flow.test.js tests/js/unit/finish-flow-recovery.test.js tests/js/unit/confirm-result-runtime.test.js tests/js/unit/result-stage.test.js --reporter=verbose',
+                        ],
+                        [
+                            'label' => 'Vitest Durable Answer Queue',
+                            'command' => './node_modules/.bin/vitest run tests/js/unit/durable-answer-queue.test.js tests/js/unit/answer-sync-batch.test.js --reporter=verbose',
+                        ],
+                    ],
+                ],
+            ],
+            'security_event_pipeline' => [
+                'unit_tests' => [
+                    'label' => 'Run Checklist Unit Security Event Pipeline',
+                    'description' => 'Menjalankan suite PHP dan JS yang dipetakan ke Checklist Unit Test untuk Security Event Pipeline.',
+                    'commands' => [
+                        [
+                            'label' => 'PHPUnit Security Ingest',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/SecurityEventIngestTest.php tests/php/unit/SecurityEventIngestFlushTest.php',
+                        ],
+                        [
+                            'label' => 'PHPUnit Security Counters & Guard',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/SecurityLiveCountersTest.php tests/php/unit/SecurityUserAgentGuardTest.php tests/php/unit/AuthUserAgentGuardTest.php',
+                        ],
+                        [
+                            'label' => 'PHPUnit Auth Answer Sync & Incident',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/AuthAnswerSyncTokenTest.php tests/php/unit/IncidentReportTest.php',
+                        ],
+                        [
+                            'label' => 'PHPUnit Security Admin Render',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/AdminSecurityObservabilityRestTest.php tests/php/unit/AdminSecurityLiveRosterRenderTest.php tests/php/unit/AdminSecurityMustWatchRenderTest.php tests/php/unit/AdminSecurityServiceLiveRosterTest.php tests/php/unit/AdminSecurityRedisMonitorRenderTest.php',
+                        ],
+                        [
+                            'label' => 'Vitest Security Frontend',
+                            'command' => './node_modules/.bin/vitest run tests/js/unit/security-context.test.js tests/js/unit/security-logging.test.js tests/js/unit/exam-security.test.js tests/js/unit/app-events-security-shortcuts.test.js tests/js/unit/fullscreen-state.test.js tests/js/unit/idle-detection.test.js --reporter=verbose',
+                        ],
+                    ],
+                ],
+            ],
+            'admin_exam_management' => [
+                'unit_tests' => [
+                    'label' => 'Run Checklist Unit Admin Exam Management',
+                    'description' => 'Menjalankan suite PHP dan JS yang dipetakan ke Checklist Unit Test untuk Admin Exam Management.',
+                    'commands' => [
+                        [
+                            'label' => 'PHPUnit Exams CRUD & Helper',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/ExamsServiceValidationTest.php tests/php/unit/AdminExamsHelperTest.php tests/php/unit/AdminExamsQuestionPrintContextTest.php',
+                        ],
+                        [
+                            'label' => 'PHPUnit Exams Snapshot',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/AdminExamsSnapshotContextTest.php tests/php/unit/AdminExamsSnapshotActionsTest.php tests/php/unit/AdminExamsSnapshotRenderTest.php',
+                        ],
+                        [
+                            'label' => 'PHPUnit Question Guards & Token',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/AdminQuestionDeleteGuardTest.php tests/php/unit/AdminTokensServiceTest.php',
+                        ],
+                        [
+                            'label' => 'PHPUnit Analytics & Cache Admin',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/AdminAnalyticsInsightDisplayTest.php tests/php/unit/AdminCacheServiceTest.php tests/php/unit/AdminCacheLoginSnapshotActionsTest.php tests/php/unit/AdminUiHelperRenderTest.php',
+                        ],
+                        [
+                            'label' => 'Vitest Analytics Charts',
+                            'command' => './node_modules/.bin/vitest run tests/js/unit/admin-analytics-charts.test.js --reporter=verbose',
+                        ],
+                    ],
+                ],
+            ],
+            'attempt_runtime_envelope' => [
+                'unit_tests' => [
+                    'label' => 'Run Checklist Unit Attempt Runtime & Envelope',
+                    'description' => 'Menjalankan suite PHP dan JS yang dipetakan ke Checklist Unit Test untuk Attempt Runtime & Envelope.',
+                    'commands' => [
+                        [
+                            'label' => 'PHPUnit Runtime Envelope & Buffer',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/RuntimeAttemptEnvelopeTest.php tests/php/unit/RuntimeBufferFlushIntegrityTest.php tests/php/unit/RawJsonRestResponseTest.php',
+                        ],
+                        [
+                            'label' => 'PHPUnit Active Attempt Index',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/ActiveAttemptIndexTest.php tests/php/unit/ActiveAttemptIndexStaleTest.php',
+                        ],
+                        [
+                            'label' => 'PHPUnit Snapshot & Load',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/SnapshotAutoHealQueueServiceTest.php tests/php/unit/AdaptiveLoadServiceTest.php tests/php/unit/ExamStartAttemptSnapshotTest.php',
+                        ],
+                        [
+                            'label' => 'PHPUnit REST Envelope & Delivery',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/RestAttemptEnvelopeLivePathTest.php tests/php/unit/RestQuestionDeliverySnapshotTest.php tests/php/unit/RestSessionPresenceSnapshotTest.php tests/php/unit/RestLiveProfileSnapshotTest.php',
+                        ],
+                        [
+                            'label' => 'Vitest Runtime Loader & Stage',
+                            'command' => './node_modules/.bin/vitest run tests/js/unit/exam-runtime-loader.test.js tests/js/unit/exam-session.test.js tests/js/unit/exam-stage.test.js tests/js/unit/stage-runtime-manager.test.js --reporter=verbose',
+                        ],
+                        [
+                            'label' => 'Vitest Render & Sync Bridge',
+                            'command' => './node_modules/.bin/vitest run tests/js/unit/render-cycle.test.js tests/js/unit/sync-lifecycle-bridge.test.js tests/js/unit/readonly-api-cache.test.js tests/js/unit/lazy-math.test.js --reporter=verbose',
+                        ],
+                    ],
+                ],
+            ],
+            'app_shell_bootstrap' => [
+                'unit_tests' => [
+                    'label' => 'Run Checklist Unit App Shell & Bootstrap',
+                    'description' => 'Menjalankan suite PHP dan JS yang dipetakan ke Checklist Unit Test untuk App Shell & Bootstrap.',
+                    'commands' => [
+                        [
+                            'label' => 'Vitest App Bootstrap & Shell',
+                            'command' => './node_modules/.bin/vitest run tests/js/unit/app-bootstrap.test.js tests/js/unit/app-shell.test.js tests/js/unit/app-meta.test.js tests/js/unit/bootstrap-student-shell.test.js --reporter=verbose',
+                        ],
+                        [
+                            'label' => 'Vitest App Events & Auth Stages',
+                            'command' => './node_modules/.bin/vitest run tests/js/unit/app-events-rich-zoom.test.js tests/js/unit/app-events-session-recovery.test.js tests/js/unit/auth-stages.test.js --reporter=verbose',
+                        ],
+                        [
+                            'label' => 'Vitest Browser & Config',
+                            'command' => './node_modules/.bin/vitest run tests/js/unit/browser-storage.test.js tests/js/unit/config.test.js tests/js/unit/config-security.test.js tests/js/unit/ui-preferences.test.js --reporter=verbose',
+                        ],
+                        [
+                            'label' => 'Vitest Service Worker & Diagnostics',
+                            'command' => './node_modules/.bin/vitest run tests/js/unit/service-worker-registration.test.js tests/js/unit/frontend-diagnostics.test.js tests/js/unit/debug-manager.test.js --reporter=verbose',
+                        ],
+                        [
+                            'label' => 'Vitest Utilities',
+                            'command' => './node_modules/.bin/vitest run tests/js/unit/format.test.js tests/js/unit/html.test.js tests/js/unit/calculator.test.js tests/js/unit/legacy-handoff.test.js --reporter=verbose',
+                        ],
+                        [
+                            'label' => 'PHPUnit Frontend & Vite',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/FrontendServiceWorkerTest.php tests/php/unit/ViteAssetManifestCssTest.php',
+                        ],
+                    ],
+                ],
+            ],
+            'login_student_profile' => [
+                'unit_tests' => [
+                    'label' => 'Run Checklist Unit Login & Student Profile',
+                    'description' => 'Menjalankan suite PHP dan JS yang dipetakan ke Checklist Unit Test untuk Login & Student Profile.',
+                    'commands' => [
+                        [
+                            'label' => 'PHPUnit Login Auth & Rate Limit',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/LoginAuthSnapshotCacheTest.php tests/php/unit/LoginRateLimitAndSessionTest.php tests/php/unit/LoginReadinessWarmQueueServiceTest.php',
+                        ],
+                        [
+                            'label' => 'PHPUnit Student Profile & Cohort',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/StudentProfileSnapshotTest.php tests/php/unit/StudentCohortIndexServiceTest.php',
+                        ],
+                        [
+                            'label' => 'PHPUnit Exam Audience & Cards',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/ExamAudienceEvaluationTest.php tests/php/unit/ExamAudienceServiceTest.php tests/php/unit/ExamCardsServiceTest.php tests/php/unit/ExamCardsProgressUiTest.php',
+                        ],
+                        [
+                            'label' => 'Vitest Session & API Client',
+                            'command' => './node_modules/.bin/vitest run tests/js/unit/doubtful-state.test.js tests/js/unit/api-client.test.js tests/js/unit/session-heartbeat-lost.test.js --reporter=verbose',
+                        ],
+                    ],
+                ],
+            ],
+            'developer_setup_tooling' => [
+                'unit_tests' => [
+                    'label' => 'Run Checklist Unit Developer & Setup Tooling',
+                    'description' => 'Menjalankan suite PHP dan JS yang dipetakan ke Checklist Unit Test untuk Developer & Setup Tooling.',
+                    'commands' => [
+                        [
+                            'label' => 'PHPUnit Plugin Lifecycle',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/ActivatorDeactivatorLifecycleTest.php tests/php/unit/DeactivatorTest.php',
+                        ],
+                        [
+                            'label' => 'PHPUnit Maintenance Tools',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/AdminMaintenanceCommonTest.php tests/php/unit/AdminMaintenanceContextBuilderTest.php tests/php/unit/AdminMaintenanceLoadTestCancelTest.php tests/php/unit/MaintenanceLoadTestStudentPoolTest.php tests/php/unit/MaintenanceModularizationTest.php',
+                        ],
+                        [
+                            'label' => 'PHPUnit Setup & Branding',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/BrandingRegionLabelTest.php tests/php/unit/SetupBrandingProgressUiTest.php tests/php/unit/SetupSecurityConfigTest.php tests/php/unit/SetupSecurityProgressUiTest.php',
+                        ],
+                        [
+                            'label' => 'PHPUnit Developer Tools',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/DeveloperBuildOutputAccessTest.php tests/php/unit/DeveloperDevServerStateTest.php tests/php/unit/DeveloperProgressUiTest.php',
+                        ],
+                        [
+                            'label' => 'PHPUnit Admin Modules',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/OrderingQuestionTypeTest.php tests/php/unit/AnalyticsProgressUiTest.php tests/php/unit/QuestionsProgressUiTest.php tests/php/unit/SubjectsProgressUiTest.php tests/php/unit/SubjectsServiceValidationTest.php tests/php/unit/UsersProgressUiTest.php tests/php/unit/UsersServicePhotoImportTest.php tests/php/unit/UsersServiceValidationTest.php',
+                        ],
+                        [
+                            'label' => 'Vitest Flow Job Worker',
+                            'command' => './node_modules/.bin/vitest run tests/js/unit/flow-job-worker.test.js --reporter=verbose',
+                        ],
+                        [
+                            'label' => 'PHPUnit Test Hub Meta',
+                            'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/TestHubServiceSafetyTest.php tests/php/unit/TestHubActionHandlersTest.php tests/php/unit/TestHubViewRenderTest.php tests/php/unit/TestHubArtifactCleanupTest.php',
+                        ],
+                    ],
+                ],
+            ],
         ];
     }
 
@@ -1152,6 +1831,45 @@ final class CBT_Admin_Test_Hub_Service
 
         if (!function_exists('proc_open')) {
             self::redirect_test_hub_after_run($tab, null, '', 'Runner test membutuhkan fungsi proc_open yang aktif di PHP.');
+        }
+
+        $inventory_test_id = sanitize_key(self::read_action_scalar($_POST, 'cbt_inventory_test_id'));
+        if ($inventory_test_id !== '') {
+            $inventory_item = self::get_unit_test_inventory_item($inventory_test_id);
+            if (!is_array($inventory_item) || empty($inventory_item['runnable'])) {
+                self::redirect_test_hub_after_run($tab, null, '', 'File unit test inventory yang dipilih tidak valid atau sudah tidak tersedia.');
+            }
+
+            $result = self::run_unit_test_command(
+                (string) ($inventory_item['runner_label'] ?? 'Unit Test File'),
+                (string) ($inventory_item['command'] ?? ''),
+                self::build_runner_environment()
+            );
+            $result['inventory_file'] = self::unit_test_inventory_file_meta($inventory_item);
+            $result['mapping_status'] = (string) ($inventory_item['mapping_status'] ?? 'auto_mapped');
+            $success = !empty($result['success']);
+            $token = strtolower((string) wp_generate_password(12, false, false));
+            $result_payload = [
+                'tab' => (string) ($inventory_item['run_tab'] ?? $tab),
+                'scope' => 'unit_tests',
+                'item_index' => null,
+                'item_label' => (string) ($inventory_item['basename'] ?? 'Unit Test File'),
+                'inventory_file' => self::unit_test_inventory_file_meta($inventory_item),
+                'label' => 'Run Unit Test File',
+                'description' => 'Menjalankan satu file unit test dari Unit Test Inventory.',
+                'success' => $success,
+                'executed_at' => time(),
+                'commands' => [$result],
+            ];
+            set_transient(self::UNIT_TEST_RUN_RESULT_TRANSIENT_PREFIX . $token, $result_payload, self::UNIT_TEST_RUN_RESULT_TTL);
+
+            self::redirect_test_hub_after_run(
+                (string) ($inventory_item['run_tab'] ?? $tab),
+                $token,
+                $success ? 'File unit test berhasil dijalankan: ' . (string) ($inventory_item['basename'] ?? '') : '',
+                $success ? '' : 'File unit test gagal. Periksa output runner di panel Unit Test Inventory.',
+                'unit_tests'
+            );
         }
 
         $runner = isset($runners[$tab][$scope]) && is_array($runners[$tab][$scope]) ? (array) $runners[$tab][$scope] : [];
@@ -7360,6 +8078,629 @@ final class CBT_Admin_Test_Hub_Service
                         'runner_commands' => ['Playwright Security Native Tool'],
                     ]),
                 ],
+            ],
+            'supervisor_proctoring' => [
+                'label' => 'Supervisor & Proctoring',
+                'summary' => 'Area untuk memastikan dashboard supervisor, live roster, presence heartbeat, security timeline, token gate, attendance, action required, dan reset login tetap aman dan sinkron.',
+                'status' => 'ready',
+                'unit_tests' => [
+                    self::unit_test_checklist_item('Overview payload memakai teacher scope dan menjaga tab berat tetap lazy.', 'ready', [
+                        'description' => 'Dashboard supervisor sekarang punya coverage untuk payload overview: scope teacher yang membatasi data, lazy loading pada tab berat, dan filter options exam/kelas/ruang tetap terisi.',
+                        'process_steps' => [
+                            'PHPUnit memanggil build_dashboard_payload() dengan role teacher dan filter exam, kelas, student_keyword.',
+                            'Assertion memverifikasi is_admin_scope false, teacher_scope_user_id sesuai, dan semua section payload hadir.',
+                            'Tab berat seperti monitoring_attempts diverifikasi tidak dihidrasi (total 0) saat overview.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/SupervisorDashboardServiceTest.php',
+                            'includes/class-cbt-supervisor-dashboard-service.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Supervisor Dashboard'],
+                    ]),
+                    self::unit_test_checklist_item('Live roster tab menghidrasi hanya context roster dan menjaga tab lain tetap kosong.', 'ready', [
+                        'description' => 'Tab live_roster sekarang punya coverage untuk memastikan hanya data roster yang dihidrasi, sementara must_watch, monitoring, dan security_log tetap kosong.',
+                        'process_steps' => [
+                            'PHPUnit memanggil build_dashboard_payload() dengan tab live_roster.',
+                            'Assertion memverifikasi roster items terisi dengan nama siswa yang benar.',
+                            'Tab must_watch, monitoring_attempts, dan security_log diverifikasi tetap kosong.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/SupervisorDashboardServiceTest.php',
+                            'includes/class-cbt-supervisor-dashboard-service.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Supervisor Dashboard'],
+                    ]),
+                    self::unit_test_checklist_item('Presence snapshot membedakan online, stale, dan offline berdasarkan TTL last_seen.', 'ready', [
+                        'description' => 'Presence manager sekarang punya coverage untuk tiga status koneksi: online dalam 60 detik, stale setelah 60 detik, dan offline setelah 90 detik.',
+                        'process_steps' => [
+                            'PHPUnit memperbarui presence attempt lalu membaca payload pada tiga waktu berbeda.',
+                            'Assertion memverifikasi presence_status berubah dari online ke stale ke offline sesuai threshold.',
+                            'Metadata visibility_state, has_focus, pending_sync_count, dan heartbeat_lost_active tetap terbaca konsisten.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/LiveProctoringPresenceTest.php',
+                            'includes/class-cbt-live-proctoring-presence.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Roster & Presence'],
+                    ]),
+                    self::unit_test_checklist_item('Roster index mengelompokkan attempt per exam × kelas × ruang dengan counter derivasi yang benar.', 'ready', [
+                        'description' => 'Live roster index sekarang punya coverage untuk grouping dan derived counters: active_total, online_total, offline_total, watch_total, hidden_total, dan heartbeat_total.',
+                        'process_steps' => [
+                            'PHPUnit menyinkronkan dua attempt ke roster index lalu membaca grouped payloads.',
+                            'Assertion memverifikasi satu group dengan counter active 2, online 1, offline 1, watch 1.',
+                            'sync_risk_summary() dan clear_attempt() diverifikasi menjaga konsistensi group membership.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/LiveAttemptRosterIndexTest.php',
+                            'includes/class-cbt-live-attempt-roster-index.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Roster & Presence'],
+                    ]),
+                    self::unit_test_checklist_item('REST supervisor menolak role student dan meneruskan scope teacher ke service.', 'ready', [
+                        'description' => 'Route REST supervisor sekarang punya coverage untuk guard role: student ditolak, teacher diteruskan ke service dengan scope yang benar, dan attempt detail membutuhkan attempt_id.',
+                        'process_steps' => [
+                            'PHPUnit memverifikasi supervisor dashboard menolak role student dengan WP_Error.',
+                            'Teacher request diteruskan ke build_dashboard_payload() dan hasilnya dikembalikan sebagai JSON.',
+                            'Reset login dan attempt detail diverifikasi membutuhkan attempt_id dan meneruskan scope.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/SupervisorRestRoutesTest.php',
+                            'includes/class-cbt-rest-supervisor.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Supervisor Dashboard'],
+                    ]),
+                    self::unit_test_checklist_item('Frontend supervisor menormalisasi persen, cache key, dan merender security timeline.', 'ready', [
+                        'description' => 'Runtime JS supervisor sekarang punya coverage untuk normalisasi persen dari API, cache key yang stabil terhadap urutan query, dan rendering security timeline dengan severity tone.',
+                        'process_steps' => [
+                            'Vitest memverifikasi normalizeSupervisorPercentValue() memakai angka langsung atau fallback parsing label Indonesia.',
+                            'buildSupervisorDashboardCacheKey() diverifikasi stabil saat urutan query object berubah.',
+                            'renderSupervisorSecurityTimelineSection() diverifikasi merender grouped summary dan empty state.',
+                        ],
+                        'evidence' => [
+                            'tests/js/unit/supervisor-runtime.test.js',
+                            'src/frontend/app/supervisor/runtime.js',
+                        ],
+                        'runner_commands' => ['Vitest Supervisor'],
+                    ]),
+                ],
+                'smoke_tests' => [],
+            ],
+            'exam_preflight_availability' => [
+                'label' => 'Exam Preflight & Availability',
+                'summary' => 'Area untuk memastikan gate service, availability snapshot, auto-warm queue, start attempt idempotency, opening state, dan metrics tetap menjaga akses ujian yang aman dan terukur.',
+                'status' => 'ready',
+                'unit_tests' => [
+                    self::unit_test_checklist_item('Gate service menolak attempt di luar jadwal dan saat slot capacity penuh.', 'ready', [
+                        'description' => 'Gate service sekarang punya coverage untuk dua guard utama: jadwal exam (sebelum starts_at / setelah ends_at) dan bucket capacity yang habis.',
+                        'process_steps' => [
+                            'PHPUnit memverifikasi gate reject attempt saat waktu di luar jadwal.',
+                            'Bucket token dihabiskan lalu attempt berikutnya diverifikasi ditolak.',
+                            'Attempt dalam jadwal dan dengan token tersedia diverifikasi diterima.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/StartAttemptGateServiceTest.php',
+                            'tests/php/unit/StartAttemptGateBucketTest.php',
+                            'includes/class-cbt-start-attempt-gate-service.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Gate & Start Attempt'],
+                    ]),
+                    self::unit_test_checklist_item('Availability snapshot dan auto-warm queue memproses exam berdasar jadwal terdekat.', 'ready', [
+                        'description' => 'Availability cache sekarang punya coverage untuk snapshot readiness dan auto-warm ordering: exam dengan jadwal terdekat diproses lebih dulu, dan invalidation hanya berlaku untuk exam yang diubah.',
+                        'process_steps' => [
+                            'PHPUnit memverifikasi snapshot availability menghasilkan payload yang benar per exam.',
+                            'Auto-warm queue diverifikasi memproses exam berurutan berdasarkan starts_at terdekat.',
+                            'REST endpoint availability diverifikasi mengembalikan snapshot yang konsisten.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/ExamAvailabilitySnapshotTest.php',
+                            'tests/php/unit/ExamAvailabilityAutoWarmServiceTest.php',
+                            'tests/php/unit/RestExamAvailabilitySnapshotTest.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Availability Snapshot'],
+                    ]),
+                    self::unit_test_checklist_item('Preflight service memvalidasi kelas target, token gate, dan snapshot freshness.', 'ready', [
+                        'description' => 'Preflight service sekarang punya coverage untuk validasi multi-layer: kelas target siswa, token gate status, dan freshness snapshot cache.',
+                        'process_steps' => [
+                            'PHPUnit memverifikasi preflight menolak siswa dari kelas yang tidak ditargetkan.',
+                            'Token gate diverifikasi memblokir attempt saat gate tertutup.',
+                            'Snapshot freshness diverifikasi tidak memakai data stale.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/ExamPreflightServiceTest.php',
+                            'includes/class-cbt-exam-preflight-service.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Preflight Service'],
+                    ]),
+                    self::unit_test_checklist_item('Start attempt idempotency mencegah duplikasi attempt untuk student + exam yang sama.', 'ready', [
+                        'description' => 'Idempotency service sekarang punya coverage untuk mencegah race condition: request paralel untuk student + exam yang sama hanya menghasilkan satu attempt.',
+                        'process_steps' => [
+                            'PHPUnit memverifikasi lock idempotency mencegah attempt kedua saat lock masih aktif.',
+                            'Lock yang expired diverifikasi membiarkan attempt baru dibuat.',
+                            'Attempt yang sudah ada diverifikasi dikembalikan tanpa membuat duplikat.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/StartAttemptIdempotencyServiceTest.php',
+                            'includes/class-cbt-start-attempt-idempotency-service.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Gate & Start Attempt'],
+                    ]),
+                    self::unit_test_checklist_item('Opening state dan metrics mencatat waktu gate, queue depth, dan start attempt latency.', 'ready', [
+                        'description' => 'Opening state dan metrics service sekarang punya coverage untuk recording diagnostics: gate wait time, queue depth snapshot, dan start attempt p95 latency.',
+                        'process_steps' => [
+                            'PHPUnit memverifikasi opening state menyimpan snapshot gate saat attempt dimulai.',
+                            'Metrics service diverifikasi mencatat latency dan queue depth per exam.',
+                            'REST start attempt index diverifikasi mengembalikan active index yang konsisten.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/StartAttemptOpeningStateServiceTest.php',
+                            'tests/php/unit/StartAttemptMetricsServiceTest.php',
+                            'tests/php/unit/RestStartAttemptActiveIndexTest.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Start Attempt Metrics & Index'],
+                    ]),
+                ],
+                'smoke_tests' => [],
+            ],
+            'scoring_grading' => [
+                'label' => 'Scoring & Grading',
+                'summary' => 'Area untuk memastikan auto-grading semua tipe soal, AI essay grading (OpenAI/Gemini), submission context snapshot, dan bulk grading job tetap menghasilkan skor yang akurat.',
+                'status' => 'ready',
+                'unit_tests' => [
+                    self::unit_test_checklist_item('Auto-grading menghasilkan skor yang benar untuk semua 11 tipe soal.', 'ready', [
+                        'description' => 'Scoring engine sekarang punya coverage matrix untuk MC, MA, TF, Ordering, Short Answer, TF Matrix, Matching, Cloze Dropdown, Categorization, Table Completion, dan Essay.',
+                        'process_steps' => [
+                            'PHPUnit memverifikasi jawaban benar menghasilkan skor penuh untuk MC, MA, TF, dan Ordering.',
+                            'Partial scoring diverifikasi untuk TF Matrix, Matching, Cloze, Categorization, dan Table Completion.',
+                            'Essay diverifikasi mengembalikan null is_correct dan skor nol (pending manual).',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/ScoringAllQuestionTypesTest.php',
+                            'includes/class-cbt-rest-scoring.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Scoring All Types'],
+                    ]),
+                    self::unit_test_checklist_item('AI essay grading mengirim payload rubric yang konsisten dan menangani timeout.', 'ready', [
+                        'description' => 'Essay AI grading service sekarang punya coverage untuk payload OpenAI/Gemini: rubric prompt, timeout handling, rate-limit retry, dan score extraction dari respons AI.',
+                        'process_steps' => [
+                            'PHPUnit memverifikasi payload prompt berisi rubric, jawaban siswa, dan instruksi skor.',
+                            'Timeout dan rate-limit diverifikasi menghasilkan error yang aman tanpa crash.',
+                            'Score extraction dari respons AI diverifikasi menghasilkan angka dalam range yang valid.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/EssayAIGradingServiceTest.php',
+                            'includes/class-cbt-essay-ai-grading-service.php',
+                        ],
+                        'runner_commands' => ['PHPUnit AI Grading'],
+                    ]),
+                    self::unit_test_checklist_item('Bulk essay grading job memproses batch tanpa melewatkan attempt atau menimpa skor manual.', 'ready', [
+                        'description' => 'Bulk grading job sekarang punya coverage untuk batch processing: attempt diproses berurutan, skor manual yang sudah ada tidak ditimpa, dan progress tracking konsisten.',
+                        'process_steps' => [
+                            'PHPUnit memverifikasi job memproses batch attempt dengan AI grading.',
+                            'Attempt yang sudah dinilai manual diverifikasi di-skip.',
+                            'Progress counter dan completion state diverifikasi konsisten.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/AdminResultsBulkEssayGradingTest.php',
+                            'tests/php/unit/AdminResultsBulkJobServiceTest.php',
+                        ],
+                        'runner_commands' => ['PHPUnit AI Grading'],
+                    ]),
+                    self::unit_test_checklist_item('Submission context snapshot menyimpan jawaban per tipe soal dengan struktur yang benar.', 'ready', [
+                        'description' => 'Submission context cache sekarang punya coverage untuk semua tipe soal: jawaban disimpan dengan metadata yang cukup untuk scoring dan review, termasuk object-map untuk tipe structured.',
+                        'process_steps' => [
+                            'PHPUnit memverifikasi snapshot menyimpan jawaban MC, MA, TF, Short Answer, dan Essay.',
+                            'Object-map untuk Matching, Cloze, Categorization, dan Table Completion diverifikasi lengkap.',
+                            'REST endpoint submission context diverifikasi mengembalikan snapshot yang konsisten.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/QuestionSubmissionContextSnapshotTest.php',
+                            'tests/php/unit/RestQuestionSubmissionContextSnapshotTest.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Submission Context'],
+                    ]),
+                    self::unit_test_checklist_item('Object-map answer sync memetakan jawaban Matching, Cloze, Categorization, dan Table Completion tanpa kehilangan data.', 'ready', [
+                        'description' => 'Sync helper sekarang punya coverage untuk object-map answer: pair_index, dropdown_index, category mapping, dan cell coordinates disinkronkan dengan benar antara frontend dan backend.',
+                        'process_steps' => [
+                            'PHPUnit memverifikasi sync answer untuk Matching memetakan pair_index ke option_id.',
+                            'Cloze dropdown diverifikasi menyimpan dropdown_index dan selected_option.',
+                            'Categorization dan Table Completion diverifikasi menjaga cell coordinates.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/QuestionsSyncObjectMapAnswerTest.php',
+                            'admin/class-cbt-admin-questions-sync-helper.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Submission Context'],
+                    ]),
+                ],
+                'smoke_tests' => [],
+            ],
+            'update_health' => [
+                'label' => 'Update & Health',
+                'summary' => 'Area untuk memastikan update job state machine, backup ZIP, health check, release manifest, preflight validation, dan rollback tetap aman dan atomic.',
+                'status' => 'ready',
+                'unit_tests' => [
+                    self::unit_test_checklist_item('Release manifest normalisasi dan fetch state menandai update yang tersedia atau tidak.', 'ready', [
+                        'description' => 'Release helper sekarang punya coverage untuk manifest parsing: version wajib ada, download URL di-default, dan fetch state membedakan available vs no_release.',
+                        'process_steps' => [
+                            'PHPUnit memverifikasi normalize_manifest() memakai default untuk missing download URL.',
+                            'Manifest tanpa version diverifikasi ditolak.',
+                            'fetch_latest_release_state() diverifikasi menandai available saat release valid dan no_release saat kosong.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/UpdateReleaseHelperTest.php',
+                            'includes/class-cbt-update-release-helper.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Release Helper'],
+                    ]),
+                    self::unit_test_checklist_item('Preflight validation memblokir checksum missing, unofficial URL, dan version mismatch.', 'ready', [
+                        'description' => 'Preflight check sekarang punya coverage untuk tiga guard kritis: checksum harus ada, package URL harus official, dan downloaded package harus lolos checksum verification.',
+                        'process_steps' => [
+                            'PHPUnit memverifikasi preflight blocked saat checksum missing.',
+                            'Unofficial package URL diverifikasi ditolak.',
+                            'Downloaded package dengan checksum mismatch diverifikasi ditolak.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/UpdateReleaseHelperTest.php',
+                            'includes/class-cbt-update-release-helper.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Release Helper'],
+                    ]),
+                    self::unit_test_checklist_item('ZIP package structure validation menolak invalid root dan path traversal.', 'ready', [
+                        'description' => 'Package validator sekarang punya coverage untuk keamanan ZIP: root directory harus valid, path traversal (../) ditolak, dan bootstrap version harus cocok.',
+                        'process_steps' => [
+                            'PHPUnit memverifikasi invalid root directory ditolak.',
+                            'Path traversal dalam ZIP diverifikasi ditolak.',
+                            'Bootstrap version mismatch diverifikasi ditolak.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/UpdateReleaseHelperTest.php',
+                            'includes/class-cbt-update-release-helper.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Release Helper'],
+                    ]),
+                    self::unit_test_checklist_item('Update job lifecycle: start install, tick progress, dan complete with history.', 'ready', [
+                        'description' => 'Update job sekarang punya coverage untuk lifecycle lengkap: start_install membuat job tanpa download, check_job_tick memajukan progress, dan completion menulis history.',
+                        'process_steps' => [
+                            'PHPUnit memverifikasi start_install() membuat lightweight job.',
+                            'check_job_tick() diverifikasi memajukan state dan menulis history saat selesai.',
+                            'Rollback diverifikasi menolak backup yang tidak dikenal.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/UpdateReleaseHelperTest.php',
+                            'tests/php/unit/UpdateJobServiceTest.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Update Job', 'PHPUnit Update Backup', 'PHPUnit Release Helper'],
+                    ]),
+                    self::unit_test_checklist_item('Health check mendeteksi version mismatch dan missing database tables.', 'ready', [
+                        'description' => 'Health service sekarang punya coverage untuk diagnostics: version mismatch antara file dan database dilaporkan sebagai failure, dan missing question detail tables terdeteksi.',
+                        'process_steps' => [
+                            'PHPUnit memverifikasi health check melaporkan version mismatch sebagai failure.',
+                            'Missing question detail tables diverifikasi terdeteksi dan dilaporkan.',
+                            'Schema item diverifikasi melacak semua question detail tables yang diharapkan.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/UpdateHealthServiceTest.php',
+                            'tests/php/unit/UpdateReleaseHelperTest.php',
+                            'includes/class-cbt-update-health-service.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Update Health', 'PHPUnit Release Helper'],
+                    ]),
+                ],
+                'smoke_tests' => [],
+            ],
+            'cache_redis' => [
+                'label' => 'Cache & Redis',
+                'summary' => 'Area untuk memastikan namespace invalidation, pipeline batching, Redis reset progress, attempt snapshot cache, dan lock/release tetap konsisten dan aman.',
+                'status' => 'ready',
+                'unit_tests' => [
+                    self::unit_test_checklist_item('Namespace invalidation hanya menghapus cache yang matching dan menjaga namespace lain tetap utuh.', 'ready', [
+                        'description' => 'Cache namespace sekarang punya coverage untuk invalidation presisi: remember() menyimpan value, invalidate_namespace() menaikkan version, dan cached value lama tidak terbaca lagi.',
+                        'process_steps' => [
+                            'PHPUnit memverifikasi remember() meng-cache value pada panggilan pertama.',
+                            'invalidate_namespace() diverifikasi menaikkan version dan membuat cache lama invalid.',
+                            'Namespace lain dan UI state cache diverifikasi juga bisa di-invalidate secara terpisah.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/CacheNamespaceConsistencyTest.php',
+                            'includes/class-cbt-cache.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Cache Namespace'],
+                    ]),
+                    self::unit_test_checklist_item('Pipeline helper batching dan Redis reset progress tracking berjalan aman.', 'ready', [
+                        'description' => 'Pipeline helper sekarang punya coverage untuk batching commands, dan Redis reset service punya coverage untuk progress tracking: 0% → chunks → 100%.',
+                        'process_steps' => [
+                            'PHPUnit memverifikasi pipeline helper membatasi chunk size.',
+                            'Redis reset service diverifikasi melacak progress per batch.',
+                            'Completion state diverifikasi konsisten setelah semua batch selesai.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/RedisPipelineHelperTest.php',
+                            'tests/php/unit/PluginRedisResetServiceTest.php',
+                            'includes/class-cbt-redis-pipeline-helper.php',
+                            'includes/class-cbt-plugin-redis-reset-service.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Redis Pipeline'],
+                    ]),
+                    self::unit_test_checklist_item('Attempt question contract cache dan runtime snapshot tetap sinkron dan bisa di-invalidate.', 'ready', [
+                        'description' => 'Attempt cache sekarang punya coverage untuk contract cache dan runtime snapshot: data disimpan per attempt, dibaca konsisten, dan bisa di-invalidate tanpa merusak attempt lain.',
+                        'process_steps' => [
+                            'PHPUnit memverifikasi contract cache menyimpan dan membaca question payload per attempt.',
+                            'Runtime snapshot diverifikasi menyimpan state lengkap dan bisa dibaca kembali.',
+                            'Invalidation per attempt diverifikasi tidak merusak cache attempt lain.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/AttemptQuestionContractCacheTest.php',
+                            'tests/php/unit/AttemptRuntimeSnapshotCacheTest.php',
+                            'tests/php/unit/AttemptRuntimeSnapshotServiceTest.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Attempt Cache'],
+                    ]),
+                    self::unit_test_checklist_item('Lock acquire dan release menjaga mutual exclusion pada operasi cache kritis.', 'ready', [
+                        'description' => 'Cache lock sekarang punya coverage untuk acquire dan release: lock berhasil pada percobaan pertama, gagal saat sudah di-hold, dan release membebaskan lock untuk consumer berikutnya.',
+                        'process_steps' => [
+                            'PHPUnit memverifikasi acquire_lock() berhasil pada panggilan pertama.',
+                            'Panggilan kedua saat lock aktif diverifikasi gagal.',
+                            'release_lock() diverifikasi membebaskan lock sehingga acquire berikutnya berhasil.',
+                        ],
+                        'evidence' => [
+                            'tests/php/unit/CacheNamespaceConsistencyTest.php',
+                            'includes/class-cbt-cache.php',
+                        ],
+                        'runner_commands' => ['PHPUnit Cache Namespace'],
+                    ]),
+                ],
+                'smoke_tests' => [],
+            ],
+            'submit_finalization' => [
+                'label' => 'Submit & Finalization',
+                'summary' => 'Area untuk memastikan finish exam idempotency, expired auto-finalize, submit watchlist, presence monitoring, runtime cleanup, durable answer queue, dan flow metrics tetap menjaga integritas data ujian.',
+                'status' => 'ready',
+                'unit_tests' => [
+                    self::unit_test_checklist_item('Finish exam idempotency mencegah duplikasi finalisasi dan memulihkan dari kegagalan submit.', 'ready', [
+                        'description' => 'Finish exam service sekarang punya coverage untuk idempotency: request paralel hanya menghasilkan satu finalisasi, dan kegagalan mid-process bisa dipulihkan tanpa kehilangan data.',
+                        'evidence' => ['tests/php/unit/FinishExamIdempotencyAndRecoveryTest.php'],
+                        'runner_commands' => ['PHPUnit Finish Idempotency'],
+                    ]),
+                    self::unit_test_checklist_item('Expired auto-finalize menyelesaikan attempt yang melewati batas waktu tanpa duplikasi.', 'ready', [
+                        'description' => 'Expired finalize service sekarang punya coverage untuk auto-finalize attempt yang expired: batch processing, status update, dan skor kalkulasi tanpa menimpa attempt yang sudah selesai.',
+                        'evidence' => ['tests/php/unit/ExpiredAttemptFinalizeServiceTest.php', 'tests/php/unit/AdminResultsExpiredAutoFinalizeTest.php'],
+                        'runner_commands' => ['PHPUnit Expired Finalize'],
+                    ]),
+                    self::unit_test_checklist_item('Submit watchlist dan presence monitoring melacak attempt yang butuh perhatian operator.', 'ready', [
+                        'description' => 'Watchlist dan presence monitoring sekarang punya coverage untuk tracking attempt bermasalah: submit pending, recovery failed, dan runtime cleanup saat reset.',
+                        'evidence' => ['tests/php/unit/AdminResultsSubmitWatchlistTest.php', 'tests/php/unit/AdminResultsPresenceMonitoringTest.php', 'tests/php/unit/AdminResultsResetRuntimeCleanupTest.php'],
+                        'runner_commands' => ['PHPUnit Submit Watchlist & Presence'],
+                    ]),
+                    self::unit_test_checklist_item('Flow metrics mencatat latency submit dan entry untuk diagnostik performa.', 'ready', [
+                        'description' => 'Flow metrics service sekarang punya coverage untuk recording latency: submit flow p95, entry flow timing, dan REST endpoint metrics yang konsisten.',
+                        'evidence' => ['tests/php/unit/SubmitFlowMetricsServiceTest.php', 'tests/php/unit/RestSubmitFlowMetricTest.php', 'tests/php/unit/EntryFlowMetricsServiceTest.php', 'tests/php/unit/RestEntryFlowMetricTest.php'],
+                        'runner_commands' => ['PHPUnit Flow Metrics'],
+                    ]),
+                    self::unit_test_checklist_item('Frontend finish flow state machine menangani transisi dan recovery dari kegagalan.', 'ready', [
+                        'description' => 'Finish flow JS sekarang punya coverage untuk state machine lengkap: transisi dari exam ke result, recovery dari kegagalan network, dan confirm result runtime.',
+                        'evidence' => ['tests/js/unit/finish-flow.test.js', 'tests/js/unit/finish-flow-recovery.test.js', 'tests/js/unit/confirm-result-runtime.test.js', 'tests/js/unit/result-stage.test.js'],
+                        'runner_commands' => ['Vitest Finish Flow'],
+                    ]),
+                    self::unit_test_checklist_item('Durable answer queue mempertahankan jawaban saat offline dan batch sync saat online.', 'ready', [
+                        'description' => 'Durable queue sekarang punya coverage untuk offline persistence: jawaban disimpan ke IndexedDB, batch sync saat koneksi pulih, dan ordering terjaga.',
+                        'evidence' => ['tests/js/unit/durable-answer-queue.test.js', 'tests/js/unit/answer-sync-batch.test.js'],
+                        'runner_commands' => ['Vitest Durable Answer Queue'],
+                    ]),
+                ],
+                'smoke_tests' => [],
+            ],
+            'security_event_pipeline' => [
+                'label' => 'Security Event Pipeline',
+                'summary' => 'Area untuk memastikan ingest event keamanan, flush pipeline, live counters, user-agent guard, answer sync token, incident report, dan admin security render tetap menjaga audit trail yang lengkap.',
+                'status' => 'ready',
+                'unit_tests' => [
+                    self::unit_test_checklist_item('Security event ingest menerima event dan flush ke storage dengan batching yang benar.', 'ready', [
+                        'description' => 'Ingest service sekarang punya coverage untuk event buffering: event diterima ke Redis buffer, flush memindahkan ke MySQL dalam batch, dan tidak ada event yang hilang.',
+                        'evidence' => ['tests/php/unit/SecurityEventIngestTest.php', 'tests/php/unit/SecurityEventIngestFlushTest.php'],
+                        'runner_commands' => ['PHPUnit Security Ingest'],
+                    ]),
+                    self::unit_test_checklist_item('Live counters dan user-agent guard mendeteksi anomali secara real-time.', 'ready', [
+                        'description' => 'Live counters sekarang punya coverage untuk real-time anomaly detection: event count per attempt, user-agent guard memblokir bot, dan auth-level filtering.',
+                        'evidence' => ['tests/php/unit/SecurityLiveCountersTest.php', 'tests/php/unit/SecurityUserAgentGuardTest.php', 'tests/php/unit/AuthUserAgentGuardTest.php'],
+                        'runner_commands' => ['PHPUnit Security Counters & Guard'],
+                    ]),
+                    self::unit_test_checklist_item('Answer sync token dan incident report menjaga integritas jawaban dan audit trail.', 'ready', [
+                        'description' => 'Token validasi sync jawaban sekarang punya coverage untuk HMAC verification, dan incident report punya coverage untuk generating laporan insiden keamanan.',
+                        'evidence' => ['tests/php/unit/AuthAnswerSyncTokenTest.php', 'tests/php/unit/IncidentReportTest.php'],
+                        'runner_commands' => ['PHPUnit Auth Answer Sync & Incident'],
+                    ]),
+                    self::unit_test_checklist_item('Admin security render menampilkan live roster, must-watch, dan Redis monitor dengan benar.', 'ready', [
+                        'description' => 'Admin security panel sekarang punya coverage untuk rendering: live roster table, must-watch list, observability REST endpoint, dan Redis monitor dashboard.',
+                        'evidence' => ['tests/php/unit/AdminSecurityObservabilityRestTest.php', 'tests/php/unit/AdminSecurityLiveRosterRenderTest.php', 'tests/php/unit/AdminSecurityMustWatchRenderTest.php', 'tests/php/unit/AdminSecurityServiceLiveRosterTest.php', 'tests/php/unit/AdminSecurityRedisMonitorRenderTest.php'],
+                        'runner_commands' => ['PHPUnit Security Admin Render'],
+                    ]),
+                    self::unit_test_checklist_item('Frontend security context, logging, exam guard, shortcut blocking, fullscreen, dan idle detection bekerja sinkron.', 'ready', [
+                        'description' => 'Frontend security sekarang punya coverage untuk semua layer: context initialization, client-side logging, exam-level guards, keyboard shortcut blocking, fullscreen enforcement, dan idle detection.',
+                        'evidence' => ['tests/js/unit/security-context.test.js', 'tests/js/unit/security-logging.test.js', 'tests/js/unit/exam-security.test.js', 'tests/js/unit/app-events-security-shortcuts.test.js', 'tests/js/unit/fullscreen-state.test.js', 'tests/js/unit/idle-detection.test.js'],
+                        'runner_commands' => ['Vitest Security Frontend'],
+                    ]),
+                ],
+                'smoke_tests' => [],
+            ],
+            'admin_exam_management' => [
+                'label' => 'Admin Exam Management',
+                'summary' => 'Area untuk memastikan CRUD exam validation, snapshot context/render, question print layout, question delete guard, token management, analytics insight, cache admin, dan UI helper tetap konsisten.',
+                'status' => 'ready',
+                'unit_tests' => [
+                    self::unit_test_checklist_item('Exams CRUD validation dan helper memvalidasi input dan menyiapkan context yang benar.', 'ready', [
+                        'description' => 'Exams service sekarang punya coverage untuk validasi input CRUD, helper functions, dan question print layout context.',
+                        'evidence' => ['tests/php/unit/ExamsServiceValidationTest.php', 'tests/php/unit/AdminExamsHelperTest.php', 'tests/php/unit/AdminExamsQuestionPrintContextTest.php'],
+                        'runner_commands' => ['PHPUnit Exams CRUD & Helper'],
+                    ]),
+                    self::unit_test_checklist_item('Exams snapshot context, actions, dan render menampilkan state exam yang akurat.', 'ready', [
+                        'description' => 'Exam snapshot sekarang punya coverage untuk context builder, action handlers, dan template rendering yang konsisten.',
+                        'evidence' => ['tests/php/unit/AdminExamsSnapshotContextTest.php', 'tests/php/unit/AdminExamsSnapshotActionsTest.php', 'tests/php/unit/AdminExamsSnapshotRenderTest.php'],
+                        'runner_commands' => ['PHPUnit Exams Snapshot'],
+                    ]),
+                    self::unit_test_checklist_item('Question delete guard dan token service menjaga integritas data soal dan akses.', 'ready', [
+                        'description' => 'Delete guard sekarang punya coverage untuk mencegah penghapusan soal yang sedang digunakan, dan token service mengelola akses exam.',
+                        'evidence' => ['tests/php/unit/AdminQuestionDeleteGuardTest.php', 'tests/php/unit/AdminTokensServiceTest.php'],
+                        'runner_commands' => ['PHPUnit Question Guards & Token'],
+                    ]),
+                    self::unit_test_checklist_item('Analytics insight, cache admin, login snapshot actions, dan UI helper render bekerja konsisten.', 'ready', [
+                        'description' => 'Admin module sekarang punya coverage untuk analytics display, cache management, login snapshot actions, dan UI helper rendering.',
+                        'evidence' => ['tests/php/unit/AdminAnalyticsInsightDisplayTest.php', 'tests/php/unit/AdminCacheServiceTest.php', 'tests/php/unit/AdminCacheLoginSnapshotActionsTest.php', 'tests/php/unit/AdminUiHelperRenderTest.php'],
+                        'runner_commands' => ['PHPUnit Analytics & Cache Admin'],
+                    ]),
+                    self::unit_test_checklist_item('Frontend analytics charts merender visualisasi data yang benar.', 'ready', [
+                        'description' => 'Analytics charts JS sekarang punya coverage untuk chart rendering dengan data yang benar.',
+                        'evidence' => ['tests/js/unit/admin-analytics-charts.test.js'],
+                        'runner_commands' => ['Vitest Analytics Charts'],
+                    ]),
+                ],
+                'smoke_tests' => [],
+            ],
+            'attempt_runtime_envelope' => [
+                'label' => 'Attempt Runtime & Envelope',
+                'summary' => 'Area untuk memastikan attempt envelope normalization, buffer flush integrity, active attempt index, snapshot auto-heal, adaptive load, REST delivery, runtime loader, stage manager, dan render cycle tetap menjaga data runtime yang konsisten.',
+                'status' => 'ready',
+                'unit_tests' => [
+                    self::unit_test_checklist_item('Runtime envelope normalization dan buffer flush menjaga integritas data attempt.', 'ready', [
+                        'description' => 'Runtime envelope sekarang punya coverage untuk normalization payload, buffer flush integrity, dan raw JSON response optimization.',
+                        'evidence' => ['tests/php/unit/RuntimeAttemptEnvelopeTest.php', 'tests/php/unit/RuntimeBufferFlushIntegrityTest.php', 'tests/php/unit/RawJsonRestResponseTest.php'],
+                        'runner_commands' => ['PHPUnit Runtime Envelope & Buffer'],
+                    ]),
+                    self::unit_test_checklist_item('Active attempt index menjaga konsistensi read/write dan membersihkan stale entries.', 'ready', [
+                        'description' => 'Active attempt index sekarang punya coverage untuk read/write consistency dan stale cleanup tanpa mengganggu attempt aktif.',
+                        'evidence' => ['tests/php/unit/ActiveAttemptIndexTest.php', 'tests/php/unit/ActiveAttemptIndexStaleTest.php'],
+                        'runner_commands' => ['PHPUnit Active Attempt Index'],
+                    ]),
+                    self::unit_test_checklist_item('Snapshot auto-heal, adaptive load, dan start attempt snapshot bekerja bersama dengan aman.', 'ready', [
+                        'description' => 'Auto-heal sekarang punya coverage untuk memperbaiki corrupt snapshots, adaptive load menyesuaikan throughput, dan start attempt snapshot builder menyiapkan data awal.',
+                        'evidence' => ['tests/php/unit/SnapshotAutoHealQueueServiceTest.php', 'tests/php/unit/AdaptiveLoadServiceTest.php', 'tests/php/unit/ExamStartAttemptSnapshotTest.php'],
+                        'runner_commands' => ['PHPUnit Snapshot & Load'],
+                    ]),
+                    self::unit_test_checklist_item('REST envelope live path, question delivery, session presence, dan profile snapshot mengembalikan data yang konsisten.', 'ready', [
+                        'description' => 'REST endpoints sekarang punya coverage untuk live envelope path, question delivery snapshot, session presence snapshot, dan live profile snapshot.',
+                        'evidence' => ['tests/php/unit/RestAttemptEnvelopeLivePathTest.php', 'tests/php/unit/RestQuestionDeliverySnapshotTest.php', 'tests/php/unit/RestSessionPresenceSnapshotTest.php', 'tests/php/unit/RestLiveProfileSnapshotTest.php'],
+                        'runner_commands' => ['PHPUnit REST Envelope & Delivery'],
+                    ]),
+                    self::unit_test_checklist_item('Frontend runtime loader, exam session, exam stage, dan stage runtime manager mengelola transisi dengan benar.', 'ready', [
+                        'description' => 'Frontend runtime sekarang punya coverage untuk loader state machine, session management, stage transitions, dan runtime orchestration.',
+                        'evidence' => ['tests/js/unit/exam-runtime-loader.test.js', 'tests/js/unit/exam-session.test.js', 'tests/js/unit/exam-stage.test.js', 'tests/js/unit/stage-runtime-manager.test.js'],
+                        'runner_commands' => ['Vitest Runtime Loader & Stage'],
+                    ]),
+                    self::unit_test_checklist_item('Render cycle, sync lifecycle bridge, readonly API cache, dan lazy math bekerja efisien.', 'ready', [
+                        'description' => 'Frontend infra sekarang punya coverage untuk render cycle optimization, sync bridge, read-only API cache layer, dan lazy math renderer loading.',
+                        'evidence' => ['tests/js/unit/render-cycle.test.js', 'tests/js/unit/sync-lifecycle-bridge.test.js', 'tests/js/unit/readonly-api-cache.test.js', 'tests/js/unit/lazy-math.test.js'],
+                        'runner_commands' => ['Vitest Render & Sync Bridge'],
+                    ]),
+                ],
+                'smoke_tests' => [],
+            ],
+            'app_shell_bootstrap' => [
+                'label' => 'App Shell & Bootstrap',
+                'summary' => 'Area untuk memastikan app bootstrap sequence, shell rendering, student shell, app events, auth stages, browser storage, config management, service worker, diagnostics, utilities, dan frontend asset pipeline tetap stabil.',
+                'status' => 'ready',
+                'unit_tests' => [
+                    self::unit_test_checklist_item('App bootstrap, shell layout, meta management, dan student shell initialization bekerja berurutan.', 'ready', [
+                        'description' => 'App initialization sekarang punya coverage untuk bootstrap sequence, shell rendering, metadata management, dan student-specific shell initialization.',
+                        'evidence' => ['tests/js/unit/app-bootstrap.test.js', 'tests/js/unit/app-shell.test.js', 'tests/js/unit/app-meta.test.js', 'tests/js/unit/bootstrap-student-shell.test.js'],
+                        'runner_commands' => ['Vitest App Bootstrap & Shell'],
+                    ]),
+                    self::unit_test_checklist_item('App events (rich zoom, session recovery) dan auth stages mengelola interaksi pengguna.', 'ready', [
+                        'description' => 'App events sekarang punya coverage untuk rich zoom/pinch, session recovery events, dan authentication stage flow.',
+                        'evidence' => ['tests/js/unit/app-events-rich-zoom.test.js', 'tests/js/unit/app-events-session-recovery.test.js', 'tests/js/unit/auth-stages.test.js'],
+                        'runner_commands' => ['Vitest App Events & Auth Stages'],
+                    ]),
+                    self::unit_test_checklist_item('Browser storage, config management, config security, dan UI preferences menyimpan state dengan aman.', 'ready', [
+                        'description' => 'Storage dan config sekarang punya coverage untuk browser storage abstraction, configuration management, security config validation, dan UI preferences persistence.',
+                        'evidence' => ['tests/js/unit/browser-storage.test.js', 'tests/js/unit/config.test.js', 'tests/js/unit/config-security.test.js', 'tests/js/unit/ui-preferences.test.js'],
+                        'runner_commands' => ['Vitest Browser & Config'],
+                    ]),
+                    self::unit_test_checklist_item('Service worker registration, frontend diagnostics, dan debug manager bekerja tanpa mengganggu runtime.', 'ready', [
+                        'description' => 'Infra tools sekarang punya coverage untuk service worker lifecycle, diagnostic tools, dan debug manager console tools.',
+                        'evidence' => ['tests/js/unit/service-worker-registration.test.js', 'tests/js/unit/frontend-diagnostics.test.js', 'tests/js/unit/debug-manager.test.js'],
+                        'runner_commands' => ['Vitest Service Worker & Diagnostics'],
+                    ]),
+                    self::unit_test_checklist_item('Format utilities, HTML sanitization, calculator tool, dan legacy handoff bekerja konsisten.', 'ready', [
+                        'description' => 'Utility functions sekarang punya coverage untuk format helpers, HTML sanitization, calculator runtime, dan legacy API handoff layer.',
+                        'evidence' => ['tests/js/unit/format.test.js', 'tests/js/unit/html.test.js', 'tests/js/unit/calculator.test.js', 'tests/js/unit/legacy-handoff.test.js'],
+                        'runner_commands' => ['Vitest Utilities'],
+                    ]),
+                    self::unit_test_checklist_item('Service worker registration PHP dan Vite asset manifest CSS parsing bekerja benar.', 'ready', [
+                        'description' => 'Backend frontend infra sekarang punya coverage untuk SW registration/versioning dan Vite asset manifest parsing.',
+                        'evidence' => ['tests/php/unit/FrontendServiceWorkerTest.php', 'tests/php/unit/ViteAssetManifestCssTest.php'],
+                        'runner_commands' => ['PHPUnit Frontend & Vite'],
+                    ]),
+                ],
+                'smoke_tests' => [],
+            ],
+            'login_student_profile' => [
+                'label' => 'Login & Student Profile',
+                'summary' => 'Area untuk memastikan login auth snapshot, rate-limit, readiness warm queue, student profile, cohort index, exam audience evaluation, exam cards, dan session state tetap menjaga akses siswa yang aman.',
+                'status' => 'ready',
+                'unit_tests' => [
+                    self::unit_test_checklist_item('Login auth snapshot cache, rate-limit, dan readiness warm queue menjaga akses login yang aman.', 'ready', [
+                        'description' => 'Login service sekarang punya coverage untuk auth snapshot caching, rate-limit enforcement, dan readiness warm queue untuk pre-warm login data.',
+                        'evidence' => ['tests/php/unit/LoginAuthSnapshotCacheTest.php', 'tests/php/unit/LoginRateLimitAndSessionTest.php', 'tests/php/unit/LoginReadinessWarmQueueServiceTest.php'],
+                        'runner_commands' => ['PHPUnit Login Auth & Rate Limit'],
+                    ]),
+                    self::unit_test_checklist_item('Student profile snapshot dan cohort index mengelompokkan siswa dengan benar.', 'ready', [
+                        'description' => 'Student profile sekarang punya coverage untuk snapshot generation dan cohort index grouping per kelas/ruang.',
+                        'evidence' => ['tests/php/unit/StudentProfileSnapshotTest.php', 'tests/php/unit/StudentCohortIndexServiceTest.php'],
+                        'runner_commands' => ['PHPUnit Student Profile & Cohort'],
+                    ]),
+                    self::unit_test_checklist_item('Exam audience evaluation, audience service, exam cards, dan progress UI menampilkan ujian yang relevan.', 'ready', [
+                        'description' => 'Audience system sekarang punya coverage untuk evaluation logic, service management, exam cards payload, dan progress UI rendering.',
+                        'evidence' => ['tests/php/unit/ExamAudienceEvaluationTest.php', 'tests/php/unit/ExamAudienceServiceTest.php', 'tests/php/unit/ExamCardsServiceTest.php', 'tests/php/unit/ExamCardsProgressUiTest.php'],
+                        'runner_commands' => ['PHPUnit Exam Audience & Cards'],
+                    ]),
+                    self::unit_test_checklist_item('Frontend doubtful state, API client error handling, dan heartbeat lost detection bekerja sinkron.', 'ready', [
+                        'description' => 'Frontend session sekarang punya coverage untuk doubtful/ragu-ragu state management, API client error handling, dan heartbeat lost detection.',
+                        'evidence' => ['tests/js/unit/doubtful-state.test.js', 'tests/js/unit/api-client.test.js', 'tests/js/unit/session-heartbeat-lost.test.js'],
+                        'runner_commands' => ['Vitest Session & API Client'],
+                    ]),
+                ],
+                'smoke_tests' => [],
+            ],
+            'developer_setup_tooling' => [
+                'label' => 'Developer & Setup Tooling',
+                'summary' => 'Area untuk memastikan plugin activator/deactivator, maintenance tools, load test pool, branding, setup wizard, developer tools, dan admin module progress UIs tetap menjaga kualitas development workflow.',
+                'status' => 'ready',
+                'unit_tests' => [
+                    self::unit_test_checklist_item('Plugin activator dan deactivator lifecycle mengelola state plugin dengan aman.', 'ready', [
+                        'description' => 'Plugin lifecycle sekarang punya coverage untuk activation sequence, deactivation cleanup, dan state management.',
+                        'evidence' => ['tests/php/unit/ActivatorDeactivatorLifecycleTest.php', 'tests/php/unit/DeactivatorTest.php'],
+                        'runner_commands' => ['PHPUnit Plugin Lifecycle'],
+                    ]),
+                    self::unit_test_checklist_item('Maintenance tools, context builder, load test cancel, dan student pool bekerja konsisten.', 'ready', [
+                        'description' => 'Maintenance module sekarang punya coverage untuk common utilities, context builder, load test cancel logic, student pool management, dan modularization.',
+                        'evidence' => ['tests/php/unit/AdminMaintenanceCommonTest.php', 'tests/php/unit/AdminMaintenanceContextBuilderTest.php', 'tests/php/unit/AdminMaintenanceLoadTestCancelTest.php', 'tests/php/unit/MaintenanceLoadTestStudentPoolTest.php', 'tests/php/unit/MaintenanceModularizationTest.php'],
+                        'runner_commands' => ['PHPUnit Maintenance Tools'],
+                    ]),
+                    self::unit_test_checklist_item('Setup wizard branding, security config, dan progress UIs menampilkan langkah yang benar.', 'ready', [
+                        'description' => 'Setup wizard sekarang punya coverage untuk branding region label, setup branding progress, security configuration, dan security progress UI.',
+                        'evidence' => ['tests/php/unit/BrandingRegionLabelTest.php', 'tests/php/unit/SetupBrandingProgressUiTest.php', 'tests/php/unit/SetupSecurityConfigTest.php', 'tests/php/unit/SetupSecurityProgressUiTest.php'],
+                        'runner_commands' => ['PHPUnit Setup & Branding'],
+                    ]),
+                    self::unit_test_checklist_item('Developer build output access, dev server state, dan developer progress UI bekerja di environment development.', 'ready', [
+                        'description' => 'Developer tools sekarang punya coverage untuk build output access, dev server state detection, dan developer progress UI rendering.',
+                        'evidence' => ['tests/php/unit/DeveloperBuildOutputAccessTest.php', 'tests/php/unit/DeveloperDevServerStateTest.php', 'tests/php/unit/DeveloperProgressUiTest.php'],
+                        'runner_commands' => ['PHPUnit Developer Tools'],
+                    ]),
+                    self::unit_test_checklist_item('Admin module progress UIs, service validations, dan photo import bekerja untuk semua modul.', 'ready', [
+                        'description' => 'Admin modules sekarang punya coverage untuk ordering question type, analytics/questions/subjects/users progress UIs, subjects/users service validation, dan user photo import.',
+                        'evidence' => ['tests/php/unit/OrderingQuestionTypeTest.php', 'tests/php/unit/AnalyticsProgressUiTest.php', 'tests/php/unit/QuestionsProgressUiTest.php', 'tests/php/unit/SubjectsProgressUiTest.php', 'tests/php/unit/SubjectsServiceValidationTest.php', 'tests/php/unit/UsersProgressUiTest.php', 'tests/php/unit/UsersServicePhotoImportTest.php', 'tests/php/unit/UsersServiceValidationTest.php'],
+                        'runner_commands' => ['PHPUnit Admin Modules'],
+                    ]),
+                    self::unit_test_checklist_item('Flow job worker process mengelola lifecycle worker dengan aman.', 'ready', [
+                        'description' => 'Flow job worker sekarang punya coverage untuk worker process lifecycle management.',
+                        'evidence' => ['tests/js/unit/flow-job-worker.test.js'],
+                        'runner_commands' => ['Vitest Flow Job Worker'],
+                    ]),
+                    self::unit_test_checklist_item('Test Hub meta-tests memverifikasi integritas safety, action handlers, view render, dan artifact cleanup.', 'ready', [
+                        'description' => 'Test Hub meta-tests memverifikasi bahwa Test Hub itu sendiri bekerja dengan benar: safety test memeriksa runner definitions, action handlers memastikan queue/retry/cancel flow check, view render memastikan template output, dan artifact cleanup memastikan file management.',
+                        'evidence' => ['tests/php/unit/TestHubServiceSafetyTest.php', 'tests/php/unit/TestHubActionHandlersTest.php', 'tests/php/unit/TestHubViewRenderTest.php', 'tests/php/unit/TestHubArtifactCleanupTest.php'],
+                        'runner_commands' => ['PHPUnit Test Hub Meta'],
+                    ]),
+                ],
+                'smoke_tests' => [],
             ],
         ];
 

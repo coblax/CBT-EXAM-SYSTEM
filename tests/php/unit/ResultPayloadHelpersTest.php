@@ -82,4 +82,57 @@ final class ResultPayloadHelpersTest extends TestCase
             'unanswered_questions' => 1,
         ], $summary);
     }
+
+    #[RunInSeparateProcess]
+    public function test_result_submission_summary_handles_all_zero_questions(): void
+    {
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
+
+        $summaryMethod = new ReflectionMethod('CBT_REST', 'build_result_submission_summary');
+        $summaryMethod->setAccessible(true);
+
+        $summary = $summaryMethod->invoke(null, [
+            'correct_questions' => 0,
+            'wrong_questions' => 0,
+            'manual_questions' => 0,
+            'unanswered_questions' => 0,
+        ]);
+
+        self::assertSame(0, $summary['total_questions']);
+        self::assertSame(0, $summary['answered_questions']);
+        self::assertSame(0, $summary['pending_manual_questions']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_result_pass_meta_boundary_at_exact_kkm_percentage(): void
+    {
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
+
+        $passMetaMethod = new ReflectionMethod('CBT_REST', 'build_result_pass_meta');
+        $passMetaMethod->setAccessible(true);
+
+        $exactPass = $passMetaMethod->invoke(null, 75.0, 100.0, 75.0);
+        self::assertSame(1, $exactPass['is_passed']);
+        self::assertSame('LULUS', $exactPass['pass_label']);
+        self::assertSame('pass', $exactPass['result_tone']);
+
+        $justBelow = $passMetaMethod->invoke(null, 74.99, 100.0, 75.0);
+        self::assertSame(0, $justBelow['is_passed']);
+        self::assertSame('TIDAK LULUS', $justBelow['pass_label']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_summarize_review_items_handles_empty_items(): void
+    {
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
+
+        $summaryMethod = new ReflectionMethod('CBT_REST', 'summarize_review_items');
+        $summaryMethod->setAccessible(true);
+
+        $summary = $summaryMethod->invoke(null, []);
+
+        self::assertSame(0, $summary['total_questions']);
+        self::assertSame(0, $summary['answered_questions']);
+        self::assertSame(0, $summary['unanswered_questions']);
+    }
 }

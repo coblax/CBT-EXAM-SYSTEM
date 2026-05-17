@@ -211,6 +211,28 @@ final class TestHubServiceSafetyTest extends TestCase
             'result_scoring',
             'import_preview',
             'security_log_observability',
+            'supervisor_proctoring',
+            'exam_preflight_availability',
+            'scoring_grading',
+            'update_health',
+            'cache_redis',
+            'submit_finalization',
+            'security_event_pipeline',
+            'admin_exam_management',
+            'attempt_runtime_envelope',
+            'app_shell_bootstrap',
+            'login_student_profile',
+            'developer_setup_tooling',
+        ];
+        $tabsWithSmokeTests = [
+            'recovery_persistence',
+            'sync_rest',
+            'auth_session',
+            'timer_lifecycle',
+            'question_runtime',
+            'result_scoring',
+            'import_preview',
+            'security_log_observability',
         ];
         $tabs = $this->invokePrivate('get_unit_test_tab_definitions');
         $runners = $this->invokePrivate('get_unit_test_runner_definitions');
@@ -230,7 +252,10 @@ final class TestHubServiceSafetyTest extends TestCase
             self::assertNotSame('', trim((string) ($tab['label'] ?? '')), $tabKey . ' label must be set.');
             self::assertNotSame('', trim((string) ($tab['summary'] ?? '')), $tabKey . ' summary must be set.');
 
-            foreach (['unit_tests', 'smoke_tests'] as $scope) {
+            $scopesToCheck = in_array($tabKey, $tabsWithSmokeTests, true)
+                ? ['unit_tests', 'smoke_tests']
+                : ['unit_tests'];
+            foreach ($scopesToCheck as $scope) {
                 self::assertNotEmpty((array) ($tab[$scope] ?? []), $tabKey . '/' . $scope . ' checklist must not be empty.');
                 self::assertNotEmpty((array) ($runner[$scope]['commands'] ?? []), $tabKey . '/' . $scope . ' runner commands must not be empty.');
 
@@ -246,6 +271,98 @@ final class TestHubServiceSafetyTest extends TestCase
                 }
             }
         }
+    }
+
+    public function test_unit_test_inventory_discovers_all_phpunit_and_vitest_files(): void
+    {
+        $inventory = $this->invokePrivate('get_unit_test_inventory');
+        $inventoryPaths = array_map(static fn (array $item): string => (string) ($item['path'] ?? ''), (array) $inventory);
+        sort($inventoryPaths);
+
+        $expectedPaths = [];
+        foreach ([
+            glob($this->projectRoot . '/tests/php/unit/*Test.php') ?: [],
+            glob($this->projectRoot . '/tests/js/unit/*.test.js') ?: [],
+        ] as $matches) {
+            foreach ($matches as $path) {
+                $expectedPaths[] = str_replace($this->projectRoot . '/', '', wp_normalize_path((string) $path));
+            }
+        }
+        $expectedPaths = array_values(array_unique($expectedPaths));
+        sort($expectedPaths);
+
+        self::assertSame($expectedPaths, $inventoryPaths);
+        self::assertNotEmpty($inventory);
+
+        foreach ((array) $inventory as $item) {
+            self::assertNotSame('', (string) ($item['id'] ?? ''));
+            self::assertContains((string) ($item['type'] ?? ''), ['php', 'js']);
+            self::assertContains((string) ($item['mapping_status'] ?? ''), ['curated', 'auto_mapped']);
+            self::assertNotSame('', (string) ($item['mapped_tab_label'] ?? ''));
+            self::assertNotSame('', (string) ($item['runner_label'] ?? ''));
+            self::assertNotSame('', (string) ($item['command'] ?? ''));
+        }
+    }
+
+    public function test_unit_test_inventory_commands_are_safe_and_resolvable(): void
+    {
+        foreach ((array) $this->invokePrivate('get_unit_test_inventory') as $item) {
+            $label = (string) ($item['runner_label'] ?? 'Inventory Command');
+            $command = (string) ($item['command'] ?? '');
+            self::assertMatchesRegularExpression(
+                '/^(?:\.\/node_modules\/\.bin\/vitest run |vendor\/bin\/phpunit -c phpunit\.xml\.dist )/',
+                $command,
+                $label . ' must use an allowed unit runner prefix.'
+            );
+            self::assertDoesNotMatchRegularExpression(
+                '/(?:^|[\s;&|])(?:rm|rmdir|git\s+(?:push|tag|reset|clean|checkout)|npm\s+run\s+release|node\s+bin\/cbt-release\.mjs|wp\s+db|mysql|truncate)\b/i',
+                $command,
+                $label . ' command must not contain destructive operations.'
+            );
+            self::assertFileExists($this->projectRoot . '/' . (string) ($item['path'] ?? ''));
+            self::assertContains((string) ($item['path'] ?? ''), $this->extractRunnerCommandTargetFiles($command));
+        }
+    }
+
+    public function test_global_unit_run_queue_uses_complete_inventory_one_file_per_command(): void
+    {
+        $inventory = $this->invokePrivate('get_unit_test_inventory');
+        $queue = $this->invokePrivate('build_global_unit_run_command_queue');
+
+        self::assertCount(count((array) $inventory), (array) $queue);
+
+        $inventoryPaths = array_map(static fn (array $item): string => (string) ($item['path'] ?? ''), (array) $inventory);
+        $queuePaths = [];
+        foreach ((array) $queue as $commandDefinition) {
+            self::assertIsArray($commandDefinition);
+            $inventoryFile = isset($commandDefinition['inventory_file']) && is_array($commandDefinition['inventory_file'])
+                ? (array) $commandDefinition['inventory_file']
+                : [];
+            $queuePath = (string) ($inventoryFile['path'] ?? '');
+            self::assertNotSame('', $queuePath);
+            self::assertSame([$queuePath], $this->extractRunnerCommandTargetFiles((string) ($commandDefinition['command'] ?? '')));
+            $queuePaths[] = $queuePath;
+        }
+
+        sort($inventoryPaths);
+        sort($queuePaths);
+        self::assertSame($inventoryPaths, $queuePaths);
+    }
+
+    public function test_inventory_marks_curated_files_and_auto_maps_new_files(): void
+    {
+        $inventory = $this->invokePrivate('get_unit_test_inventory');
+        $byPath = [];
+        foreach ((array) $inventory as $item) {
+            $byPath[(string) ($item['path'] ?? '')] = $item;
+        }
+
+        self::assertSame('curated', (string) ($byPath['tests/php/unit/UpdateHealthServiceTest.php']['mapping_status'] ?? ''));
+        self::assertSame('update_health', (string) ($byPath['tests/php/unit/UpdateHealthServiceTest.php']['mapped_tab'] ?? ''));
+
+        self::assertSame('curated', (string) ($byPath['tests/php/unit/IncidentReportTest.php']['mapping_status'] ?? ''));
+        self::assertSame('security_event_pipeline', (string) ($byPath['tests/php/unit/IncidentReportTest.php']['mapped_tab'] ?? ''));
+        self::assertNotSame('', (string) ($byPath['tests/php/unit/IncidentReportTest.php']['command'] ?? ''));
     }
 
     public function test_flow_check_runner_wrappers_reference_seeded_fixtures_and_specs(): void

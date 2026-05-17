@@ -18,6 +18,14 @@ if (!defined('ABSPATH')) {
     $global_total_commands = (int) ($global_unit_run_summary['total_commands'] ?? 0);
     $global_progress_percent = (int) ($global_unit_run_summary['progress_percent'] ?? 0);
     $global_current_label = (string) ($global_unit_run_summary['current_label'] ?? '');
+    $unit_test_inventory = isset($unit_test_inventory) && is_array($unit_test_inventory) ? (array) $unit_test_inventory : [];
+    $unit_test_inventory_summary = isset($unit_test_inventory_summary) && is_array($unit_test_inventory_summary) ? (array) $unit_test_inventory_summary : [];
+    $unit_test_inventory_total_count = (int) ($unit_test_inventory_summary['total_count'] ?? 0);
+    $unit_test_inventory_php_count = (int) ($unit_test_inventory_summary['php_count'] ?? 0);
+    $unit_test_inventory_js_count = (int) ($unit_test_inventory_summary['js_count'] ?? 0);
+    $unit_test_inventory_curated_count = (int) ($unit_test_inventory_summary['curated_count'] ?? 0);
+    $unit_test_inventory_auto_mapped_count = (int) ($unit_test_inventory_summary['auto_mapped_count'] ?? 0);
+    $unit_test_inventory_failed_count = (int) ($unit_test_inventory_summary['failed_count'] ?? 0);
     $test_artifact_cleanup = isset($test_artifact_cleanup) && is_array($test_artifact_cleanup) ? $test_artifact_cleanup : [];
     $test_artifact_cleanup_targets = isset($test_artifact_cleanup['targets']) && is_array($test_artifact_cleanup['targets']) ? (array) $test_artifact_cleanup['targets'] : [];
     $test_artifact_existing_count = (int) ($test_artifact_cleanup['existing_count'] ?? 0);
@@ -1531,7 +1539,7 @@ if (!defined('ABSPATH')) {
                 <div class="cbt-test-hub-hero-actions">
                     <div class="cbt-test-hub-hero-unit-runbar" data-cbt-test-hub-refresh-area="global-unit-run" aria-busy="false">
                         <p class="cbt-test-hub-loading-status" aria-live="polite"><span class="cbt-test-hub-loading-spinner" aria-hidden="true"></span><span>Menjalankan semua unit test...</span></p>
-                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-test-hub-hero-unit-run-form" data-cbt-test-hub-async-form data-refresh-areas="banners,global-unit-run,checklist" data-loading-label="Menjalankan...">
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="cbt-test-hub-hero-unit-run-form" data-cbt-test-hub-async-form data-refresh-areas="banners,global-unit-run,unit-inventory,checklist" data-loading-label="Menjalankan...">
                             <input type="hidden" name="action" value="cbt_run_all_unit_tests">
                             <input type="hidden" name="cbt_unit_test_tab" value="<?php echo esc_attr((string) $active_unit_test_tab); ?>">
                             <input type="hidden" name="cbt_checklist_scope" value="<?php echo esc_attr((string) ($active_checklist_scope ?? 'unit_tests')); ?>">
@@ -1544,7 +1552,7 @@ if (!defined('ABSPATH')) {
                                 <?php if ($global_unit_run_active): ?>
                                     <?php echo esc_html('Memproses bertahap: ' . $global_processed_commands . ' / ' . $global_total_commands . ' command selesai. ' . ($global_current_label !== '' ? 'Sedang: ' . $global_current_label : 'Menyiapkan command berikutnya.')); ?>
                                 <?php else: ?>
-                                    Menjalankan semua runner `unit_tests` lintas subsystem secara bertahap agar aman dari timeout Cloudflare. Flow check tidak ikut dijalankan.
+                                    Menjalankan semua file unit test di Unit Test Inventory secara bertahap agar aman dari timeout Cloudflare. Flow check tidak ikut dijalankan.
                                 <?php endif; ?>
                             </div>
                         </form>
@@ -1850,6 +1858,123 @@ if (!defined('ABSPATH')) {
                         </form>
                     </div>
                 </div>
+            </div>
+
+            <div class="cbt-test-hub-artifact-box" data-cbt-test-hub-refresh-area="unit-inventory" aria-busy="false">
+                <p class="cbt-test-hub-loading-status" aria-live="polite"><span class="cbt-test-hub-loading-spinner" aria-hidden="true"></span><span>Memperbarui inventory unit test...</span></p>
+                <div>
+                    <strong>Unit Test Inventory</strong>
+                    <p>Inventory ini discan otomatis dari <code>tests/php/unit</code> dan <code>tests/js/unit</code>, lalu dipetakan ke area Test Hub. Checklist curated tetap dipakai untuk narasi, sementara inventory ini menjadi daftar lengkap file test yang bisa dijalankan satu per satu.</p>
+                </div>
+                <div class="cbt-test-hub-artifact-list">
+                    <span class="cbt-test-hub-artifact-item"><span>Total file</span><span class="cbt-test-hub-artifact-item-status"><?php echo esc_html((string) $unit_test_inventory_total_count); ?></span></span>
+                    <span class="cbt-test-hub-artifact-item"><span>PHPUnit</span><span class="cbt-test-hub-artifact-item-status"><?php echo esc_html((string) $unit_test_inventory_php_count); ?></span></span>
+                    <span class="cbt-test-hub-artifact-item"><span>Vitest</span><span class="cbt-test-hub-artifact-item-status"><?php echo esc_html((string) $unit_test_inventory_js_count); ?></span></span>
+                    <span class="cbt-test-hub-artifact-item"><span>Curated</span><span class="cbt-test-hub-artifact-item-status"><?php echo esc_html((string) $unit_test_inventory_curated_count); ?></span></span>
+                    <span class="cbt-test-hub-artifact-item"><span>Auto-mapped</span><span class="cbt-test-hub-artifact-item-status"><?php echo esc_html((string) $unit_test_inventory_auto_mapped_count); ?></span></span>
+                    <span class="cbt-test-hub-artifact-item<?php echo $unit_test_inventory_failed_count > 0 ? '' : ' is-missing'; ?>"><span>Failed latest</span><span class="cbt-test-hub-artifact-item-status"><?php echo esc_html((string) $unit_test_inventory_failed_count); ?></span></span>
+                </div>
+                <?php if (empty($unit_test_inventory)): ?>
+                    <div class="cbt-test-hub-item-meta-empty">Belum ada file unit test yang ditemukan.</div>
+                <?php else: ?>
+                    <div class="cbt-test-hub-item-run-list">
+                        <?php foreach ($unit_test_inventory as $inventory_item): ?>
+                            <?php
+                            $inventory_id = sanitize_key((string) ($inventory_item['id'] ?? ''));
+                            $inventory_run_tab = CBT_Admin_Test_Hub_Service::normalize_unit_test_tab((string) ($inventory_item['run_tab'] ?? ''));
+                            $inventory_form_id = 'cbt-test-hub-inventory-run-' . $inventory_id;
+                            $inventory_has_failure = !empty($inventory_item['has_failed_run_results']);
+                            $inventory_has_results = !empty($inventory_item['run_results']);
+                            ?>
+                            <details class="cbt-test-hub-item-run-command" <?php echo $inventory_has_failure ? 'open' : ''; ?>>
+                                <summary>
+                                    <span>
+                                        <strong><?php echo esc_html((string) ($inventory_item['basename'] ?? 'Unit Test File')); ?></strong>
+                                        <code><?php echo esc_html((string) ($inventory_item['path'] ?? '')); ?></code>
+                                    </span>
+                                    <span class="cbt-test-hub-chip cbt-test-hub-chip--<?php echo esc_attr((string) ($inventory_item['mapping_status_tone'] ?? 'planned')); ?>">
+                                        <?php echo esc_html((string) ($inventory_item['mapping_status_label'] ?? 'Auto-mapped')); ?>
+                                    </span>
+                                    <?php if ($inventory_has_failure): ?>
+                                        <span class="cbt-test-hub-chip cbt-test-hub-chip--danger">Latest Failed</span>
+                                    <?php elseif ($inventory_has_results): ?>
+                                        <span class="cbt-test-hub-chip cbt-test-hub-chip--done">Latest Passed</span>
+                                    <?php endif; ?>
+                                </summary>
+                                <div class="cbt-test-hub-item-meta-grid" style="margin-top:12px;">
+                                    <div class="cbt-test-hub-item-meta-block">
+                                        <h5>Mapping</h5>
+                                        <ul>
+                                            <li><?php echo esc_html('Type: ' . (string) ($inventory_item['type_label'] ?? 'Unit')); ?></li>
+                                            <li><?php echo esc_html('Area: ' . (string) ($inventory_item['mapped_tab_label'] ?? 'General / Unclassified')); ?></li>
+                                            <li><?php echo esc_html('Runner: ' . (string) ($inventory_item['runner_label'] ?? 'Unit Test File')); ?></li>
+                                            <?php if (!empty($inventory_item['curated_runner_label'])): ?>
+                                                <li><?php echo esc_html('Curated command: ' . (string) $inventory_item['curated_runner_label']); ?></li>
+                                            <?php endif; ?>
+                                        </ul>
+                                    </div>
+                                    <div class="cbt-test-hub-item-meta-block cbt-test-hub-item-meta-block--wide">
+                                        <h5>Command</h5>
+                                        <code><?php echo esc_html((string) ($inventory_item['command'] ?? '')); ?></code>
+                                        <form id="<?php echo esc_attr($inventory_form_id); ?>" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-top:10px;" data-cbt-test-hub-async-form data-refresh-areas="banners,unit-inventory" data-loading-label="Menjalankan...">
+                                            <input type="hidden" name="action" value="cbt_run_unit_test_suite">
+                                            <input type="hidden" name="cbt_unit_test_tab" value="<?php echo esc_attr($inventory_run_tab); ?>">
+                                            <input type="hidden" name="cbt_checklist_scope" value="unit_tests">
+                                            <input type="hidden" name="cbt_inventory_test_id" value="<?php echo esc_attr($inventory_id); ?>">
+                                            <?php wp_nonce_field('cbt_test_hub_runner_' . $inventory_run_tab); ?>
+                                            <button type="submit" class="button button-secondary">Run File</button>
+                                        </form>
+                                    </div>
+                                    <div class="cbt-test-hub-item-meta-block cbt-test-hub-item-meta-block--wide">
+                                        <h5>Hasil Runner Terbaru</h5>
+                                        <?php if (!empty($inventory_item['failed_run_results'])): ?>
+                                            <div class="cbt-test-hub-item-run-summary">
+                                                <strong>Ringkasan gagal</strong>
+                                                <ul>
+                                                    <?php foreach ((array) ($inventory_item['failed_run_results'] ?? []) as $failed_run_command): ?>
+                                                        <li>
+                                                            <?php
+                                                            echo esc_html((string) ($failed_run_command['label'] ?? 'Test Command') . ' (exit ' . (int) ($failed_run_command['exit_code'] ?? 1) . ')');
+                                                            if (!empty($failed_run_command['failure_summary'])) {
+                                                                echo esc_html(': ' . (string) $failed_run_command['failure_summary']);
+                                                            }
+                                                            ?>
+                                                        </li>
+                                                    <?php endforeach; ?>
+                                                </ul>
+                                            </div>
+                                        <?php endif; ?>
+                                        <?php if (!empty($inventory_item['run_results'])): ?>
+                                            <div class="cbt-test-hub-item-run-list">
+                                                <?php foreach ((array) ($inventory_item['run_results'] ?? []) as $run_command): ?>
+                                                    <article class="cbt-test-hub-item-run-command">
+                                                        <div class="cbt-test-hub-item-run-command-head">
+                                                            <strong><?php echo esc_html((string) ($run_command['label'] ?? 'Test Command')); ?></strong>
+                                                            <span class="cbt-test-hub-chip cbt-test-hub-chip--<?php echo !empty($run_command['success']) ? 'done' : 'danger'; ?>">
+                                                                <?php echo !empty($run_command['success']) ? 'Exit 0' : 'Exit ' . esc_html((string) ($run_command['exit_code'] ?? 1)); ?>
+                                                            </span>
+                                                        </div>
+                                                        <code><?php echo esc_html((string) ($run_command['command'] ?? '')); ?></code>
+                                                        <?php if (!empty($run_command['stdout'])): ?>
+                                                            <span class="cbt-test-hub-run-command-output-label">Stdout</span>
+                                                            <pre><?php echo esc_textarea((string) $run_command['stdout']); ?></pre>
+                                                        <?php endif; ?>
+                                                        <?php if (!empty($run_command['stderr'])): ?>
+                                                            <span class="cbt-test-hub-run-command-output-label">Stderr</span>
+                                                            <pre><?php echo esc_textarea((string) $run_command['stderr']); ?></pre>
+                                                        <?php endif; ?>
+                                                    </article>
+                                                <?php endforeach; ?>
+                                            </div>
+                                        <?php else: ?>
+                                            <div class="cbt-test-hub-item-meta-empty">Belum ada hasil runner untuk file ini. Gunakan tombol <code>Run File</code> atau <code>Run All Unit Tests</code>.</div>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            </details>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
             </div>
 
             <div data-cbt-test-hub-refresh-area="checklist" aria-busy="false">

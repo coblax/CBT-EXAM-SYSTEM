@@ -99,4 +99,28 @@ final class StartAttemptMetricsServiceTest extends TestCase
         $listenersProperty->setAccessible(true);
         $listenersProperty->setValue(null, false);
     }
+
+    public function test_get_admin_summary_contains_required_shape_keys(): void
+    {
+        $admin = CBT_Start_Attempt_Metrics_Service::get_admin_summary();
+
+        self::assertArrayHasKey('available', $admin);
+        self::assertArrayHasKey('window', $admin);
+        self::assertArrayHasKey('today', $admin);
+        self::assertIsArray($admin['window']);
+        self::assertIsArray($admin['today']);
+    }
+
+    public function test_record_resolution_increments_multiple_resolution_types_independently(): void
+    {
+        CBT_Start_Attempt_Metrics_Service::record_resolution('started');
+        CBT_Start_Attempt_Metrics_Service::record_resolution('started');
+        CBT_Start_Attempt_Metrics_Service::record_resolution('resume_from_index');
+
+        $window = CBT_Start_Attempt_Metrics_Service::get_window_summary(15);
+
+        self::assertSame(2, $window['started_total']);
+        self::assertSame(1, $window['resumed_total']);
+        self::assertSame(0, $window['queued_total']);
+    }
 }

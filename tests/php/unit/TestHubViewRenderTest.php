@@ -72,7 +72,7 @@ final class TestHubViewRenderTest extends TestCase
         self::assertStringContainsString('requestPageHtml(asyncUrl', $html);
         self::assertStringContainsString('Menyimpan settings...', $html);
         self::assertStringContainsString('data-cbt-test-hub-refresh-area="global-unit-run"', $html);
-        self::assertStringContainsString('data-cbt-test-hub-async-form data-refresh-areas="banners,global-unit-run,checklist" data-loading-label="Menjalankan..."', $html);
+        self::assertStringContainsString('data-cbt-test-hub-async-form data-refresh-areas="banners,global-unit-run,unit-inventory,checklist" data-loading-label="Menjalankan..."', $html);
         self::assertStringContainsString('Menjalankan semua unit test...', $html);
         self::assertStringContainsString('secara bertahap agar aman dari timeout Cloudflare', $html);
         self::assertStringContainsString('hasActiveGlobalUnitRun', $html);
@@ -535,6 +535,60 @@ final class TestHubViewRenderTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Unauthorized');
         $this->renderPage();
+    }
+
+    public function test_view_renders_unit_test_inventory_with_file_result_details(): void
+    {
+        set_transient('cbt_unit_test_run_result_inventorytoken', [
+            'tab' => 'security_log_observability',
+            'scope' => 'unit_tests',
+            'item_index' => null,
+            'item_label' => 'IncidentReportTest.php',
+            'inventory_file' => [
+                'id' => 'php-incident',
+                'type' => 'php',
+                'path' => 'tests/php/unit/IncidentReportTest.php',
+                'basename' => 'IncidentReportTest.php',
+                'mapped_tab' => 'security_log_observability',
+                'mapped_tab_label' => 'Security Log & Observability',
+                'mapping_status' => 'auto_mapped',
+            ],
+            'label' => 'Run Unit Test File',
+            'description' => 'Unit inventory result.',
+            'success' => false,
+            'executed_at' => time(),
+            'commands' => [
+                [
+                    'label' => 'PHPUnit IncidentReportTest.php',
+                    'command' => 'vendor/bin/phpunit -c phpunit.xml.dist --testdox --colors=never tests/php/unit/IncidentReportTest.php',
+                    'success' => false,
+                    'exit_code' => 1,
+                    'stdout' => '<script>alert(1)</script> stdout',
+                    'stderr' => '<script>alert(2)</script> stderr',
+                    'failure_summary' => '<script>alert(3)</script> failed',
+                    'inventory_file' => [
+                        'path' => 'tests/php/unit/IncidentReportTest.php',
+                    ],
+                ],
+            ],
+        ], 900);
+
+        $html = $this->renderHub([
+            'cbt_unit_test_tab' => 'security_log_observability',
+            'cbt_checklist_scope' => 'unit_tests',
+            'cbt_test_run_token' => 'inventorytoken',
+        ]);
+
+        self::assertStringContainsString('Unit Test Inventory', $html);
+        self::assertStringContainsString('tests/php/unit/IncidentReportTest.php', $html);
+        self::assertStringContainsString('Auto-mapped', $html);
+        self::assertStringContainsString('Run File', $html);
+        self::assertStringContainsString('Latest Failed', $html);
+        self::assertStringContainsString('&lt;script&gt;alert(3)&lt;/script&gt; failed', $html);
+        self::assertStringContainsString('&lt;script&gt;alert(1)&lt;/script&gt; stdout', $html);
+        self::assertStringNotContainsString('<script>alert(1)</script>', $html);
+        self::assertStringNotContainsString('<script>alert(2)</script>', $html);
+        self::assertStringNotContainsString('<script>alert(3)</script>', $html);
     }
 
     /**

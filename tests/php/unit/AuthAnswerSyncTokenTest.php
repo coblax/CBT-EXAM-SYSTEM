@@ -62,4 +62,36 @@ final class AuthAnswerSyncTokenTest extends TestCase
         self::assertTrue(is_wp_error($revokedResult));
         self::assertSame('session_revoked', $revokedResult->get_error_code());
     }
+
+    #[RunInSeparateProcess]
+    public function test_scoped_answer_sync_token_rejects_empty_bearer_header(): void
+    {
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-auth.php';
+
+        $request = new \WP_REST_Request([
+            'attempt_id' => 55,
+        ], [], [
+            'authorization' => '',
+            'user-agent' => 'Mozilla/5.0',
+        ], '/cbt/v1/submit_answers_batch', 'POST');
+
+        $result = \CBT_Auth::permission_answer_submission($request);
+        self::assertTrue(is_wp_error($result));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_scoped_answer_sync_token_rejects_malformed_bearer(): void
+    {
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-auth.php';
+
+        $request = new \WP_REST_Request([
+            'attempt_id' => 55,
+        ], [], [
+            'authorization' => 'Bearer invalid.token.here',
+            'user-agent' => 'Mozilla/5.0',
+        ], '/cbt/v1/submit_answers_batch', 'POST');
+
+        $result = \CBT_Auth::permission_answer_submission($request);
+        self::assertTrue(is_wp_error($result));
+    }
 }

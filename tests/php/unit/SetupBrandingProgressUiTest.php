@@ -53,6 +53,39 @@ final class SetupBrandingProgressUiTest extends TestCase
         self::assertStringNotContainsString('window.location.reload', $html);
     }
 
+    public function test_branding_view_renders_correctly_with_empty_school_name(): void
+    {
+        update_option(\CBT_Admin_Branding_Settings::option_key(), [
+            'exam_program_name' => '',
+            'school_name' => '',
+            'school_motto' => '',
+            'school_npsn' => '',
+            'school_address' => '',
+            'school_village' => '',
+            'school_district_city_ln' => '',
+            'school_regency_country_ln' => '',
+            'school_regency_country_ln_is_city' => 0,
+            'school_province_abroad_ln' => '',
+            'school_province_abroad_ln_is_foreign' => 0,
+            'logo_1_attachment_id' => 0,
+            'logo_2_attachment_id' => 0,
+        ], false);
+
+        $html = $this->renderBrandingView();
+
+        self::assertStringContainsString('id="cbt-setup-branding-form"', $html);
+        self::assertStringContainsString('data-branding-form', $html);
+        self::assertStringContainsString('Identitas sekolah dikosongkan.', $html);
+    }
+
+    public function test_branding_view_renders_progress_bar_with_aria_attributes(): void
+    {
+        $html = $this->renderBrandingView();
+
+        self::assertStringContainsString('role="progressbar"', $html);
+        self::assertStringContainsString('aria-', $html);
+    }
+
     private function renderBrandingView(): string
     {
         $context = \CBT_Admin_Setup_Service::build_branding_page_context([]);
