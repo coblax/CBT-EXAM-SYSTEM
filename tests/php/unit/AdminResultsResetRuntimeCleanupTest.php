@@ -109,6 +109,66 @@ final class AdminResultsResetRuntimeCleanupTest extends TestCase
         self::assertSame(2, $state['total'] ?? 0);
     }
 
+    #[RunInSeparateProcess]
+    public function test_handle_reset_attempt_with_no_abandoned_siblings_only_clears_single(): void
+    {
+        $this->bootstrapResultsService();
+
+        global $wpdb;
+        $wpdb = new AdminResultsResetRuntimeCleanupFakeWpdb(
+            singleAttempt: [
+                'id' => 55,
+                'exam_id' => 11,
+                'student_id' => 8,
+                'status' => 'completed',
+            ],
+            abandonedIdsByPair: [],
+            bulkTargetRows: []
+        );
+
+        $_POST = [
+            'attempt_id' => 55,
+        ];
+
+        try {
+            CBT_Admin_Results_Service::handle_reset_attempt();
+            self::fail('Expected redirect signal was not thrown.');
+        } catch (RuntimeException $runtimeException) {
+            self::assertSame('__cbt_admin_results_redirect__', $runtimeException->getMessage());
+        }
+
+        self::assertSame([55], CBT_Runtime::$clearedAttemptIds);
+        self::assertSame([], CBT_Cache::$invalidatedAttemptsBatches);
+        self::assertSame([55], CBT_Cache::$invalidatedAttemptIds);
+        self::assertSame([], CBT_UI_State::$clearedAttemptStatesByAttemptIds);
+        self::assertSame([[8, 55]], CBT_UI_State::$clearedAttemptStates);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_handle_bulk_reset_with_empty_targets_redirects_without_creating_job(): void
+    {
+        $this->bootstrapResultsService();
+
+        global $wpdb;
+        $wpdb = new AdminResultsResetRuntimeCleanupFakeWpdb(
+            singleAttempt: null,
+            abandonedIdsByPair: [],
+            bulkTargetRows: []
+        );
+
+        $_POST = [];
+
+        try {
+            CBT_Admin_Results_Service::handle_bulk_reset_attempts();
+            self::fail('Expected redirect signal was not thrown.');
+        } catch (RuntimeException $runtimeException) {
+            self::assertSame('__cbt_admin_results_redirect__', $runtimeException->getMessage());
+        }
+
+        $redirectUrl = (string) ($GLOBALS['cbt_test_last_redirect'] ?? '');
+        self::assertStringContainsString('page=cbt-results', $redirectUrl);
+    }
+
     private function bootstrapResultsService(): void
     {
         if (!class_exists('CBT_Cache')) {

@@ -52,6 +52,71 @@ final class RestLiveProfileSnapshotTest extends TestCase
         self::assertSame('ok', $payload['items'][0]['availability_reason']);
     }
 
+    #[RunInSeparateProcess]
+    public function test_build_exams_payload_has_required_structure_keys(): void
+    {
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-student-profile-cache.php';
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
+
+        cbt_test_register_user([
+            'ID' => 8,
+            'display_name' => 'Budi',
+            'roles' => ['student'],
+            'user_email' => 'budi@example.com',
+            'user_login' => 'budi',
+        ]);
+
+        update_user_meta(8, 'kode_kelas', 'XI-B');
+        update_user_meta(8, 'kode_ruang', 'R2');
+        $this->useFakeRedisClient();
+
+        global $wpdb;
+        $wpdb = new RestLiveProfileSnapshotFakeWpdb();
+
+        $method = new ReflectionMethod('CBT_REST', 'build_exams_payload');
+        $method->setAccessible(true);
+
+        $payload = $method->invoke(null, 8, 'siswa');
+
+        self::assertArrayHasKey('current_user', $payload);
+        self::assertArrayHasKey('items', $payload);
+        self::assertIsArray($payload['current_user']);
+        self::assertIsArray($payload['items']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_build_exams_payload_items_contain_availability_fields(): void
+    {
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-student-profile-cache.php';
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
+
+        cbt_test_register_user([
+            'ID' => 9,
+            'display_name' => 'Cici',
+            'roles' => ['student'],
+            'user_email' => 'cici@example.com',
+            'user_login' => 'cici',
+        ]);
+
+        update_user_meta(9, 'kode_kelas', 'XI-A');
+        update_user_meta(9, 'kode_ruang', 'R1');
+        $this->useFakeRedisClient();
+
+        global $wpdb;
+        $wpdb = new RestLiveProfileSnapshotFakeWpdb();
+
+        $method = new ReflectionMethod('CBT_REST', 'build_exams_payload');
+        $method->setAccessible(true);
+
+        $payload = $method->invoke(null, 9, 'siswa');
+
+        self::assertIsArray($payload['items']);
+        if (!empty($payload['items'])) {
+            self::assertArrayHasKey('is_class_allowed', $payload['items'][0]);
+            self::assertArrayHasKey('availability_reason', $payload['items'][0]);
+        }
+    }
+
     private function useFakeRedisClient(): void
     {
         $reflection = new ReflectionClass(CBT_Student_Profile_Cache::class);

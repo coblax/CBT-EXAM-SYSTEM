@@ -36,6 +36,38 @@ final class AttemptRuntimeSnapshotServiceTest extends TestCase
         self::assertStringContainsString('tidak termasuk exam', strtolower($result['message']));
     }
 
+    #[RunInSeparateProcess]
+    public function test_rebuild_attempt_snapshots_result_has_required_keys(): void
+    {
+        $this->bootstrapRuntimeSnapshotServiceScaffold();
+        $this->useFakeAttemptSessionRedis();
+        $this->useFakeAttemptContractRedis();
+
+        $result = CBT_Attempt_Runtime_Snapshot_Service::rebuild_attempt_snapshots(501, 77);
+
+        self::assertArrayHasKey('ok', $result);
+        self::assertArrayHasKey('attempt_id', $result);
+        self::assertArrayHasKey('exam_id', $result);
+        self::assertArrayHasKey('message', $result);
+        self::assertArrayHasKey('session_snapshot', $result);
+        self::assertArrayHasKey('contract_snapshot', $result);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_rebuild_attempt_snapshots_diagnostics_contain_snapshot_status(): void
+    {
+        $this->bootstrapRuntimeSnapshotServiceScaffold();
+        $this->useFakeAttemptSessionRedis();
+        $this->useFakeAttemptContractRedis();
+
+        $result = CBT_Attempt_Runtime_Snapshot_Service::rebuild_attempt_snapshots(501, 77);
+
+        self::assertArrayHasKey('snapshot_status', $result['session_snapshot']);
+        self::assertArrayHasKey('snapshot_status', $result['contract_snapshot']);
+        self::assertSame('ready', $result['session_snapshot']['snapshot_status']);
+        self::assertSame('ready', $result['contract_snapshot']['snapshot_status']);
+    }
+
     private function bootstrapRuntimeSnapshotServiceScaffold(): void
     {
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-attempt-session-snapshot-cache.php';

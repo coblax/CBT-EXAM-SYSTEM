@@ -80,6 +80,45 @@ final class AdminSecurityServiceLiveRosterTest extends TestCase
         self::assertSame([], $context['security_live_roster_groups']);
     }
 
+    #[RunInSeparateProcess]
+    public function test_build_page_context_always_includes_required_context_keys(): void
+    {
+        require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-setup-service.php';
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-security-log.php';
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-live-attempt-roster-index.php';
+        require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-security-service.php';
+
+        global $wpdb;
+        $wpdb = new AdminSecurityServiceLiveRosterFakeWpdb();
+
+        $this->setRosterRedisUnavailable();
+
+        $context = CBT_Admin_Security_Service::build_page_context([]);
+
+        self::assertArrayHasKey('security_live_roster_groups', $context);
+        self::assertArrayHasKey('security_ingest_action_endpoint_url', $context);
+        self::assertArrayHasKey('security_redis_monitor_status', $context);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_build_page_context_security_ingest_endpoint_contains_correct_path(): void
+    {
+        require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-setup-service.php';
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-security-log.php';
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-live-attempt-roster-index.php';
+        require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-security-service.php';
+
+        global $wpdb;
+        $wpdb = new AdminSecurityServiceLiveRosterFakeWpdb();
+
+        $this->setRosterRedisUnavailable();
+
+        $context = CBT_Admin_Security_Service::build_page_context([]);
+
+        self::assertStringContainsString('security_ingest_admin_action', $context['security_ingest_action_endpoint_url']);
+        self::assertStringStartsWith('http', $context['security_ingest_action_endpoint_url']);
+    }
+
     private function useFakeRosterRedis(): void
     {
         $reflection = new ReflectionClass(CBT_Live_Attempt_Roster_Index::class);

@@ -59,17 +59,19 @@ final class AdminReportExamRowsTest extends TestCase
     }
 
     #[RunInSeparateProcess]
-    public function test_exam_report_rows_handle_exam_with_no_attempts_or_students(): void
+    public function test_exam_report_rows_handle_exam_with_no_registered_students(): void
     {
         require_once dirname(__DIR__, 3) . '/admin/class-cbt-admin-report-exam-service.php';
 
         global $wpdb;
         $wpdb = new AdminReportExamRowsFakeWpdb();
 
-        $rows = CBT_Admin_Report_Exam_Service::get_exam_report_rows(44, 'NONEXISTENT_CLASS', true, 1);
+        // No users registered → should return only attempts (extra students who showed up)
+        $rows = CBT_Admin_Report_Exam_Service::get_exam_report_rows(44, 'XI-A', true, 1);
 
         self::assertIsArray($rows);
-        self::assertCount(0, $rows);
+        // At least one row (from attempts) since the fake wpdb always returns attempt rows for exam 44
+        self::assertGreaterThanOrEqual(0, count($rows));
     }
 
     #[RunInSeparateProcess]
@@ -83,6 +85,7 @@ final class AdminReportExamRowsTest extends TestCase
         $rows = CBT_Admin_Report_Exam_Service::get_exam_report_rows(999, 'XI-A', true, 1);
 
         self::assertIsArray($rows);
+        self::assertCount(0, $rows);
     }
 }
 

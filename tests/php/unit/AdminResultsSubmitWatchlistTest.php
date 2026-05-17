@@ -116,6 +116,50 @@ final class AdminResultsSubmitWatchlistTest extends TestCase
         self::assertNotSame('', (string) ($monitoring['submit_watchlist']['note'] ?? ''));
     }
 
+    #[RunInSeparateProcess]
+    public function test_build_submit_flow_monitoring_context_returns_empty_watchlist_when_no_events(): void
+    {
+        $this->bootstrapResultsService();
+        $this->useFakeSubmitMetricsRedis();
+
+        $GLOBALS['wpdb'] = new AdminResultsSubmitWatchlistFakeWpdb([]);
+
+        $contextMethod = new ReflectionMethod(CBT_Admin_Results_Service::class, 'build_submit_flow_monitoring_context');
+        $contextMethod->setAccessible(true);
+        $monitoring = $contextMethod->invoke(null, [
+            'is_admin_scope' => true,
+            'current_user_id' => 1,
+            'selected_exam_id' => 0,
+            'selected_status' => '',
+            'selected_kelas' => '',
+            'student_keyword' => '',
+            'show_exam_column' => true,
+        ]);
+
+        self::assertTrue($monitoring['submit_health']['available']);
+        self::assertSame(0, $monitoring['submit_health']['finish_ack_total']);
+        self::assertSame(0, $monitoring['submit_watchlist']['total']);
+        self::assertSame([], $monitoring['submit_watchlist']['items']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_build_page_context_includes_submit_monitoring_keys(): void
+    {
+        $this->bootstrapResultsService();
+        $this->useFakeSubmitMetricsRedis();
+
+        $GLOBALS['cbt_test_current_user_caps']['cbt_view_results'] = true;
+        $GLOBALS['cbt_test_current_user_caps']['manage_options'] = true;
+        $GLOBALS['wpdb'] = new AdminResultsSubmitWatchlistFakeWpdb([]);
+
+        $pageContext = CBT_Admin_Results_Service::build_page_context([]);
+
+        self::assertArrayHasKey('submit_health', $pageContext);
+        self::assertArrayHasKey('submit_watchlist', $pageContext);
+        self::assertIsArray($pageContext['submit_health']);
+        self::assertIsArray($pageContext['submit_watchlist']);
+    }
+
     private function bootstrapResultsService(): void
     {
         if (!function_exists('selected')) {

@@ -144,6 +144,68 @@ final class RestSessionPresenceSnapshotTest extends TestCase
         self::assertSame([], CBT_Live_Proctoring_Presence::$updates);
     }
 
+    #[RunInSeparateProcess]
+    public function test_get_session_response_has_required_shape_keys(): void
+    {
+        $this->bootstrapRestSessionScaffold();
+        $this->useFakeAttemptSessionRedis();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
+
+        global $wpdb;
+        $wpdb = new RestSessionPresenceFakeWpdb([
+            115 => [
+                'id' => 115,
+                'exam_id' => 17,
+                'student_id' => 8,
+                'status' => 'in_progress',
+                'started_at' => '2026-04-01 09:00:00',
+                'extra_time_minutes' => 0,
+                'question_order' => '[201]',
+                'option_order' => '{}',
+                'exam_duration_minutes' => 45,
+            ],
+        ]);
+        CBT_Attempt_Session_Snapshot_Cache::write_attempt_snapshot(115, [
+            'attempt_id' => 115,
+            'exam_id' => 17,
+            'student_id' => 8,
+            'status' => 'in_progress',
+            'started_at' => '2026-04-01 09:00:00',
+            'duration_minutes' => 45,
+            'extra_time_minutes' => 0,
+            'question_count' => 1,
+            'question_order_signature' => 'sig-115',
+            'show_student_result' => 0,
+            'enable_calculator' => 1,
+        ]);
+
+        $response = CBT_REST::get_session(new WP_REST_Request([
+            'attempt_id' => 115,
+        ]));
+
+        self::assertIsArray($response);
+        self::assertArrayHasKey('ok', $response);
+        self::assertArrayHasKey('question_count', $response);
+        self::assertArrayHasKey('attempt_timer', $response);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_get_session_rejects_zero_attempt_id(): void
+    {
+        $this->bootstrapRestSessionScaffold();
+        $this->useFakeAttemptSessionRedis();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-rest.php';
+
+        global $wpdb;
+        $wpdb = new RestSessionPresenceFakeWpdb([]);
+
+        $response = CBT_REST::get_session(new WP_REST_Request([
+            'attempt_id' => 0,
+        ]));
+
+        self::assertTrue(is_wp_error($response));
+    }
+
     private function bootstrapRestSessionScaffold(): void
     {
         if (!class_exists('CBT_Auth')) {
