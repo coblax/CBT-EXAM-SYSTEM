@@ -175,6 +175,7 @@ final class RuntimeBufferFlushIntegrityTest extends TestCase
         }
 
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-runtime.php';
+        $this->resetRuntimeRedis();
     }
 
     private function resetRuntimeRedis(): void
@@ -187,11 +188,11 @@ final class RuntimeBufferFlushIntegrityTest extends TestCase
             $property = $reflection->getProperty($prop);
             $property->setAccessible(true);
             if ($prop === 'redis_connection_attempted') {
-                $property->setValue(null, false);
+                $property->setValue(null, true);
             } elseif ($prop === 'last_connection_error' || $prop === 'cached_prefix') {
                 $property->setValue(null, $prop === 'cached_prefix' ? null : '');
             } else {
-                $property->setValue(null, null);
+                $property->setValue(null, new CBT_Test_Redis_Client());
             }
         }
     }

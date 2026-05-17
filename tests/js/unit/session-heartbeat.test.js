@@ -349,6 +349,27 @@ describe('createSessionHeartbeatManager', function () {
         });
     });
 
+    it('skips heartbeat and clears lost state when token is missing or stage is login', async function () {
+        var fixture = createHeartbeatFixture({
+            state: {
+                heartbeatLostActive: true,
+                heartbeatLostFailureCount: 4,
+                heartbeatLostLastErrorCode: 'network_error',
+                stage: 'login',
+                token: ''
+            }
+        });
+
+        var result = await fixture.manager.run();
+
+        expect(result).toBeNull();
+        expect(fixture.calls.apiRequest).toHaveLength(0);
+        expect(fixture.state.heartbeatLostActive).toBe(false);
+        expect(fixture.state.heartbeatLostFailureCount).toBe(0);
+        expect(fixture.state.heartbeatLostLastErrorCode).toBe('');
+        expect(fixture.calls.render).toEqual([]);
+    });
+
     it('refreshes question runtime when heartbeat detects question count drift', async function () {
         var fixture = createHeartbeatFixture({
             apiRequest: async function () {
@@ -386,6 +407,83 @@ describe('createSessionHeartbeatManager', function () {
         ]);
     });
 
+    it('refreshes question runtime when heartbeat detects order signature drift', async function () {
+        var fixture = createHeartbeatFixture({
+            apiRequest: async function () {
+                return {
+                    attempt_timer: {
+                        attempt_id: 55,
+                        remaining_seconds: 150
+                    },
+                    question_count: 3,
+                    question_order_signature: 'order-2',
+                    question_revision: {
+                        revision_id: 'rev-3'
+                    }
+                };
+            }
+        });
+
+        await fixture.manager.run();
+
+        expect(fixture.calls.refreshAttemptQuestionRevision).toEqual([
+            {
+                options: {
+                    attemptId: 55,
+                    examId: 9,
+                    expectedQuestionOrderSignature: 'order-2',
+                    force: true,
+                    preferredIndex: 1,
+                    source: 'heartbeat-order'
+                },
+                revision: {
+                    revision_id: 'rev-3'
+                }
+            }
+        ]);
+    });
+
+    it('refreshes question runtime when heartbeat detects revision drift only', async function () {
+        var fixture = createHeartbeatFixture({
+            apiRequest: async function () {
+                return {
+                    attempt_timer: {
+                        attempt_id: 55,
+                        remaining_seconds: 150
+                    },
+                    question_count: 3,
+                    question_order_signature: 'order-1',
+                    question_revision: {
+                        revision_id: 'rev-2'
+                    }
+                };
+            },
+            state: {
+                questionRevision: {
+                    revision_id: 'rev-1'
+                }
+            }
+        });
+
+        await fixture.manager.run();
+
+        expect(fixture.calls.refreshAttemptQuestionRevision).toEqual([
+            {
+                options: {
+                    attemptId: 55,
+                    examId: 9,
+                    expectedQuestionOrderSignature: 'order-1',
+                    force: false,
+                    preferredIndex: 1,
+                    source: 'heartbeat'
+                },
+                revision: {
+                    revision_id: 'rev-2'
+                }
+            }
+        ]);
+    });
+
     it('disables calculator runtime from heartbeat and publishes a notice consistently', async function () {
         var fixture = createHeartbeatFixture({
             apiRequest: async function () {
@@ -404,6 +502,44 @@ describe('createSessionHeartbeatManager', function () {
         expect(fixture.state.exams[0].enable_calculator).toBe(0);
         expect(fixture.calls.clearCalculatorRuntimeState).toBe(1);
         expect(fixture.state.notice).toBe('Kalkulator dinonaktifkan oleh guru untuk exam ini.');
+        expect(fixture.calls.render).toEqual([
+            {
+                meta: {
+                    attemptId: 55,
+                    selectedExamId: 9
+                },
+                reason: 'heartbeat-calculator-availability'
+            }
+        ]);
+    });
+
+    it('re-enables calculator from heartbeat and clears the disabled notice', async function () {
+        var fixture = createHeartbeatFixture({
+            apiRequest: async function () {
+                return {
+                    attempt_timer: {
+                        attempt_id: 55,
+                        remaining_seconds: 210
+                    },
+                    enable_calculator: 1
+                };
+            },
+            state: {
+                exams: [
+                    {
+                        enable_calculator: 0,
+                        id: 9
+                    }
+                ],
+                notice: 'Kalkulator dinonaktifkan oleh guru untuk exam ini.'
+            }
+        });
+
+        await fixture.manager.run();
+
+        expect(fixture.state.exams[0].enable_calculator).toBe(1);
+        expect(fixture.state.notice).toBe('');
+        expect(fixture.calls.clearCalculatorRuntimeState).toBe(0);
         expect(fixture.calls.render).toEqual([
             {
                 meta: {
@@ -614,5 +750,57 @@ describe('createSessionHeartbeatManager', function () {
         expect(fixture.state.heartbeatLostActive).toBe(false);
         expect(fixture.state.heartbeatLostFailureCount).toBe(0);
         expect(fixture.calls.sendSecurityEventSilently).toEqual([]);
+    });
+
+    it('does not track heartbeat lost when detection is disabled', async function () {
+        var fixture = createHeartbeatFixture({
+            heartbeatLostDetectionEnabled: false,
+            apiRequest: async function () {
+                var error = new Error('Heartbeat timeout.');
+                error.status = 0;
+                error.code = 'network_error';
+                error.isNetworkError = true;
+                throw error;
+            }
+        });
+
+        await fixture.manager.run();
+        await fixture.manager.run();
+        await fixture.manager.run();
+
+        expect(fixture.state.heartbeatLostActive).toBe(false);
+        expect(fixture.state.heartbeatLostFailureCount).toBe(0);
+        expect(fixture.calls.sendSecurityEventSilently).toEqual([]);
+        expect(fixture.calls.render).toEqual([]);
+    });
+
+    it('consumes diagnostics fail-next once and recovers on the following heartbeat', async function () {
+        var failNext = true;
+        var diagnosticsManager = {
+            enabled: true,
+            getHeartbeatScenario: vi.fn().mockReturnValue('fail-next'),
+            consumeHeartbeatFailureOnce: vi.fn(function () {
+                if (failNext) {
+                    failNext = false;
+                    return true;
+                }
+                return false;
+            })
+        };
+        var fixture = createHeartbeatFixture({
+            diagnosticsManager: diagnosticsManager
+        });
+
+        var failed = await fixture.manager.run();
+        var recovered = await fixture.manager.run();
+
+        expect(failed).toBeNull();
+        expect(recovered).toEqual(expect.objectContaining({
+            enable_calculator: 1
+        }));
+        expect(diagnosticsManager.consumeHeartbeatFailureOnce).toHaveBeenCalledTimes(2);
+        expect(fixture.calls.apiRequest).toHaveLength(1);
+        expect(fixture.state.heartbeatLostActive).toBe(false);
+        expect(fixture.state.heartbeatLostFailureCount).toBe(0);
     });
 });

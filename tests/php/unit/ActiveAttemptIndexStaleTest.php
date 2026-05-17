@@ -215,11 +215,11 @@ final class ActiveAttemptIndexStaleTest extends TestCase
             $property = $reflection->getProperty($prop);
             $property->setAccessible(true);
             if (str_contains($prop, 'attempted')) {
-                $property->setValue(null, false);
+                $property->setValue(null, true);
             } elseif (str_contains($prop, 'error')) {
                 $property->setValue(null, '');
             } else {
-                $property->setValue(null, null);
+                $property->setValue(null, new CBT_Test_Redis_Client());
             }
         }
     }

@@ -152,6 +152,165 @@ final class SecurityEventIngestFlushTest extends TestCase
     }
 
     #[RunInSeparateProcess]
+    public function test_flush_batch_skips_and_records_status_when_ingest_unavailable(): void
+    {
+        $this->bootstrapIngestScaffold();
+
+        $result = CBT_Security_Event_Ingest::flush_batch(10, 5.0, 'test');
+        $status = get_option('cbt_security_ingest_status', []);
+
+        self::assertSame(0, $result['processed']);
+        self::assertSame(0, $result['persisted']);
+        self::assertSame('skipped', (string) ($status['last_flush_status'] ?? ''));
+        self::assertSame('redis_unavailable', (string) ($status['last_flush_result'] ?? ''));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_flush_batch_moves_invalid_json_payload_to_dead_letter(): void
+    {
+        $this->bootstrapIngestScaffold();
+        $this->enableFeature();
+
+        $redis = $this->getRedis();
+        $redis->xAdd('cbt_security_ingest:events', '*', [
+            'ingest_id' => 'invalid-json-1',
+            'attempt_id' => '42',
+            'exam_id' => '10',
+            'student_id' => '5',
+            'event_type' => 'tab_hidden',
+            'occurred_at' => '2026-03-24 12:00:00',
+            'payload_json' => '{not valid json',
+        ]);
+
+        $result = CBT_Security_Event_Ingest::flush_batch(10, 5.0, 'test');
+
+        self::assertSame(1, $result['processed']);
+        self::assertSame(0, $result['persisted']);
+        self::assertSame(1, $result['dead_lettered']);
+        self::assertSame(0, $result['backlog_count']);
+        self::assertGreaterThanOrEqual(1, $result['dead_letter_count']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_invalid_json_dead_letter_keeps_reason_and_event_fields(): void
+    {
+        $this->bootstrapIngestScaffold();
+        $this->enableFeature();
+
+        $redis = $this->getRedis();
+        $redis->xAdd('cbt_security_ingest:events', '2000-0', [
+            'ingest_id' => 'invalid-json-detail',
+            'attempt_id' => '84',
+            'exam_id' => '12',
+            'student_id' => '6',
+            'event_type' => 'clipboard_blocked',
+            'occurred_at' => '2026-03-24 12:00:00',
+            'payload_json' => '{"broken"',
+        ]);
+
+        CBT_Security_Event_Ingest::flush_batch(10, 5.0, 'test');
+
+        $deadEntries = $redis->xRange('cbt_security_ingest:dead', '-', '+', 10);
+        self::assertCount(1, $deadEntries);
+        $dead = reset($deadEntries);
+        self::assertIsArray($dead);
+        self::assertSame('2000-0', (string) ($dead['stream_id'] ?? ''));
+        self::assertSame('invalid_payload_json', (string) ($dead['reason'] ?? ''));
+        self::assertSame('0', (string) ($dead['retry_count'] ?? ''));
+        self::assertSame('invalid-json-detail', (string) ($dead['ingest_id'] ?? ''));
+        self::assertSame('clipboard_blocked', (string) ($dead['event_type'] ?? ''));
+        self::assertSame('84', (string) ($dead['attempt_id'] ?? ''));
+        self::assertSame('{"broken"', (string) ($dead['payload_json'] ?? ''));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_flush_batch_reports_lock_busy_without_draining_stream(): void
+    {
+        $this->bootstrapIngestScaffold();
+        $this->enableFeature();
+
+        CBT_Security_Event_Ingest::enqueue_event_payload([
+            'attempt_id' => 42,
+            'exam_id' => 10,
+            'student_id' => 5,
+            'event_type' => 'tab_hidden',
+            'severity' => 'warning',
+            'message' => 'Queued while lock busy',
+            'occurred_at' => '2026-03-24 12:00:00',
+        ]);
+        self::assertTrue(CBT_Cache::acquire_lock('security_event_ingest_flush', 20, ['source' => 'test-lock']));
+
+        $result = CBT_Security_Event_Ingest::flush_batch(10, 5.0, 'test');
+
+        self::assertSame(0, $result['processed']);
+        self::assertSame(0, $result['persisted']);
+        self::assertSame(1, $result['backlog_count']);
+        self::assertSame(1, $this->getStreamLength());
+
+        CBT_Cache::release_lock('security_event_ingest_flush');
+    }
+
+    #[RunInSeparateProcess]
+    public function test_micro_drain_skips_when_backlog_small(): void
+    {
+        $this->bootstrapIngestScaffold();
+        $this->enableFeature();
+
+        $result = CBT_Security_Event_Ingest::maybe_micro_drain();
+
+        self::assertSame(0, $result['drained']);
+        self::assertSame(1, $result['skipped']);
+        self::assertSame('backlog_small', $result['reason']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_micro_drain_skips_when_flush_lock_busy(): void
+    {
+        $this->bootstrapIngestScaffold();
+        $this->enableFeature();
+        $this->setupFakeSecurityLogPersist(true);
+        $this->enqueueSecurityEvents(51);
+        self::assertTrue(CBT_Cache::acquire_lock('security_event_ingest_flush', 20, ['source' => 'test-lock']));
+
+        $result = CBT_Security_Event_Ingest::maybe_micro_drain();
+
+        self::assertSame(0, $result['drained']);
+        self::assertSame(1, $result['skipped']);
+        self::assertSame('lock_busy', $result['reason']);
+        self::assertSame(51, $this->getStreamLength());
+
+        CBT_Cache::release_lock('security_event_ingest_flush');
+    }
+
+    #[RunInSeparateProcess]
+    public function test_micro_drain_flushes_first_chunk_when_backlog_is_large(): void
+    {
+        $this->bootstrapIngestScaffold();
+        $this->enableFeature();
+        $this->setupFakeSecurityLogPersist(true);
+        $this->enqueueSecurityEvents(51);
+
+        $result = CBT_Security_Event_Ingest::maybe_micro_drain();
+
+        self::assertSame(50, $result['drained']);
+        self::assertSame(0, $result['skipped']);
+        self::assertSame('', $result['reason']);
+        self::assertSame(1, $this->getStreamLength());
+    }
+
+    #[RunInSeparateProcess]
+    public function test_micro_drain_reports_redis_unavailable_when_feature_disabled(): void
+    {
+        $this->bootstrapIngestScaffold();
+
+        $result = CBT_Security_Event_Ingest::maybe_micro_drain();
+
+        self::assertSame(0, $result['drained']);
+        self::assertSame(1, $result['skipped']);
+        self::assertSame('redis_unavailable', $result['reason']);
+    }
+
+    #[RunInSeparateProcess]
     public function test_get_status_snapshot_returns_valid_structure(): void
     {
         $this->bootstrapIngestScaffold();
@@ -165,6 +324,65 @@ final class SecurityEventIngestFlushTest extends TestCase
         self::assertArrayHasKey('backlog_count', $status);
         self::assertArrayHasKey('dead_letter_count', $status);
         self::assertSame(1, $status['feature_enabled']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_status_snapshot_reports_oldest_pending_age(): void
+    {
+        $this->bootstrapIngestScaffold();
+        $this->enableFeature();
+
+        $payload = [
+            'attempt_id' => 42,
+            'exam_id' => 10,
+            'student_id' => 5,
+            'ingest_id' => 'oldest-pending-1',
+            'event_type' => 'tab_hidden',
+            'severity' => 'warning',
+            'message' => 'Oldest pending',
+            'occurred_at' => '2026-03-24 12:00:00',
+        ];
+        $encoded = wp_json_encode($payload);
+        self::assertIsString($encoded);
+
+        $redis = $this->getRedis();
+        $redis->xAdd('cbt_security_ingest:events', '1000-0', [
+            'ingest_id' => 'oldest-pending-1',
+            'attempt_id' => '42',
+            'exam_id' => '10',
+            'student_id' => '5',
+            'event_type' => 'tab_hidden',
+            'occurred_at' => '2026-03-24 12:00:00',
+            'payload_json' => $encoded,
+        ]);
+
+        $status = CBT_Security_Event_Ingest::get_status_snapshot();
+
+        self::assertSame(1, $status['backlog_count']);
+        self::assertGreaterThan(0, $status['oldest_pending_age_seconds']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_enqueue_event_records_failed_status_when_stream_write_returns_empty_id(): void
+    {
+        $this->bootstrapIngestScaffold();
+        $this->enableFeature();
+        $GLOBALS['cbt_test_redis_fail_stream_keys'] = ['cbt_security_ingest:events'];
+
+        $result = CBT_Security_Event_Ingest::enqueue_event_payload([
+            'attempt_id' => 42,
+            'exam_id' => 10,
+            'student_id' => 5,
+            'event_type' => 'tab_hidden',
+            'severity' => 'warning',
+            'message' => 'Stream write failure',
+            'occurred_at' => '2026-03-24 12:00:00',
+        ]);
+        $status = get_option('cbt_security_ingest_status', []);
+
+        self::assertFalse($result);
+        self::assertSame('failed', (string) ($status['last_enqueue_status'] ?? ''));
+        self::assertSame('Redis stream enqueue returned empty stream id.', (string) ($status['last_enqueue_error'] ?? ''));
     }
 
     #[RunInSeparateProcess]
@@ -249,6 +467,21 @@ final class SecurityEventIngestFlushTest extends TestCase
         return $redis->xLen('cbt_security_ingest:events');
     }
 
+    private function enqueueSecurityEvents(int $count): void
+    {
+        for ($i = 1; $i <= $count; $i++) {
+            CBT_Security_Event_Ingest::enqueue_event_payload([
+                'attempt_id' => 42,
+                'exam_id' => 10,
+                'student_id' => 5,
+                'event_type' => 'tab_hidden',
+                'severity' => 'warning',
+                'message' => 'Event ' . $i,
+                'occurred_at' => '2026-03-24 12:00:' . str_pad((string) ($i % 60), 2, '0', STR_PAD_LEFT),
+            ]);
+        }
+    }
+
     private function getRedis(): Redis
     {
         $reflection = new ReflectionClass(CBT_Security_Live_Counters::class);
@@ -273,11 +506,11 @@ final class SecurityEventIngestFlushTest extends TestCase
             $property = $reflection->getProperty($prop);
             $property->setAccessible(true);
             if (str_contains($prop, 'attempted')) {
-                $property->setValue(null, false);
+                $property->setValue(null, true);
             } elseif (str_contains($prop, 'error')) {
                 $property->setValue(null, '');
             } else {
-                $property->setValue(null, null);
+                $property->setValue(null, new CBT_Test_Redis_Client());
             }
         }
     }

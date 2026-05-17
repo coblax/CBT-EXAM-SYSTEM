@@ -149,6 +149,65 @@ final class SecurityEventIngestTest extends TestCase
         self::assertNotSame('', get_option('cbt_security_ingest_last_stream_id', ''));
     }
 
+    #[RunInSeparateProcess]
+    public function test_flush_batch_treats_duplicate_ingest_id_as_idempotent_success(): void
+    {
+        $this->bootstrapSecurityClasses();
+        $this->useFakeSecurityRedis();
+
+        update_option('cbt_setup_security', [
+            'log_security_events' => 1,
+            'security_redis_first_ingest' => 1,
+        ]);
+
+        global $wpdb;
+        $wpdb = new SecurityEventIngestFakeWpdb();
+
+        $payload = [
+            'attempt_id' => 10,
+            'exam_id' => 501,
+            'student_id' => 71,
+            'ingest_id' => 'duplicate-ingest-1',
+            'event_type' => 'window_blur',
+            'severity' => 'warning',
+            'message' => 'Duplicate payload should be idempotent.',
+            'context_json' => '{}',
+            'occurred_at' => '2026-03-24 12:00:00',
+        ];
+        $payloadJson = wp_json_encode($payload);
+        self::assertIsString($payloadJson);
+
+        $redis = \CBT_Security_Live_Counters::redis_client();
+        self::assertInstanceOf(\Redis::class, $redis);
+        $redis->xAdd('cbt_security_ingest:events', '*', [
+            'ingest_id' => 'duplicate-ingest-1',
+            'attempt_id' => '10',
+            'exam_id' => '501',
+            'student_id' => '71',
+            'event_type' => 'window_blur',
+            'occurred_at' => '2026-03-24 12:00:00',
+            'payload_json' => $payloadJson,
+        ]);
+        $redis->xAdd('cbt_security_ingest:events', '*', [
+            'ingest_id' => 'duplicate-ingest-1',
+            'attempt_id' => '10',
+            'exam_id' => '501',
+            'student_id' => '71',
+            'event_type' => 'window_blur',
+            'occurred_at' => '2026-03-24 12:00:01',
+            'payload_json' => $payloadJson,
+        ]);
+
+        $result = \CBT_Security_Event_Ingest::flush_batch(10, 2.0, 'phpunit');
+
+        self::assertSame(2, $result['persisted']);
+        self::assertSame(0, $result['failed']);
+        self::assertSame(0, $result['dead_lettered']);
+        self::assertSame(0, $result['backlog_count']);
+        self::assertCount(1, $wpdb->insertedRows);
+        self::assertSame('duplicate-ingest-1', $wpdb->insertedRows[0]['ingest_id']);
+    }
+
     private function bootstrapSecurityClasses(): void
     {
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-security-live-counters.php';

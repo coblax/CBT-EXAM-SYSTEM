@@ -1218,6 +1218,11 @@ if (!class_exists('CBT_Test_Redis_Client') && class_exists('Redis')) {
             return $this->readHash((string) $key);
         }
 
+        public function hLen($key)
+        {
+            return count($this->readHash((string) $key));
+        }
+
         public function hGet($key, $field)
         {
             if ($this->pipeline_active) {
@@ -1235,6 +1240,20 @@ if (!class_exists('CBT_Test_Redis_Client') && class_exists('Redis')) {
             return isset($GLOBALS['cbt_test_redis_hashes'][$key][$field])
                 ? $GLOBALS['cbt_test_redis_hashes'][$key][$field]
                 : false;
+        }
+
+        public function hMGet($key, array $fields)
+        {
+            $key = (string) $key;
+            $result = [];
+            foreach ($fields as $field) {
+                $field = (string) $field;
+                $result[$field] = isset($GLOBALS['cbt_test_redis_hashes'][$key][$field])
+                    ? $GLOBALS['cbt_test_redis_hashes'][$key][$field]
+                    : false;
+            }
+
+            return $result;
         }
 
         public function hSet($key, $field, $value)
@@ -1339,6 +1358,68 @@ if (!class_exists('CBT_Test_Redis_Client') && class_exists('Redis')) {
             return array_values($slice);
         }
 
+        public function zCard($key)
+        {
+            $key = (string) $key;
+            $items = $GLOBALS['cbt_test_redis_zsets'][$key] ?? [];
+            return is_array($items) ? count($items) : 0;
+        }
+
+        public function zRangeByScore($key, $start, $end, array $options = [])
+        {
+            $key = (string) $key;
+            $items = $GLOBALS['cbt_test_redis_zsets'][$key] ?? [];
+            if (!is_array($items) || empty($items)) {
+                return [];
+            }
+
+            $min = $this->normalizeScoreBoundary($start, -INF);
+            $max = $this->normalizeScoreBoundary($end, INF);
+            asort($items, SORT_NUMERIC);
+            $members = [];
+            foreach ($items as $member => $score) {
+                $score = (float) $score;
+                if ($score < $min || $score > $max) {
+                    continue;
+                }
+                $members[] = (string) $member;
+            }
+
+            $offset = 0;
+            $count = null;
+            if (isset($options['limit']) && is_array($options['limit'])) {
+                $offset = max(0, (int) ($options['limit'][0] ?? 0));
+                $count = max(0, (int) ($options['limit'][1] ?? 0));
+            }
+
+            return $count === null
+                ? array_slice($members, $offset)
+                : array_slice($members, $offset, $count);
+        }
+
+        public function zRemRangeByScore($key, $start, $end)
+        {
+            $key = (string) $key;
+            $items = $GLOBALS['cbt_test_redis_zsets'][$key] ?? [];
+            if (!is_array($items) || empty($items)) {
+                return 0;
+            }
+
+            $min = $this->normalizeScoreBoundary($start, -INF);
+            $max = $this->normalizeScoreBoundary($end, INF);
+            $deleted = 0;
+            foreach ($items as $member => $score) {
+                $score = (float) $score;
+                if ($score < $min || $score > $max) {
+                    continue;
+                }
+                unset($GLOBALS['cbt_test_redis_zsets'][$key][$member]);
+                $deleted++;
+            }
+
+            return $deleted;
+        }
+
         public function zRem($key, ...$members)
         {
             $key = (string) $key;
@@ -1352,6 +1433,25 @@ if (!class_exists('CBT_Test_Redis_Client') && class_exists('Redis')) {
             }
 
             return $deleted;
+        }
+
+        public function exists($key, ...$other_keys): int
+        {
+            $count = 0;
+            $keys = array_merge([(string) $key], array_map('strval', $other_keys));
+            foreach ($keys as $key) {
+                $key = (string) $key;
+                if (
+                    array_key_exists($key, $GLOBALS['cbt_test_redis_storage'])
+                    || array_key_exists($key, $GLOBALS['cbt_test_redis_hashes'])
+                    || array_key_exists($key, $GLOBALS['cbt_test_redis_zsets'])
+                    || array_key_exists($key, $GLOBALS['cbt_test_redis_streams'])
+                ) {
+                    $count++;
+                }
+            }
+
+            return $count;
         }
 
         public function xAdd($key, $id, array $values, $maxlen = null, $approximate = null)
@@ -1543,6 +1643,19 @@ if (!class_exists('CBT_Test_Redis_Client') && class_exists('Redis')) {
             }
 
             return $remaining;
+        }
+
+        private function normalizeScoreBoundary($value, float $fallback): float
+        {
+            $raw = strtolower(trim((string) $value));
+            if ($raw === '-inf' || $raw === '-infinity') {
+                return -INF;
+            }
+            if ($raw === '+inf' || $raw === 'inf' || $raw === 'infinity') {
+                return INF;
+            }
+
+            return is_numeric($raw) ? (float) $raw : $fallback;
         }
     }
 }

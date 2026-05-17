@@ -273,4 +273,290 @@ describe('createAnswerSyncManager', function () {
             expect(ids).toEqual([100, 200, 300]);
         });
     });
+
+    describe('answer path and queue helpers', function () {
+        it('detects answer submit API paths only', function () {
+            var state = createState();
+            var manager = createAnswerSyncManager(createDeps(state));
+
+            expect(manager.isAnswerSubmitPath('submit_answer')).toBe(true);
+            expect(manager.isAnswerSubmitPath('/submit_answers_batch')).toBe(true);
+            expect(manager.isAnswerSubmitPath('questions')).toBe(false);
+            expect(manager.isAnswerSubmitPath('/session')).toBe(false);
+        });
+
+        it('queues answers by ids and skips missing questions', function () {
+            var state = createState();
+            var deps = createDeps(state, {
+                getQuestionById: function (questionId) {
+                    if (questionId === 100 || questionId === 200) {
+                        return { id: questionId, answer: 'answer-' + questionId };
+                    }
+                    return null;
+                },
+                questionAnswerPayload: function (q) { return q.answer; },
+                payloadSignature: function (payload) { return 'sig-' + payload; }
+            });
+            var manager = createAnswerSyncManager(deps);
+
+            var queued = manager.queueQuestionAnswersByIds([0, 100, 999, 200]);
+
+            expect(queued).toBe(2);
+            expect(manager.getPendingSyncQuestionIds()).toEqual([100, 200]);
+            expect(state.pendingSyncCount).toBe(2);
+        });
+
+        it('queues loaded question payloads for flush', function () {
+            var state = createState({
+                questionPayloadById: {
+                    100: true,
+                    200: true
+                }
+            });
+            var deps = createDeps(state, {
+                getQuestionPayloadById: function (questionId) {
+                    if (questionId === 100) {
+                        return { id: 100, answer: 'loaded' };
+                    }
+                    return null;
+                },
+                questionAnswerPayload: function (q) { return q.answer; },
+                payloadSignature: function (payload) { return 'sig-' + payload; }
+            });
+            var manager = createAnswerSyncManager(deps);
+
+            var queued = manager.queueLoadedQuestionAnswersForFlush();
+
+            expect(queued).toBe(1);
+            expect(manager.getPendingSyncQuestionIds()).toEqual([100]);
+        });
+
+        it('prunes pending answer state to the valid question lookup', function () {
+            var state = createState();
+            var deps = createDeps(state, {
+                questionAnswerPayload: function (q) { return q.answer; },
+                payloadSignature: function (payload) { return 'sig-' + payload; }
+            });
+            var manager = createAnswerSyncManager(deps);
+
+            manager.queueQuestionAnswer({ id: 100, answer: 'keep' });
+            manager.queueQuestionAnswer({ id: 200, answer: 'drop' });
+
+            manager.pruneQuestionAnswerState({ 100: true });
+
+            expect(manager.getPendingSyncQuestionIds()).toEqual([100]);
+            expect(state.pendingSyncCount).toBe(1);
+            expect(manager.getAutoSaveState().pendingAnswerBatchByQuestion).toEqual({
+                100: {
+                    answer: 'keep',
+                    question_id: 100,
+                    signature: 'sig-keep'
+                }
+            });
+        });
+
+        it('does not schedule autosave while a question revision refresh is active', function () {
+            var state = createState();
+            var setTimeoutSpy = vi.fn();
+            var deps = createDeps(state, {
+                isQuestionRevisionRefreshActive: vi.fn().mockReturnValue(true),
+                windowRef: {
+                    setTimeout: setTimeoutSpy,
+                    clearTimeout: vi.fn()
+                }
+            });
+            var manager = createAnswerSyncManager(deps);
+
+            manager.scheduleAutoSave(100, 10);
+
+            expect(setTimeoutSpy).not.toHaveBeenCalled();
+            expect(manager.hasPendingBatchItems()).toBe(false);
+        });
+
+        it('submits a single question immediately with keepalive when requested', async function () {
+            var state = createState();
+            var apiRequest = vi.fn().mockResolvedValue({
+                attempt_id: 42,
+                accepted_count: 1,
+                items: [{ question_id: 100, deferred: 0 }]
+            });
+            var manager = createAnswerSyncManager(createDeps(state, {
+                apiRequest: apiRequest,
+                getQuestionById: function (questionId) {
+                    return { id: questionId, answer: 'instant' };
+                },
+                questionAnswerPayload: function (q) { return q.answer; },
+                payloadSignature: function (payload) { return 'sig-' + payload; }
+            }));
+
+            await manager.submitQuestionAnswer({ id: 100 }, { keepalive: true });
+
+            expect(apiRequest).toHaveBeenCalledWith('submit_answers_batch', expect.objectContaining({
+                keepalive: true,
+                body: {
+                    attempt_id: 42,
+                    answers: [{ question_id: 100, answer: 'instant' }]
+                }
+            }));
+            expect(state.pendingSyncCount).toBe(0);
+        });
+    });
+
+    describe('flushPendingAnswerBatch', function () {
+        it('deduplicates repeated queue updates and submits the latest answer', async function () {
+            var state = createState();
+            var apiRequest = vi.fn().mockResolvedValue({
+                attempt_id: 42,
+                accepted_count: 1,
+                items: [{ question_id: 100, deferred: 0 }]
+            });
+            var deps = createDeps(state, {
+                apiRequest: apiRequest,
+                questionAnswerPayload: function (q) { return q.answer; },
+                payloadSignature: function (payload) { return 'sig-' + payload; }
+            });
+            var manager = createAnswerSyncManager(deps);
+
+            manager.queueQuestionAnswer({ id: 100, answer: 'first' });
+            manager.queueQuestionAnswer({ id: 100, answer: 'second' });
+
+            await manager.flushPendingAnswerBatch({ flushAll: true });
+
+            expect(apiRequest).toHaveBeenCalledTimes(1);
+            expect(apiRequest).toHaveBeenCalledWith('submit_answers_batch', expect.objectContaining({
+                body: {
+                    attempt_id: 42,
+                    answers: [{ question_id: 100, answer: 'second' }]
+                }
+            }));
+            expect(state.pendingSyncCount).toBe(0);
+            expect(manager.getPendingSyncQuestionIds()).toEqual([]);
+        });
+
+        it('falls back to legacy single-answer submission when batch endpoint returns 503', async function () {
+            var state = createState();
+            var apiRequest = vi.fn().mockImplementation(function (path, options) {
+                if (path === 'submit_answers_batch') {
+                    var error = new Error('Batch unavailable');
+                    error.status = 503;
+                    throw error;
+                }
+
+                expect(path).toBe('submit_answer');
+                return Promise.resolve({
+                    question_id: options.body.question_id,
+                    deferred: 0,
+                    score_awarded: 1
+                });
+            });
+            var manager = createAnswerSyncManager(createDeps(state, {
+                apiRequest: apiRequest,
+                questionAnswerPayload: function (q) { return q.answer; },
+                payloadSignature: function (payload) { return 'sig-' + payload; }
+            }));
+
+            manager.queueQuestionAnswer({ id: 100, answer: 'A' });
+
+            await manager.flushPendingAnswerBatch({ flushAll: true });
+
+            expect(apiRequest.mock.calls.map(function (call) { return call[0]; })).toEqual([
+                'submit_answers_batch',
+                'submit_answer'
+            ]);
+            expect(state.pendingSyncCount).toBe(0);
+            expect(state.lastSyncError).toBe('');
+        });
+
+        it('keeps pending answers queued when a retryable network failure happens', async function () {
+            var state = createState();
+            var apiRequest = vi.fn().mockImplementation(function () {
+                var error = new Error('Failed to fetch');
+                error.status = 0;
+                error.isNetworkError = true;
+                throw error;
+            });
+            var manager = createAnswerSyncManager(createDeps(state, {
+                apiRequest: apiRequest,
+                questionAnswerPayload: function (q) { return q.answer; },
+                payloadSignature: function (payload) { return 'sig-' + payload; }
+            }));
+
+            manager.queueQuestionAnswer({ id: 100, answer: 'A' });
+
+            await expect(manager.flushPendingAnswerBatch({ flushAll: true })).rejects.toThrow('Failed to fetch');
+
+            expect(manager.getPendingSyncQuestionIds()).toEqual([100]);
+            expect(state.pendingSyncCount).toBe(1);
+            expect(state.lastSyncError).toContain('Failed to fetch');
+        });
+
+        it('recovers partial legacy fallback success and requeues only remaining answers', async function () {
+            var state = createState();
+            var apiRequest = vi.fn().mockImplementation(function (path, options) {
+                if (path === 'submit_answers_batch') {
+                    var batchError = new Error('Batch unavailable');
+                    batchError.status = 503;
+                    throw batchError;
+                }
+
+                if (options.body.question_id === 100) {
+                    return Promise.resolve({
+                        question_id: 100,
+                        deferred: 0,
+                        score_awarded: 1
+                    });
+                }
+
+                var legacyError = new Error('Legacy unavailable');
+                legacyError.status = 503;
+                throw legacyError;
+            });
+            var manager = createAnswerSyncManager(createDeps(state, {
+                apiRequest: apiRequest,
+                questionAnswerPayload: function (q) { return q.answer; },
+                payloadSignature: function (payload) { return 'sig-' + payload; }
+            }));
+
+            manager.queueQuestionAnswer({ id: 100, answer: 'A' });
+            manager.queueQuestionAnswer({ id: 200, answer: 'B' });
+
+            await expect(manager.flushPendingAnswerBatch({ flushAll: true })).rejects.toThrow('Legacy unavailable');
+
+            expect(manager.getPendingSyncQuestionIds()).toEqual([200]);
+            expect(state.pendingSyncCount).toBe(1);
+        });
+
+        it('keeps answers buffered when diagnostics force pending sync', async function () {
+            var state = createState();
+            var apiRequest = vi.fn();
+            var diagnosticsManager = {
+                enabled: true,
+                isPendingSyncForced: vi.fn().mockReturnValue(true),
+                recordActionTrail: vi.fn(),
+                recordTimeline: vi.fn()
+            };
+            var manager = createAnswerSyncManager(createDeps(state, {
+                apiRequest: apiRequest,
+                diagnosticsManager: diagnosticsManager,
+                questionAnswerPayload: function (q) { return q.answer; },
+                payloadSignature: function (payload) { return 'sig-' + payload; }
+            }));
+
+            manager.queueQuestionAnswer({ id: 100, answer: 'A' });
+            var result = await manager.flushPendingAnswerBatch({ flushAll: true });
+
+            expect(apiRequest).not.toHaveBeenCalled();
+            expect(result).toEqual({
+                attempt_id: 42,
+                accepted_count: 0,
+                buffered: 1,
+                flushed: 0,
+                pending_count: 1,
+                items: []
+            });
+            expect(state.syncBlockingReason).toBe('forced_pending_sync');
+            expect(manager.getPendingSyncQuestionIds()).toEqual([100]);
+            expect(state.pendingSyncCount).toBe(1);
+        });
+    });
 });
