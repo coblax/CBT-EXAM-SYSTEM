@@ -135,6 +135,130 @@ export function createAuthStageManager(deps) {
         return Number(exam && exam.latest_attempt_finalize_pending) === 1;
     }
 
+    var EXAM_LIST_FILTERS = [
+        { key: 'all', label: 'Semua' },
+        { key: 'active', label: 'Aktif' },
+        { key: 'upcoming', label: 'Akan Datang' },
+        { key: 'completed', label: 'Selesai' }
+    ];
+
+    function normalizeExamListFilter(value) {
+        var filter = String(value || 'all').toLowerCase();
+        for (var index = 0; index < EXAM_LIST_FILTERS.length; index++) {
+            if (EXAM_LIST_FILTERS[index].key === filter) {
+                return filter;
+            }
+        }
+
+        return 'all';
+    }
+
+    function isExamCompletedFilterMatch(exam) {
+        var latestAttemptStatus = String(exam && exam.latest_attempt_status ? exam.latest_attempt_status : '').toLowerCase();
+        var availabilityReason = String(exam && exam.availability_reason ? exam.availability_reason : '').toLowerCase();
+        return latestAttemptStatus === 'completed'
+            || isExamLatestAttemptFinalizing(exam)
+            || availabilityReason === 'ended';
+    }
+
+    function isExamListFilterMatch(exam, filter) {
+        var normalizedFilter = normalizeExamListFilter(filter);
+        if (normalizedFilter === 'all') {
+            return true;
+        }
+
+        var latestAttemptStatus = String(exam && exam.latest_attempt_status ? exam.latest_attempt_status : '').toLowerCase();
+        var availabilityReason = String(exam && exam.availability_reason ? exam.availability_reason : '').toLowerCase();
+        var availableNow = Number(exam && exam.is_available_now ? exam.is_available_now : 0) === 1;
+        var completedMatch = isExamCompletedFilterMatch(exam);
+
+        if (normalizedFilter === 'completed') {
+            return completedMatch;
+        }
+        if (completedMatch) {
+            return false;
+        }
+        if (normalizedFilter === 'active') {
+            return latestAttemptStatus === 'in_progress' || availableNow;
+        }
+        if (normalizedFilter === 'upcoming') {
+            return availabilityReason === 'not_started';
+        }
+
+        return false;
+    }
+
+    function getFilteredExams(filter) {
+        var normalizedFilter = normalizeExamListFilter(filter);
+        return state.exams.filter(function (exam) {
+            return isExamListFilterMatch(exam, normalizedFilter);
+        });
+    }
+
+    function getExamListFilterCounts() {
+        var counts = {
+            all: state.exams.length,
+            active: 0,
+            upcoming: 0,
+            completed: 0
+        };
+
+        state.exams.forEach(function (exam) {
+            if (isExamListFilterMatch(exam, 'active')) {
+                counts.active += 1;
+            }
+            if (isExamListFilterMatch(exam, 'upcoming')) {
+                counts.upcoming += 1;
+            }
+            if (isExamListFilterMatch(exam, 'completed')) {
+                counts.completed += 1;
+            }
+        });
+
+        return counts;
+    }
+
+    function getExamListFilterLabel(filter) {
+        var normalizedFilter = normalizeExamListFilter(filter);
+        for (var index = 0; index < EXAM_LIST_FILTERS.length; index++) {
+            if (EXAM_LIST_FILTERS[index].key === normalizedFilter) {
+                return EXAM_LIST_FILTERS[index].label;
+            }
+        }
+
+        return 'Semua';
+    }
+
+    function renderExamListFilterControl(activeFilter, counts) {
+        return [
+            '<div class="cbt-exam-filter" role="tablist" aria-label="Filter ujian">',
+            EXAM_LIST_FILTERS.map(function (filter) {
+                var isActive = filter.key === activeFilter;
+                var classes = ['cbt-exam-filter-button'];
+                if (isActive) {
+                    classes.push('is-active');
+                }
+
+                return [
+                    '<button class="' + classes.join(' ') + '" data-action="set-exam-filter" data-filter="' + escapeHtml(filter.key) + '" type="button" role="tab" aria-selected="' + (isActive ? 'true' : 'false') + '" aria-pressed="' + (isActive ? 'true' : 'false') + '"' + (state.busy ? ' disabled' : '') + '>',
+                    '<span>' + escapeHtml(filter.label) + '</span>',
+                    '<strong>' + escapeHtml(String(counts[filter.key] || 0)) + '</strong>',
+                    '</button>'
+                ].join('');
+            }).join(''),
+            '</div>'
+        ].join('');
+    }
+
+    function renderExamListEmptyState(filter) {
+        return [
+            '<div class="cbt-exam-list-empty">',
+            '<strong>Tidak ada ujian pada filter ' + escapeHtml(getExamListFilterLabel(filter)) + '.</strong>',
+            '<span>Gunakan filter Semua untuk melihat daftar lengkap.</span>',
+            '</div>'
+        ].join('');
+    }
+
     function renderExamPickerMobileOption(exam) {
         var optionId = Number(exam && exam.id) || 0;
         var isActive = optionId === Number(state.selectedExamId);
@@ -210,6 +334,33 @@ export function createAuthStageManager(deps) {
             recordTimeline('exam:selected', 'Exam dipilih dari daftar.', {
                 attemptId: Number(state.attemptId) || 0,
                 selectedExamId: normalizedExamId,
+                stage: String(state.stage || '')
+            });
+        }
+        render();
+    }
+
+    function updateExamListFilter(filter) {
+        var normalizedFilter = normalizeExamListFilter(filter);
+        var filteredExams = getFilteredExams(normalizedFilter);
+        var selectedInFilter = filteredExams.some(function (exam) {
+            return Number(exam && exam.id) === Number(state.selectedExamId);
+        });
+
+        state.examListFilter = normalizedFilter;
+        state.examPickerMobileOpen = false;
+
+        if (!selectedInFilter && filteredExams.length > 0) {
+            state.selectedExamId = Number(filteredExams[0] && filteredExams[0].id) || 0;
+            state.examToken = '';
+        }
+
+        persistAuthSession();
+        if (typeof recordTimeline === 'function') {
+            recordTimeline('exam:filter', 'Filter daftar ujian diganti.', {
+                filter: normalizedFilter,
+                filteredCount: filteredExams.length,
+                selectedExamId: Number(state.selectedExamId) || 0,
                 stage: String(state.stage || '')
             });
         }
@@ -721,7 +872,10 @@ export function createAuthStageManager(deps) {
         var primaryActionLabel = state.busy
             ? (selectedAttemptFinalizing ? 'Memproses...' : (selectedExamCompleted ? 'Memuat...' : (selectedAttemptStatus === 'in_progress' ? 'Membuka...' : 'Memulai...')))
             : (selectedAttemptFinalizing ? 'Memproses...' : (selectedExamCompleted ? (selectedExamShowsResult ? 'Lihat Nilai' : 'Lihat Status') : (selectedAttemptStatus === 'in_progress' ? 'Lanjutkan Ujian' : 'Mulai Ujian')));
-        var examItems = state.exams.map(function (exam) {
+        var activeExamListFilter = normalizeExamListFilter(state.examListFilter);
+        var examListFilterCounts = getExamListFilterCounts();
+        var filteredExams = getFilteredExams(activeExamListFilter);
+        var examItems = filteredExams.map(function (exam) {
             var isActive = Number(exam.id) === Number(state.selectedExamId);
             var status = String(exam.status || '-');
             var duration = Number(exam.duration_minutes) || 0;
@@ -810,6 +964,9 @@ export function createAuthStageManager(deps) {
                 '</button>'
             ].join('');
         }).join('');
+        var examListContent = filteredExams.length > 0
+            ? examItems
+            : renderExamListEmptyState(activeExamListFilter);
         var selectedExamPickerLabel = hasSelectedExam
             ? formatExamPickerOptionLabel(selectedExam)
             : 'Pilih salah satu ujian';
@@ -817,21 +974,29 @@ export function createAuthStageManager(deps) {
         var selectedExamPickerDuration = hasSelectedExam ? (Number(selectedExam.duration_minutes) || 0) : 0;
         var selectedExamPickerNote = hasSelectedExam
             ? (selectedExamPickerStartsAt + ' | ' + (selectedExamPickerDuration > 0 ? (String(selectedExamPickerDuration) + ' menit') : 'Durasi belum diatur'))
-            : (String(state.exams.length) + ' ujian tersedia');
+            : (String(filteredExams.length) + ' dari ' + String(state.exams.length) + ' ujian tersedia');
+        var filteredExamCountLabel = filteredExams.length === state.exams.length
+            ? String(state.exams.length) + ' ujian'
+            : String(filteredExams.length) + ' dari ' + String(state.exams.length) + ' ujian';
         var examPickerDropdownClass = 'cbt-exam-picker-dropdown' + (state.examPickerMobileOpen ? ' is-open' : '');
-        var examPickerOptions = state.exams.map(function (exam) {
+        var examPickerOptions = filteredExams.map(function (exam) {
             return renderExamPickerMobileOption(exam);
         }).join('');
+        if (examPickerOptions === '') {
+            examPickerOptions = renderExamListEmptyState(activeExamListFilter);
+        }
+        var examListFilterControl = renderExamListFilterControl(activeExamListFilter, examListFilterCounts);
 
         return [
             '<div class="cbt-grid-2 cbt-confirm-stage-grid">',
             '<section class="cbt-card cbt-exam-picker-card">',
             '<h3 class="cbt-exam-picker-title">Pilih Ujian</h3>',
             '<p class="cbt-subtitle">Daftar ujian sesuai hak akses akun yang login.</p>',
+            examListFilterControl,
             '<div class="cbt-exam-picker-mobile">',
             '<div class="cbt-exam-picker-mobile-head">',
             '<p class="cbt-exam-picker-mobile-kicker">Pilih Cepat</p>',
-            '<span class="cbt-exam-picker-mobile-count">' + escapeHtml(String(state.exams.length)) + ' ujian</span>',
+            '<span class="cbt-exam-picker-mobile-count">' + escapeHtml(filteredExamCountLabel) + '</span>',
             '</div>',
             '<div class="cbt-field">',
             '<label id="cbt-exam-picker-mobile-label">Pilih Ujian</label>',
@@ -851,7 +1016,7 @@ export function createAuthStageManager(deps) {
             '</div>',
             '<p class="cbt-exam-picker-mobile-help">Pilih ujian dari panel ini untuk melihat ringkasan dan tombol aksi yang sesuai.</p>',
             '</div>',
-            '<div class="cbt-exam-list">' + examItems + '</div>',
+            '<div class="cbt-exam-list">' + examListContent + '</div>',
             '</section>',
             '<section class="cbt-card cbt-confirm-card cbt-confirm-card-simple">',
             '<p class="cbt-confirm-kicker">Siap Ujian</p>',
@@ -905,6 +1070,7 @@ export function createAuthStageManager(deps) {
     return {
         renderConfirmStage: renderConfirmStage,
         renderLoginStage: renderLoginStage,
+        updateExamListFilter: updateExamListFilter,
         updateSelectedExam: updateSelectedExam
     };
 }

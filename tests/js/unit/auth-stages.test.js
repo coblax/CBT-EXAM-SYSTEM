@@ -11,6 +11,7 @@ function createFixture(overrides = {}) {
         authProgressStatus: '',
         authProgressDetail: '',
         busy: false,
+        examListFilter: 'all',
         examPickerMobileOpen: false,
         examToken: '',
         exams: [],
@@ -230,6 +231,119 @@ describe('createAuthStageManager', function () {
         expect(html).toContain('2 ujian');
     });
 
+    it('renders exam filter tabs with category counts', function () {
+        var manager = createFixture({
+            exams: buildFilterExamList(),
+            selectedExamId: 101
+        });
+
+        var html = manager.renderConfirmStage();
+
+        expect(html).toContain('data-action="set-exam-filter" data-filter="all" type="button" role="tab" aria-selected="true" aria-pressed="true"><span>Semua</span><strong>7</strong>');
+        expect(html).toContain('data-action="set-exam-filter" data-filter="active" type="button" role="tab" aria-selected="false" aria-pressed="false"><span>Aktif</span><strong>2</strong>');
+        expect(html).toContain('data-action="set-exam-filter" data-filter="upcoming" type="button" role="tab" aria-selected="false" aria-pressed="false"><span>Akan Datang</span><strong>1</strong>');
+        expect(html).toContain('data-action="set-exam-filter" data-filter="completed" type="button" role="tab" aria-selected="false" aria-pressed="false"><span>Selesai</span><strong>3</strong>');
+    });
+
+    it('filters active exams in both desktop list and mobile dropdown', function () {
+        var manager = createFixture({
+            exams: buildFilterExamList(),
+            selectedExamId: 101,
+            state: {
+                examListFilter: 'active',
+                examPickerMobileOpen: true
+            }
+        });
+
+        var html = manager.renderConfirmStage();
+
+        expect((html.match(/data-action="select-exam"/g) || []).length).toBe(2);
+        expect((html.match(/data-action="select-exam-mobile"/g) || []).length).toBe(2);
+        expect(html).toContain('Ready Now');
+        expect(html).toContain('Continue Attempt');
+        expect(html).not.toContain('Future Exam');
+        expect(html).not.toContain('Completed Exam');
+        expect(html).not.toContain('Finalizing Exam');
+        expect(html).not.toContain('Ended Schedule');
+    });
+
+    it('filters upcoming exams by not_started availability reason', function () {
+        var manager = createFixture({
+            exams: buildFilterExamList(),
+            selectedExamId: 103,
+            state: {
+                examListFilter: 'upcoming',
+                examPickerMobileOpen: true
+            }
+        });
+
+        var html = manager.renderConfirmStage();
+
+        expect((html.match(/data-action="select-exam"/g) || []).length).toBe(1);
+        expect((html.match(/data-action="select-exam-mobile"/g) || []).length).toBe(1);
+        expect(html).toContain('Future Exam');
+        expect(html).not.toContain('Ready Now');
+        expect(html).not.toContain('Completed Exam');
+    });
+
+    it('filters completed exams including finalizing and ended schedules', function () {
+        var manager = createFixture({
+            exams: buildFilterExamList(),
+            selectedExamId: 104,
+            state: {
+                examListFilter: 'completed',
+                examPickerMobileOpen: true
+            }
+        });
+
+        var html = manager.renderConfirmStage();
+
+        expect((html.match(/data-action="select-exam"/g) || []).length).toBe(3);
+        expect((html.match(/data-action="select-exam-mobile"/g) || []).length).toBe(3);
+        expect(html).toContain('Completed Exam');
+        expect(html).toContain('Finalizing Exam');
+        expect(html).toContain('Ended Schedule');
+        expect(html).not.toContain('Ready Now');
+        expect(html).not.toContain('Future Exam');
+    });
+
+    it('auto-selects the first exam inside a newly selected non-empty filter', function () {
+        var manager = createFixture({
+            exams: buildFilterExamList(),
+            selectedExamId: 101
+        });
+
+        manager.updateExamListFilter('upcoming');
+        var html = manager.renderConfirmStage();
+
+        expect(html).toContain('aria-selected="true" aria-pressed="true"><span>Akan Datang</span><strong>1</strong>');
+        expect(html).toContain('<p class="cbt-confirm-selected-title">Future Exam</p>');
+    });
+
+    it('renders an empty filter state without clearing the selected exam', function () {
+        var manager = createFixture({
+            exams: [
+                buildFilterExam({
+                    id: 201,
+                    title: 'Locked Exam',
+                    is_available_now: 0,
+                    is_class_allowed: 0,
+                    is_within_schedule: 1
+                })
+            ],
+            selectedExamId: 201,
+            state: {
+                examListFilter: 'upcoming'
+            }
+        });
+
+        var html = manager.renderConfirmStage();
+
+        expect(html).toContain('Tidak ada ujian pada filter Akan Datang.');
+        expect((html.match(/data-action="select-exam"/g) || []).length).toBe(0);
+        expect(html).toContain('<p class="cbt-confirm-selected-title">Locked Exam</p>');
+    });
+
     it('renders the updated empty-state copy when no exam remains visible', function () {
         var manager = createFixture({
             exams: [],
@@ -403,6 +517,80 @@ describe('createAuthStageManager', function () {
         expect(html).not.toContain('Koneksi Redis');
     });
 });
+
+function buildFilterExam(overrides = {}) {
+    var id = Number(overrides.id) || 101;
+    return Object.assign({
+        availability_reason: '',
+        duration_minutes: 90,
+        id: id,
+        is_available_now: 1,
+        is_class_allowed: 1,
+        is_within_schedule: 1,
+        latest_attempt_finalize_pending: 0,
+        latest_attempt_id: 0,
+        latest_attempt_percentage: 0,
+        latest_attempt_status: '',
+        requires_token: 0,
+        show_student_result: 1,
+        starts_at: '2026-04-09 08:00:00',
+        status: 'publish',
+        subject_name: 'Biologi',
+        title: 'Exam ' + String(id)
+    }, overrides);
+}
+
+function buildFilterExamList() {
+    return [
+        buildFilterExam({
+            id: 101,
+            title: 'Ready Now'
+        }),
+        buildFilterExam({
+            id: 102,
+            title: 'Continue Attempt',
+            is_available_now: 0,
+            latest_attempt_id: 501,
+            latest_attempt_status: 'in_progress'
+        }),
+        buildFilterExam({
+            id: 103,
+            title: 'Future Exam',
+            availability_reason: 'not_started',
+            is_available_now: 0,
+            is_within_schedule: 0
+        }),
+        buildFilterExam({
+            id: 104,
+            title: 'Completed Exam',
+            is_available_now: 1,
+            latest_attempt_id: 502,
+            latest_attempt_status: 'completed'
+        }),
+        buildFilterExam({
+            id: 105,
+            title: 'Finalizing Exam',
+            is_available_now: 1,
+            latest_attempt_finalize_pending: 1,
+            latest_attempt_id: 503,
+            latest_attempt_status: 'in_progress'
+        }),
+        buildFilterExam({
+            id: 106,
+            title: 'Ended Schedule',
+            availability_reason: 'ended',
+            is_available_now: 0,
+            is_within_schedule: 0
+        }),
+        buildFilterExam({
+            id: 107,
+            title: 'Class Locked',
+            availability_reason: 'class_denied',
+            is_available_now: 0,
+            is_class_allowed: 0
+        })
+    ];
+}
 
 function buildDiagnosticResult(overrides = {}) {
     var diagnostics = Object.assign({

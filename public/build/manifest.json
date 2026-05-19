@@ -1,13 +1,13 @@
 {
-  "_frontend-dynamic-loader-SV_6J4t_.js": {
-    "file": "assets/frontend-dynamic-loader-SV_6J4t_.js",
+  "_frontend-dynamic-loader-D-3AL4n9.js": {
+    "file": "assets/frontend-dynamic-loader-D-3AL4n9.js",
     "name": "frontend-dynamic-loader",
     "dynamicImports": [
       "src/frontend/app/legacy-runtime.js",
-      "_frontend-stage-login-B5Pf9tcR.js",
-      "_frontend-stage-confirm-BGYyKibV.js",
+      "_frontend-stage-login-BN9_jk90.js",
+      "_frontend-stage-confirm-Bx8Uwh1f.js",
       "_frontend-stage-exam-DgpR8Zdz.js",
-      "_frontend-stage-result-C0ZRzfCD.js",
+      "_frontend-stage-result-Bqcqtylk.js",
       "_frontend-result-renderer-D_GnQEp8.js"
     ]
   },
@@ -26,8 +26,8 @@
     "file": "assets/frontend-exam-security-VByJI0p6.js",
     "name": "frontend-exam-security"
   },
-  "_frontend-exam-session-Bj9vLiIo.js": {
-    "file": "assets/frontend-exam-session-Bj9vLiIo.js",
+  "_frontend-exam-session-BV69AAFR.js": {
+    "file": "assets/frontend-exam-session-BV69AAFR.js",
     "name": "frontend-exam-session"
   },
   "_frontend-feature-calculator-BgCow04W.js": {
@@ -58,24 +58,24 @@
       "assets/frontend-result-renderer-CqUGQjBX.css"
     ]
   },
-  "_frontend-shell-auth-core-9VkmzDkK.js": {
-    "file": "assets/frontend-shell-auth-core-9VkmzDkK.js",
+  "_frontend-shell-auth-core-BcBnaqVz.js": {
+    "file": "assets/frontend-shell-auth-core-BcBnaqVz.js",
     "name": "frontend-shell-auth-core"
   },
-  "_frontend-stage-auth-core-CoO9BxQn.js": {
-    "file": "assets/frontend-stage-auth-core-CoO9BxQn.js",
+  "_frontend-stage-auth-core-BUtYk0ng.js": {
+    "file": "assets/frontend-stage-auth-core-BUtYk0ng.js",
     "name": "frontend-stage-auth-core",
     "imports": [
-      "_frontend-shell-auth-core-9VkmzDkK.js"
+      "_frontend-shell-auth-core-BcBnaqVz.js"
     ]
   },
-  "_frontend-stage-confirm-BGYyKibV.js": {
-    "file": "assets/frontend-stage-confirm-BGYyKibV.js",
+  "_frontend-stage-confirm-Bx8Uwh1f.js": {
+    "file": "assets/frontend-stage-confirm-Bx8Uwh1f.js",
     "name": "frontend-stage-confirm",
     "imports": [
       "_rolldown-runtime-CmsrGqdA.js",
-      "_frontend-stage-auth-core-CoO9BxQn.js",
-      "_frontend-shell-auth-core-9VkmzDkK.js"
+      "_frontend-stage-auth-core-BUtYk0ng.js",
+      "_frontend-shell-auth-core-BcBnaqVz.js"
     ]
   },
   "_frontend-stage-exam-D0Z99I7C.css": {
@@ -93,31 +93,31 @@
       "assets/frontend-stage-exam-D0Z99I7C.css"
     ]
   },
-  "_frontend-stage-login-B5Pf9tcR.js": {
-    "file": "assets/frontend-stage-login-B5Pf9tcR.js",
+  "_frontend-stage-login-BN9_jk90.js": {
+    "file": "assets/frontend-stage-login-BN9_jk90.js",
     "name": "frontend-stage-login",
     "imports": [
       "_rolldown-runtime-CmsrGqdA.js",
-      "_frontend-stage-auth-core-CoO9BxQn.js",
-      "_frontend-shell-auth-core-9VkmzDkK.js"
+      "_frontend-stage-auth-core-BUtYk0ng.js",
+      "_frontend-shell-auth-core-BcBnaqVz.js"
     ]
   },
-  "_frontend-stage-result-C0ZRzfCD.js": {
-    "file": "assets/frontend-stage-result-C0ZRzfCD.js",
+  "_frontend-stage-result-Bqcqtylk.js": {
+    "file": "assets/frontend-stage-result-Bqcqtylk.js",
     "name": "frontend-stage-result",
     "imports": [
       "_rolldown-runtime-CmsrGqdA.js",
-      "_frontend-dynamic-loader-SV_6J4t_.js",
-      "_frontend-shell-auth-core-9VkmzDkK.js",
-      "_frontend-stage-confirm-BGYyKibV.js"
+      "_frontend-dynamic-loader-D-3AL4n9.js",
+      "_frontend-shell-auth-core-BcBnaqVz.js",
+      "_frontend-stage-confirm-Bx8Uwh1f.js"
     ]
   },
-  "_frontend-student-shell-Dq3d7xah.js": {
-    "file": "assets/frontend-student-shell-Dq3d7xah.js",
+  "_frontend-student-shell-D58ykHg-.js": {
+    "file": "assets/frontend-student-shell-D58ykHg-.js",
     "name": "frontend-student-shell",
     "imports": [
-      "_frontend-dynamic-loader-SV_6J4t_.js",
-      "_frontend-shell-auth-core-9VkmzDkK.js"
+      "_frontend-dynamic-loader-D-3AL4n9.js",
+      "_frontend-shell-auth-core-BcBnaqVz.js"
     ]
   },
   "_math-render-D64Zi4PJ.js": {
@@ -488,19 +488,19 @@
     "isDynamicEntry": true
   },
   "src/frontend/app/legacy-runtime.js": {
-    "file": "assets/legacy-runtime-CH3WHNh8.js",
+    "file": "assets/legacy-runtime-DLjDlcmM.js",
     "name": "legacy-runtime",
     "src": "src/frontend/app/legacy-runtime.js",
     "isDynamicEntry": true,
     "imports": [
-      "_frontend-dynamic-loader-SV_6J4t_.js",
-      "_frontend-stage-auth-core-CoO9BxQn.js",
-      "_frontend-exam-session-Bj9vLiIo.js",
-      "_frontend-shell-auth-core-9VkmzDkK.js",
+      "_frontend-dynamic-loader-D-3AL4n9.js",
+      "_frontend-stage-auth-core-BUtYk0ng.js",
+      "_frontend-exam-session-BV69AAFR.js",
+      "_frontend-shell-auth-core-BcBnaqVz.js",
       "_frontend-exam-security-VByJI0p6.js",
-      "_frontend-student-shell-Dq3d7xah.js",
+      "_frontend-student-shell-D58ykHg-.js",
       "_frontend-exam-question-runtime-Drs0ryeV.js",
-      "_frontend-stage-confirm-BGYyKibV.js"
+      "_frontend-stage-confirm-Bx8Uwh1f.js"
     ],
     "dynamicImports": [
       "_frontend-exam-runtime-hLDRGtrG.js",
@@ -512,42 +512,42 @@
     ]
   },
   "src/frontend/app/runtime.js": {
-    "file": "assets/runtime-BO7XiSd5.js",
+    "file": "assets/runtime-GozHt_Wj.js",
     "name": "runtime",
     "src": "src/frontend/app/runtime.js",
     "isDynamicEntry": true,
     "imports": [
-      "_frontend-student-shell-Dq3d7xah.js"
+      "_frontend-student-shell-D58ykHg-.js"
     ]
   },
   "src/frontend/app/supervisor/runtime.js": {
-    "file": "assets/runtime-DIFFyIda.js",
+    "file": "assets/runtime-BOktb6hb.js",
     "name": "runtime",
     "src": "src/frontend/app/supervisor/runtime.js",
     "isDynamicEntry": true,
     "imports": [
-      "_frontend-stage-auth-core-CoO9BxQn.js",
-      "_frontend-shell-auth-core-9VkmzDkK.js"
+      "_frontend-stage-auth-core-BUtYk0ng.js",
+      "_frontend-shell-auth-core-BcBnaqVz.js"
     ],
     "css": [
       "assets/runtime-B_nQsRMm.css"
     ]
   },
   "src/frontend/main.js": {
-    "file": "assets/frontend-core-D6mu9-Pc.js",
+    "file": "assets/frontend-core-BPtCzlyL.js",
     "name": "frontend",
     "src": "src/frontend/main.js",
     "isEntry": true,
     "imports": [
-      "_frontend-dynamic-loader-SV_6J4t_.js",
-      "_frontend-shell-auth-core-9VkmzDkK.js"
+      "_frontend-dynamic-loader-D-3AL4n9.js",
+      "_frontend-shell-auth-core-BcBnaqVz.js"
     ],
     "dynamicImports": [
       "src/frontend/app/supervisor/runtime.js",
       "src/frontend/app/runtime.js"
     ],
     "css": [
-      "assets/frontend-CG6DBhf6.css"
+      "assets/frontend-8oaVICiN.css"
     ],
     "assets": [
       "assets/lexend-latin-600-normal-DdvlkEkX.woff2",

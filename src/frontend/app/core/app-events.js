@@ -56,6 +56,9 @@ export function createAppEventManager(deps) {
     var toggleTheme = deps.toggleTheme;
     var updateFontScale = deps.updateFontScale;
     var updateNavPanelPosition = deps.updateNavPanelPosition;
+    var updateExamListFilter = typeof deps.updateExamListFilter === 'function'
+        ? deps.updateExamListFilter
+        : null;
     var updateSelectedExam = deps.updateSelectedExam;
     var closeFinishConfirmModal = deps.closeFinishConfirmModal;
     var clearMessages = deps.clearMessages;
@@ -857,6 +860,13 @@ export function createAppEventManager(deps) {
                 if (activePickerOption instanceof HTMLButtonElement) {
                     activePickerOption.focus();
                 }
+            }
+            return true;
+        }
+
+        if (action === 'set-exam-filter') {
+            if (updateExamListFilter) {
+                updateExamListFilter(actionNode.getAttribute('data-filter'));
             }
             return true;
         }

@@ -59,6 +59,49 @@
         border-radius: 16px;
     }
 
+    .cbt-exam-filter {
+        display: flex;
+        gap: 6px;
+        margin-top: 8px;
+        padding: 0 1px 4px;
+        overflow-x: auto;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        scrollbar-width: none;
+    }
+
+    .cbt-exam-filter::-webkit-scrollbar {
+        display: none;
+    }
+
+    .cbt-exam-filter-button {
+        flex: 0 0 auto;
+        min-height: 28px;
+        padding: 0 8px;
+        border: 1px solid #d7e2ee;
+        border-radius: 999px;
+        background: #fff;
+        font-size: 10px;
+    }
+
+    .cbt-exam-filter-button strong {
+        min-width: 18px;
+        height: 18px;
+        padding: 0 5px;
+        font-size: 9px;
+    }
+
+    .cbt-web-shell.cbt-theme-dark .cbt-exam-filter {
+        background: transparent;
+        border: 0;
+    }
+
+    .cbt-web-shell.cbt-theme-dark .cbt-exam-filter-button {
+        border-color: rgba(148, 163, 184, 0.18);
+        background: rgba(15, 23, 42, 0.58);
+    }
+
     .cbt-exam-picker-card .cbt-exam-list {
         display: none;
     }

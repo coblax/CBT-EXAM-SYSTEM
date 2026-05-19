@@ -57,6 +57,12 @@ export async function mountConfirmStage(context, options) {
             return;
         }
 
+        if (action === 'set-exam-filter') {
+            event.preventDefault();
+            activeRuntime.authStageManager.updateExamListFilter(target.getAttribute('data-filter'));
+            return;
+        }
+
         if (action === 'view-result') {
             event.preventDefault();
             await viewResult(activeRuntime);

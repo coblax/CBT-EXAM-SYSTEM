@@ -1630,6 +1630,7 @@ export function bootstrapFrontendApp() {
     });
     var renderConfirmStage = authStageManager.renderConfirmStage;
     var renderLoginStage = authStageManager.renderLoginStage;
+    var updateExamListFilter = authStageManager.updateExamListFilter;
     var updateSelectedExam = authStageManager.updateSelectedExam;
     appShellManager = createAppShellManager({
         escapeHtml: escapeHtml,
@@ -1890,6 +1891,7 @@ export function bootstrapFrontendApp() {
         stageRuntimeManager: stageRuntimeManager,
         state: state,
         toggleTheme: toggleTheme,
+        updateExamListFilter: updateExamListFilter,
         updateFontScale: updateFontScale,
         updateNavPanelPosition: updateNavPanelPosition,
         updateSelectedExam: updateSelectedExam

@@ -220,6 +220,7 @@ export function createSessionLifecycleManager(deps) {
         clearQuestionRevisionRefreshState();
         bumpQuestionDataGeneration();
         clearAttemptUiSyncRuntimeState();
+        state.examListFilter = 'all';
         state.examPickerMobileOpen = false;
         state.examToken = '';
         state.attemptId = 0;
@@ -323,6 +324,7 @@ export function createSessionLifecycleManager(deps) {
         state.token = '';
         state.user = null;
         state.exams = [];
+        state.examListFilter = 'all';
         state.examPickerMobileOpen = false;
         state.selectedExamId = 0;
         state.examToken = '';

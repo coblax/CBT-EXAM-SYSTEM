@@ -97,6 +97,37 @@ describe('confirm runtime', function () {
         expect(persisted.selected_exam_id).toBe(16);
     });
 
+    it('applies the confirm exam filter and auto-selects the first matching exam', async function () {
+        var fixture = createRuntimeFixture();
+        mockFetchRoutes({
+            exams: [buildExamsPayload([
+                buildExam(15, { title: 'Matematika' }),
+                buildExam(16, {
+                    availability_reason: 'not_started',
+                    is_available_now: 0,
+                    is_within_schedule: 0,
+                    title: 'Fisika Besok'
+                })
+            ])]
+        });
+
+        var module = await import('../../../src/frontend/app/stages/confirm-runtime.js');
+        await module.mountConfirmStage(fixture.context, {});
+
+        var upcomingButton = fixture.root.querySelector('[data-action="set-exam-filter"][data-filter="upcoming"]');
+        expect(upcomingButton).not.toBe(null);
+        upcomingButton.dispatchEvent(new MouseEvent('click', {
+            bubbles: true,
+            cancelable: true
+        }));
+        await flushPromises();
+
+        expect(fixture.state.examListFilter).toBe('upcoming');
+        expect(fixture.state.selectedExamId).toBe(16);
+        expect(fixture.root.textContent).toContain('Fisika Besok');
+        expect(fixture.root.querySelectorAll('[data-action="select-exam"]')).toHaveLength(1);
+    });
+
     it('hands start exam to legacy with a one-shot intent payload', async function () {
         var fixture = createRuntimeFixture();
         fixture.context.loadLegacyRuntime = vi.fn(function (options) {

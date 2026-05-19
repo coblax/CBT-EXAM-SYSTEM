@@ -144,6 +144,7 @@ export function createInitialState(win) {
         token: '',
         user: null,
         exams: [],
+        examListFilter: 'all',
         examPickerMobileOpen: false,
         selectedExamId: 0,
         examToken: '',

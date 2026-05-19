@@ -377,6 +377,7 @@ export function createAuthenticatedStageRuntime(context, options) {
             state.token = '';
             state.user = null;
             state.exams = [];
+            state.examListFilter = 'all';
             state.selectedExamId = 0;
             state.examToken = '';
             state.result = null;
@@ -406,6 +407,7 @@ export function createAuthenticatedStageRuntime(context, options) {
         state.token = '';
         state.user = null;
         state.exams = [];
+        state.examListFilter = 'all';
         state.selectedExamId = 0;
         state.examToken = '';
         state.result = null;

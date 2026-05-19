@@ -481,6 +481,279 @@
     }
 }
 
+@media (min-width: 621px) {
+    body.cbt-exam-page.cbt-stage-confirm .cbt-container {
+        padding-bottom: 158px;
+    }
+
+    body.cbt-exam-page.cbt-stage-confirm .cbt-confirm-card-simple {
+        padding-bottom: 22px;
+    }
+
+    body.cbt-exam-page.cbt-stage-confirm .cbt-confirm-card-simple .cbt-confirm-field-note {
+        position: fixed;
+        left: 50%;
+        bottom: 84px;
+        z-index: 91;
+        width: min(1240px, calc(100vw - 28px));
+        margin: 0 !important;
+        padding: 10px 14px;
+        border-bottom-color: transparent;
+        border-radius: 16px 16px 0 0;
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow: none;
+        backdrop-filter: blur(14px);
+        transform: translateX(-50%);
+    }
+
+    body.cbt-exam-page.cbt-stage-confirm .cbt-confirm-card-simple .cbt-confirm-field-note .cbt-confirm-token-note {
+        display: block;
+        overflow: hidden;
+        text-align: left;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    body.cbt-exam-page.cbt-stage-confirm .cbt-confirm-card-simple > .cbt-alert {
+        position: fixed;
+        left: 50%;
+        bottom: 124px;
+        z-index: 92;
+        width: min(1240px, calc(100vw - 28px));
+        min-height: 42px;
+        margin: 0;
+        padding: 10px 14px;
+        align-items: center;
+        border-bottom-color: transparent;
+        border-radius: 16px 16px 0 0;
+        box-shadow: none;
+        backdrop-filter: blur(14px);
+        transform: translateX(-50%);
+        animation: cbt-confirm-floating-alert-in 160ms ease-out;
+    }
+
+    body.cbt-exam-page.cbt-stage-confirm .cbt-confirm-card-simple:has(> .cbt-alert) .cbt-confirm-field-note {
+        border-radius: 0;
+    }
+
+    body.cbt-exam-page.cbt-stage-confirm .cbt-confirm-card-simple .cbt-confirm-actions {
+        position: fixed;
+        left: 50%;
+        bottom: 18px;
+        z-index: 90;
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        gap: 10px;
+        width: min(1240px, calc(100vw - 28px));
+        margin: 0 !important;
+        padding: 10px;
+        border: 1px solid rgba(191, 216, 244, 0.86);
+        border-top-color: transparent;
+        border-radius: 0 0 16px 16px;
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
+        backdrop-filter: blur(14px);
+        transform: translateX(-50%);
+    }
+
+    body.cbt-exam-page.cbt-stage-confirm .cbt-confirm-card-simple .cbt-confirm-actions .cbt-button {
+        min-height: 44px;
+        border-radius: 10px;
+    }
+}
+
+@media (min-width: 621px) {
+    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
+    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
+    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple > .cbt-alert,
+    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple > .cbt-alert,
+    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-actions,
+    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-actions {
+        border-color: rgba(148, 163, 184, 0.22);
+        background: rgba(15, 23, 42, 0.94);
+        box-shadow: 0 18px 42px rgba(2, 6, 23, 0.38);
+    }
+
+    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
+    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
+    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple > .cbt-alert,
+    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple > .cbt-alert {
+        box-shadow: none;
+    }
+
+    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
+    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
+    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple > .cbt-alert,
+    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple > .cbt-alert,
+    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-actions,
+    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-actions {
+        border-top-color: rgba(148, 163, 184, 0.22);
+        border-bottom-color: rgba(148, 163, 184, 0.22);
+    }
+
+    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
+    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
+    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple > .cbt-alert,
+    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple > .cbt-alert {
+        border-bottom-color: transparent;
+    }
+
+    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-actions,
+    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-actions {
+        border-top-color: transparent;
+    }
+}
+
+@media (max-width: 620px) {
+    body.cbt-exam-page.cbt-stage-confirm .cbt-container {
+        padding-bottom: calc(174px + env(safe-area-inset-bottom, 0px));
+    }
+
+    body.cbt-exam-page.cbt-stage-confirm .cbt-confirm-card-simple {
+        padding-bottom: 18px;
+    }
+
+    body.cbt-exam-page.cbt-stage-confirm .cbt-confirm-card-simple .cbt-confirm-field-note {
+        position: fixed;
+        left: 10px;
+        right: 10px;
+        bottom: calc(107px + env(safe-area-inset-bottom, 0px));
+        z-index: 91;
+        max-width: 520px;
+        margin: 0 auto !important;
+        padding: 8px 10px;
+        border-bottom-color: transparent;
+        border-radius: 14px 14px 0 0;
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow: none;
+        backdrop-filter: blur(14px);
+    }
+
+    body.cbt-exam-page.cbt-stage-confirm .cbt-confirm-card-simple .cbt-confirm-field-note .cbt-confirm-token-note {
+        display: -webkit-box;
+        overflow: hidden;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        text-align: left;
+        font-size: 11px;
+        line-height: 1.45;
+    }
+
+    body.cbt-exam-page.cbt-stage-confirm .cbt-confirm-card-simple > .cbt-alert {
+        position: fixed;
+        left: 10px;
+        right: 10px;
+        bottom: calc(156px + env(safe-area-inset-bottom, 0px));
+        z-index: 92;
+        max-width: 520px;
+        min-height: 38px;
+        margin: 0 auto;
+        padding: 8px 10px;
+        align-items: center;
+        gap: 8px;
+        border-bottom-color: transparent;
+        border-radius: 14px 14px 0 0;
+        box-shadow: none;
+        backdrop-filter: blur(14px);
+        animation: cbt-confirm-floating-alert-in 160ms ease-out;
+    }
+
+    body.cbt-exam-page.cbt-stage-confirm .cbt-confirm-card-simple:has(> .cbt-alert) .cbt-confirm-field-note {
+        border-radius: 0;
+    }
+
+    body.cbt-exam-page.cbt-stage-confirm .cbt-confirm-card-simple > .cbt-alert .cbt-alert-copy {
+        font-size: 11px;
+        line-height: 1.3;
+    }
+
+    body.cbt-exam-page.cbt-stage-confirm .cbt-confirm-card-simple > .cbt-alert .cbt-alert-dismiss {
+        min-width: 26px;
+        min-height: 26px;
+        margin: -2px -2px -2px 0;
+    }
+
+    body.cbt-exam-page.cbt-stage-confirm .cbt-confirm-card-simple .cbt-confirm-actions {
+        position: fixed;
+        left: 10px;
+        right: 10px;
+        bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+        z-index: 90;
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) !important;
+        gap: 7px;
+        width: auto;
+        max-width: 520px;
+        margin: 0 auto !important;
+        padding: 8px;
+        border: 1px solid rgba(191, 216, 244, 0.86);
+        border-top-color: transparent;
+        border-radius: 0 0 14px 14px;
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow: 0 14px 32px rgba(15, 23, 42, 0.18);
+        backdrop-filter: blur(14px);
+    }
+
+    body.cbt-exam-page.cbt-stage-confirm .cbt-confirm-card-simple .cbt-confirm-actions .cbt-button {
+        min-height: 38px;
+        border-radius: 8px;
+        font-size: 10px;
+        line-height: 1;
+    }
+}
+
+@media (max-width: 620px) {
+    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
+    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
+    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple > .cbt-alert,
+    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple > .cbt-alert,
+    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-actions,
+    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-actions {
+        border-color: rgba(148, 163, 184, 0.22);
+        background: rgba(15, 23, 42, 0.94);
+        box-shadow: 0 14px 34px rgba(2, 6, 23, 0.38);
+    }
+
+    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
+    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
+    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple > .cbt-alert,
+    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple > .cbt-alert {
+        box-shadow: none;
+    }
+
+    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
+    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
+    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple > .cbt-alert,
+    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple > .cbt-alert,
+    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-actions,
+    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-actions {
+        border-top-color: rgba(148, 163, 184, 0.22);
+        border-bottom-color: rgba(148, 163, 184, 0.22);
+    }
+
+    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
+    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
+    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple > .cbt-alert,
+    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple > .cbt-alert {
+        border-bottom-color: transparent;
+    }
+
+    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-actions,
+    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-actions {
+        border-top-color: transparent;
+    }
+}
+
+@keyframes cbt-confirm-floating-alert-in {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
 .cbt-exam-picker-title {
     margin-bottom: 8px;
     font-size: clamp(22px, 2.3vw, 27px);
@@ -496,67 +769,193 @@
     color: #f8fafc;
 }
 
-.cbt-exam-item.cbt-exam-item-modern {
-    position: relative;
-    display: block;
+.cbt-exam-picker-card {
+    min-height: 0;
+}
+
+.cbt-exam-filter {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+    margin-top: 12px;
+    padding: 4px;
+    border: 1px solid #d7e2ee;
+    border-radius: 12px;
+    background: #f8fafc;
+}
+
+.cbt-exam-filter-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 0;
+    min-height: 32px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: #475569;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1;
+    text-align: center;
+    transition: background-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.cbt-exam-filter-button span {
+    min-width: 0;
     overflow: hidden;
-    padding: 16px 16px 15px 18px;
-    border-radius: 18px;
-    border: 1px solid #dbe7f5;
-    background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cbt-exam-filter-button strong {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: #edf2f7;
+    color: #1d4ed8;
+    font-size: 10px;
+    line-height: 1;
+}
+
+.cbt-exam-filter-button:hover:not(:disabled),
+.cbt-exam-filter-button:focus-visible {
+    background: #edf6ff;
+    color: #1d4ed8;
+    outline: 0;
+}
+
+.cbt-exam-filter-button.is-active {
+    background: #eaf3ff;
+    color: #1d4ed8;
+    box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.16);
+}
+
+.cbt-exam-filter-button.is-active strong {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.cbt-exam-filter-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+.cbt-exam-picker-card .cbt-exam-list {
+    max-height: min(56vh, 520px);
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 3px;
+    scrollbar-gutter: stable;
+}
+
+.cbt-exam-picker-card .cbt-exam-list::-webkit-scrollbar,
+.cbt-exam-picker-menu::-webkit-scrollbar {
+    width: 8px;
+}
+
+.cbt-exam-picker-card .cbt-exam-list::-webkit-scrollbar-thumb,
+.cbt-exam-picker-menu::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: #cbd5e1;
+}
+
+.cbt-exam-list-empty {
+    display: grid;
+    gap: 4px;
+    padding: 14px;
+    border: 1px dashed #bfd8f4;
+    border-radius: 12px;
+    background: rgba(238, 246, 255, 0.72);
+    color: #35506b;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.cbt-exam-list-empty strong {
+    color: #102a43;
+    font-size: 13px;
+}
+
+.cbt-exam-picker-menu .cbt-exam-list-empty {
+    margin: 2px;
+}
+
+.cbt-exam-picker-card .cbt-exam-list .cbt-exam-item.cbt-exam-item-modern {
+    position: relative;
+    display: grid;
+    grid-template-rows: auto auto;
+    align-content: center;
+    gap: 6px;
+    min-height: 64px;
+    height: auto;
+    overflow: visible;
+    padding: 10px 12px 10px 16px;
+    border-radius: 10px;
+    border: 1px solid #d8e3ef;
+    background: #fff;
     text-align: left;
-    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.06);
+    box-shadow: none;
+    box-sizing: border-box;
     transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
 }
 
-.cbt-exam-item.cbt-exam-item-modern::before {
+.cbt-exam-picker-card .cbt-exam-list .cbt-exam-item.cbt-exam-item-modern::before {
     content: "";
     position: absolute;
-    inset: 14px auto 14px 0;
-    width: 5px;
+    inset: 10px auto 10px 0;
+    width: 3px;
     border-radius: 999px;
-    background: linear-gradient(180deg, #60a5fa 0%, #2563eb 100%);
+    background: #2563eb;
     opacity: 0;
     transition: opacity 0.16s ease;
 }
 
-.cbt-exam-item.cbt-exam-item-modern:hover {
+.cbt-exam-picker-card .cbt-exam-list .cbt-exam-item.cbt-exam-item-modern:hover {
     transform: translateY(-1px);
-    border-color: #bfd8f4;
-    background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
-    box-shadow: 0 16px 28px rgba(37, 99, 235, 0.08);
+    border-color: #b9d1ea;
+    background: #f8fbff;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
 }
 
-.cbt-exam-item.cbt-exam-item-modern.is-active {
-    border-color: #93c5fd;
-    background: linear-gradient(180deg, #ffffff 0%, #f4f9ff 100%);
-    box-shadow: 0 18px 30px rgba(37, 99, 235, 0.12);
+.cbt-exam-picker-card .cbt-exam-list .cbt-exam-item.cbt-exam-item-modern.is-active {
+    border-color: #60a5fa;
+    background: #eff6ff;
+    box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.08);
 }
 
-.cbt-exam-item.cbt-exam-item-modern.is-active::before {
+.cbt-exam-picker-card .cbt-exam-list .cbt-exam-item.cbt-exam-item-modern.is-active::before {
     opacity: 1;
 }
 
 .cbt-exam-card-head {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
-    gap: 12px;
+    gap: 10px;
 }
 
 .cbt-exam-card-title {
     flex: 1 1 auto;
     min-width: 0;
     margin: 0;
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 800;
-    line-height: 1.2;
-    letter-spacing: -0.01em;
+    line-height: 18px;
+    letter-spacing: 0;
     color: #102a43;
-    display: -webkit-box;
-    -webkit-line-clamp: 1;
-    -webkit-box-orient: vertical;
+    display: block;
     overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .cbt-exam-card-status {
@@ -564,15 +963,16 @@
     align-items: center;
     justify-content: center;
     flex: 0 0 auto;
-    min-height: 28px;
-    padding: 0 11px;
+    height: 20px;
+    min-height: 20px;
+    padding: 0 8px;
     border-radius: 999px;
-    border: 1px solid #dbe7f5;
-    background: #f8fbff;
+    border: 1px solid #d7e2ee;
+    background: #f8fafc;
     color: #35506b;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
-    line-height: 1;
+    line-height: 18px;
     white-space: nowrap;
 }
 
@@ -589,29 +989,31 @@
 }
 
 .cbt-exam-card-chips {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
-    gap: 8px;
-    margin-top: 14px;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    margin-top: 0;
     width: 100%;
+    min-height: 18px;
 }
 
 .cbt-exam-card-chip {
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    gap: 7px;
-    width: 100%;
+    justify-content: flex-start;
+    gap: 5px;
+    width: auto;
     min-width: 0;
-    min-height: 30px;
-    padding: 0 11px;
-    border-radius: 12px;
-    border: 1px solid #e2ebf5;
-    background: #f8fbff;
-    color: #35506b;
-    font-size: 11px;
+    min-height: 18px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: #64748b;
+    font-size: 10px;
     font-weight: 700;
-    line-height: 1;
+    line-height: 18px;
 }
 
 .cbt-exam-card-chip-label {
@@ -625,9 +1027,9 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 14px;
-    height: 14px;
-    flex: 0 0 14px;
+    width: 12px;
+    height: 12px;
+    flex: 0 0 12px;
     color: currentColor;
 }
 
@@ -642,50 +1044,60 @@
 }
 
 .cbt-exam-card-chip.is-accent {
-    border-color: #bfd8f4;
-    background: #eef6ff;
     color: #1d4ed8;
 }
 
 .cbt-exam-card-chip.is-soft {
-    border-color: #e2ebf5;
-    background: #f8fafc;
     color: #52667b;
 }
 
 .cbt-exam-card-chip.is-ready {
-    border-color: rgba(37, 99, 235, 0.18);
-    background: rgba(37, 99, 235, 0.08);
     color: #1d4ed8;
 }
 
 .cbt-exam-card-chip.is-warn {
-    border-color: rgba(245, 158, 11, 0.24);
-    background: rgba(245, 158, 11, 0.1);
     color: #b45309;
 }
 
 .cbt-exam-card-chip.is-success {
-    border-color: rgba(34, 197, 94, 0.22);
-    background: rgba(34, 197, 94, 0.1);
     color: #15803d;
 }
 
-.cbt-web-shell.cbt-theme-dark .cbt-exam-item.cbt-exam-item-modern {
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-card .cbt-exam-list .cbt-exam-item.cbt-exam-item-modern {
     border-color: rgba(255, 255, 255, 0.08);
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.02));
-    box-shadow: 0 16px 30px rgba(0, 0, 0, 0.22);
+    background: rgba(15, 23, 42, 0.44);
+    box-shadow: none;
 }
 
-.cbt-web-shell.cbt-theme-dark .cbt-exam-item.cbt-exam-item-modern:hover {
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-card .cbt-exam-list .cbt-exam-item.cbt-exam-item-modern:hover {
     border-color: rgba(96, 165, 250, 0.22);
-    background: linear-gradient(180deg, rgba(37, 99, 235, 0.12), rgba(255, 255, 255, 0.03));
+    background: rgba(30, 41, 59, 0.62);
 }
 
-.cbt-web-shell.cbt-theme-dark .cbt-exam-item.cbt-exam-item-modern.is-active {
+.cbt-web-shell.cbt-theme-dark .cbt-exam-picker-card .cbt-exam-list .cbt-exam-item.cbt-exam-item-modern.is-active {
     border-color: rgba(96, 165, 250, 0.3);
-    background: linear-gradient(180deg, rgba(37, 99, 235, 0.16), rgba(255, 255, 255, 0.04));
-    box-shadow: 0 18px 32px rgba(0, 0, 0, 0.28);
+    background: rgba(37, 99, 235, 0.16);
+    box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.1);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-exam-picker-card .cbt-exam-list .cbt-exam-item.cbt-exam-item-modern,
+.cbt-web-shell.cbt-theme-light .cbt-exam-picker-card .cbt-exam-list .cbt-exam-item.cbt-exam-item-modern.is-in-progress,
+.cbt-web-shell.cbt-theme-light .cbt-exam-picker-card .cbt-exam-list .cbt-exam-item.cbt-exam-item-modern.is-completed {
+    background: #fff;
+    border-color: #d8e3ef;
+    box-shadow: none;
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-exam-picker-card .cbt-exam-list .cbt-exam-item.cbt-exam-item-modern:hover {
+    background: #f8fbff;
+    border-color: #b9d1ea;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+}
+
+.cbt-web-shell.cbt-theme-light .cbt-exam-picker-card .cbt-exam-list .cbt-exam-item.cbt-exam-item-modern.is-active {
+    background: #eff6ff;
+    border-color: #60a5fa;
+    box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.08);
 }
 
 .cbt-web-shell.cbt-theme-dark .cbt-exam-card-title {
@@ -711,14 +1123,10 @@
 }
 
 .cbt-web-shell.cbt-theme-dark .cbt-exam-card-chip {
-    border-color: rgba(255, 255, 255, 0.08);
-    background: rgba(255, 255, 255, 0.04);
     color: #d7e3f4;
 }
 
 .cbt-web-shell.cbt-theme-dark .cbt-exam-card-chip.is-accent {
-    border-color: rgba(96, 165, 250, 0.24);
-    background: rgba(37, 99, 235, 0.16);
     color: #bfdbfe;
 }
 
@@ -727,21 +1135,55 @@
 }
 
 .cbt-web-shell.cbt-theme-dark .cbt-exam-card-chip.is-ready {
-    border-color: rgba(96, 165, 250, 0.22);
-    background: rgba(37, 99, 235, 0.16);
     color: #bfdbfe;
 }
 
 .cbt-web-shell.cbt-theme-dark .cbt-exam-card-chip.is-warn {
-    border-color: rgba(245, 158, 11, 0.22);
-    background: rgba(245, 158, 11, 0.14);
     color: #fbbf24;
 }
 
 .cbt-web-shell.cbt-theme-dark .cbt-exam-card-chip.is-success {
-    border-color: rgba(74, 222, 128, 0.2);
-    background: rgba(34, 197, 94, 0.14);
     color: #86efac;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-filter {
+    border-color: rgba(255, 255, 255, 0.08);
+    background: rgba(15, 23, 42, 0.52);
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-filter-button {
+    color: #b9c4d1;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-filter-button strong {
+    background: rgba(37, 99, 235, 0.16);
+    color: #bfdbfe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-filter-button:hover:not(:disabled),
+.cbt-web-shell.cbt-theme-dark .cbt-exam-filter-button:focus-visible {
+    background: rgba(37, 99, 235, 0.16);
+    color: #bfdbfe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-filter-button.is-active {
+    background: rgba(37, 99, 235, 0.22);
+    color: #bfdbfe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-filter-button.is-active strong {
+    background: rgba(96, 165, 250, 0.18);
+    color: #dbeafe;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-list-empty {
+    border-color: rgba(96, 165, 250, 0.2);
+    background: rgba(37, 99, 235, 0.1);
+    color: #b9c4d1;
+}
+
+.cbt-web-shell.cbt-theme-dark .cbt-exam-list-empty strong {
+    color: #f8fafc;
 }
 
 @media (min-width: 1081px) {
