@@ -1630,6 +1630,37 @@ Catatan verifikasi:
 - `maxmemory_policy` harus `noeviction`.
 - Jika command `sudo -u www-data redis-cli -s /var/run/redis/redis.sock PING` gagal `Permission denied`, pastikan user `www-data` bisa mengakses socket Redis, misalnya lewat group `redis`, lalu restart Redis/PHP-FPM.
 
+Jika muncul error socket seperti ini:
+
+```text
+Could not connect to Redis at /var/run/redis/redis.sock: Permission denied
+```
+
+Perbaiki permission socket Redis:
+
+```bash
+ls -l /var/run/redis/redis.sock
+getent group redis
+sudo usermod -aG redis www-data
+sudo systemctl restart redis-server
+
+# Sesuaikan versi PHP-FPM jika bukan 8.3.
+sudo systemctl restart php8.3-fpm
+
+sudo -u www-data redis-cli -s /var/run/redis/redis.sock PING
+```
+
+Output akhir yang diharapkan:
+
+```text
+PONG
+```
+
+Catatan:
+- Jika `php8.3-fpm` tidak ada, cek unit PHP-FPM aktif dengan `systemctl list-units "php*-fpm.service" --no-pager`.
+- Command `redis-cli -s /var/run/redis/redis.sock PING` tanpa `sudo -u www-data` bisa tetap `Permission denied` jika user SSH Anda belum masuk group `redis`. Yang penting untuk WordPress adalah test sebagai `www-data` menghasilkan `PONG`.
+- Jika ingin user SSH juga bisa test lewat socket, jalankan `sudo usermod -aG redis $USER`, lalu logout/login ulang.
+
 ### 18.4 Tuning Global Nginx
 
 ```bash
