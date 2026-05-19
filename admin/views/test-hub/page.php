@@ -639,6 +639,9 @@ if (!defined('ABSPATH')) {
         .cbt-test-hub-health-box.is-collapsed .cbt-test-hub-health-detail {
             display: none;
         }
+        [data-cbt-test-hub-collapsible].is-collapsed [data-cbt-test-hub-collapsible-body] {
+            display: none;
+        }
         .cbt-test-hub-health-list {
             display: grid;
             gap: 8px;
@@ -1437,6 +1440,38 @@ if (!defined('ABSPATH')) {
             display: grid;
             gap: 10px;
         }
+        .cbt-test-hub-inventory-detail {
+            display: grid;
+            gap: 12px;
+        }
+        .cbt-test-hub-inventory-list {
+            display: grid;
+            gap: 10px;
+        }
+        .cbt-test-hub-inventory-pagination {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap;
+            padding: 10px 12px;
+            border-radius: 12px;
+            border: 1px solid #dbe5ef;
+            background: #f8fbff;
+        }
+        .cbt-test-hub-inventory-pagination[hidden] {
+            display: none;
+        }
+        .cbt-test-hub-inventory-page-status {
+            color: #475569;
+            font-size: 12px;
+            font-weight: 700;
+        }
+        .cbt-test-hub-inventory-page-actions {
+            display: inline-flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
         .cbt-test-hub-item-run-command {
             padding: 12px;
             border-radius: 12px;
@@ -1860,11 +1895,14 @@ if (!defined('ABSPATH')) {
                 </div>
             </div>
 
-            <div class="cbt-test-hub-artifact-box" data-cbt-test-hub-refresh-area="unit-inventory" aria-busy="false">
+            <div class="cbt-test-hub-artifact-box<?php echo $unit_test_inventory_failed_count > 0 ? '' : ' is-collapsed'; ?>" data-cbt-test-hub-refresh-area="unit-inventory" data-cbt-test-hub-collapsible="unit-inventory" data-cbt-test-hub-collapsible-label="Unit Test Inventory" data-cbt-test-hub-collapsible-default="<?php echo $unit_test_inventory_failed_count > 0 ? 'open' : 'collapsed'; ?>" aria-busy="false">
                 <p class="cbt-test-hub-loading-status" aria-live="polite"><span class="cbt-test-hub-loading-spinner" aria-hidden="true"></span><span>Memperbarui inventory unit test...</span></p>
-                <div>
-                    <strong>Unit Test Inventory</strong>
-                    <p>Inventory ini discan otomatis dari <code>tests/php/unit</code> dan <code>tests/js/unit</code>, lalu dipetakan ke area Test Hub. Checklist curated tetap dipakai untuk narasi, sementara inventory ini menjadi daftar lengkap file test yang bisa dijalankan satu per satu.</p>
+                <div class="cbt-test-hub-health-head">
+                    <div>
+                        <strong>Unit Test Inventory</strong>
+                        <p>Inventory ini discan otomatis dari <code>tests/php/unit</code> dan <code>tests/js/unit</code>, lalu dipetakan ke area Test Hub. Checklist curated tetap dipakai untuk narasi, sementara inventory ini menjadi daftar lengkap file test yang bisa dijalankan satu per satu.</p>
+                    </div>
+                    <button type="button" class="cbt-test-hub-health-toggle" data-cbt-test-hub-collapse-toggle aria-controls="cbt-test-hub-unit-inventory-detail" aria-expanded="<?php echo $unit_test_inventory_failed_count > 0 ? 'true' : 'false'; ?>" aria-label="<?php echo esc_attr($unit_test_inventory_failed_count > 0 ? 'Sembunyikan detail Unit Test Inventory' : 'Tampilkan detail Unit Test Inventory'); ?>" title="<?php echo esc_attr($unit_test_inventory_failed_count > 0 ? 'Sembunyikan detail Unit Test Inventory' : 'Tampilkan detail Unit Test Inventory'); ?>"></button>
                 </div>
                 <div class="cbt-test-hub-artifact-list">
                     <span class="cbt-test-hub-artifact-item"><span>Total file</span><span class="cbt-test-hub-artifact-item-status"><?php echo esc_html((string) $unit_test_inventory_total_count); ?></span></span>
@@ -1874,10 +1912,18 @@ if (!defined('ABSPATH')) {
                     <span class="cbt-test-hub-artifact-item"><span>Auto-mapped</span><span class="cbt-test-hub-artifact-item-status"><?php echo esc_html((string) $unit_test_inventory_auto_mapped_count); ?></span></span>
                     <span class="cbt-test-hub-artifact-item<?php echo $unit_test_inventory_failed_count > 0 ? '' : ' is-missing'; ?>"><span>Failed latest</span><span class="cbt-test-hub-artifact-item-status"><?php echo esc_html((string) $unit_test_inventory_failed_count); ?></span></span>
                 </div>
-                <?php if (empty($unit_test_inventory)): ?>
-                    <div class="cbt-test-hub-item-meta-empty">Belum ada file unit test yang ditemukan.</div>
-                <?php else: ?>
-                    <div class="cbt-test-hub-item-run-list">
+                <div class="cbt-test-hub-inventory-detail" id="cbt-test-hub-unit-inventory-detail" data-cbt-test-hub-collapsible-body aria-hidden="<?php echo $unit_test_inventory_failed_count > 0 ? 'false' : 'true'; ?>">
+                    <?php if (empty($unit_test_inventory)): ?>
+                        <div class="cbt-test-hub-item-meta-empty">Belum ada file unit test yang ditemukan.</div>
+                    <?php else: ?>
+                        <div class="cbt-test-hub-inventory-pagination" data-unit-inventory-pagination>
+                            <span class="cbt-test-hub-inventory-page-status" data-unit-inventory-page-status>Menyiapkan daftar inventory...</span>
+                            <span class="cbt-test-hub-inventory-page-actions">
+                                <button type="button" class="button button-secondary" data-unit-inventory-page-prev>Previous</button>
+                                <button type="button" class="button button-secondary" data-unit-inventory-page-next>Next</button>
+                            </span>
+                        </div>
+                        <div class="cbt-test-hub-inventory-list" data-unit-inventory-list data-page-size="25">
                         <?php foreach ($unit_test_inventory as $inventory_item): ?>
                             <?php
                             $inventory_id = sanitize_key((string) ($inventory_item['id'] ?? ''));
@@ -1885,8 +1931,9 @@ if (!defined('ABSPATH')) {
                             $inventory_form_id = 'cbt-test-hub-inventory-run-' . $inventory_id;
                             $inventory_has_failure = !empty($inventory_item['has_failed_run_results']);
                             $inventory_has_results = !empty($inventory_item['run_results']);
+                            $inventory_state = $inventory_has_failure ? 'failed' : ($inventory_has_results ? 'result' : 'idle');
                             ?>
-                            <details class="cbt-test-hub-item-run-command" <?php echo $inventory_has_failure ? 'open' : ''; ?>>
+                            <details class="cbt-test-hub-item-run-command" data-unit-inventory-item data-unit-inventory-state="<?php echo esc_attr($inventory_state); ?>" <?php echo $inventory_has_failure ? 'open' : ''; ?>>
                                 <summary>
                                     <span>
                                         <strong><?php echo esc_html((string) ($inventory_item['basename'] ?? 'Unit Test File')); ?></strong>
@@ -1973,8 +2020,9 @@ if (!defined('ABSPATH')) {
                                 </div>
                             </details>
                         <?php endforeach; ?>
-                    </div>
-                <?php endif; ?>
+                        </div>
+                    <?php endif; ?>
+                </div>
             </div>
 
             <div data-cbt-test-hub-refresh-area="checklist" aria-busy="false">
@@ -2836,7 +2884,10 @@ if (!defined('ABSPATH')) {
             }
             if (toggle instanceof HTMLButtonElement) {
                 toggle.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
-                const controlLabel = String(toggle.getAttribute('aria-controls') || '').indexOf('e2e') >= 0 ? 'E2E Readiness' : 'Runner Health';
+                const explicitLabel = String(panel.getAttribute('data-cbt-test-hub-collapsible-label') || '').trim();
+                const controlLabel = explicitLabel !== ''
+                    ? explicitLabel
+                    : (String(toggle.getAttribute('aria-controls') || '').indexOf('e2e') >= 0 ? 'E2E Readiness' : 'Runner Health');
                 const actionLabel = isCollapsed ? 'Tampilkan detail ' + controlLabel : 'Sembunyikan detail ' + controlLabel;
                 toggle.setAttribute('aria-label', actionLabel);
                 toggle.setAttribute('title', actionLabel);
@@ -2872,6 +2923,90 @@ if (!defined('ABSPATH')) {
                 toggle.addEventListener('click', function () {
                     setCollapsibleState(panel, !panel.classList.contains('is-collapsed'), true);
                 });
+            });
+        };
+
+        const bindUnitTestInventoryPagination = function () {
+            document.querySelectorAll('[data-unit-inventory-list]').forEach(function (list) {
+                if (!(list instanceof HTMLElement)) {
+                    return;
+                }
+
+                const items = Array.prototype.slice.call(list.querySelectorAll('[data-unit-inventory-item]')).filter(function (item) {
+                    return item instanceof HTMLElement;
+                });
+                const rawPageSize = Number.parseInt(String(list.getAttribute('data-page-size') || '25'), 10);
+                const pageSize = Number.isFinite(rawPageSize) && rawPageSize > 0 ? rawPageSize : 25;
+                const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+                const container = list.parentElement;
+                const pagination = container instanceof HTMLElement ? container.querySelector('[data-unit-inventory-pagination]') : null;
+                const status = pagination instanceof HTMLElement ? pagination.querySelector('[data-unit-inventory-page-status]') : null;
+                const prevButton = pagination instanceof HTMLElement ? pagination.querySelector('[data-unit-inventory-page-prev]') : null;
+                const nextButton = pagination instanceof HTMLElement ? pagination.querySelector('[data-unit-inventory-page-next]') : null;
+
+                const findPreferredPage = function () {
+                    let preferredIndex = items.findIndex(function (item) {
+                        return item.getAttribute('data-unit-inventory-state') === 'failed';
+                    });
+                    if (preferredIndex < 0) {
+                        preferredIndex = items.findIndex(function (item) {
+                            return item.getAttribute('data-unit-inventory-state') === 'result';
+                        });
+                    }
+
+                    return preferredIndex >= 0 ? Math.floor(preferredIndex / pageSize) + 1 : 1;
+                };
+
+                const normalizePage = function (page) {
+                    const parsed = Number.parseInt(String(page || ''), 10);
+                    if (!Number.isFinite(parsed)) {
+                        return findPreferredPage();
+                    }
+
+                    return Math.max(1, Math.min(totalPages, parsed));
+                };
+
+                const renderPage = function (page) {
+                    const currentPage = normalizePage(page);
+                    const startIndex = (currentPage - 1) * pageSize;
+                    const endIndex = Math.min(items.length, startIndex + pageSize);
+
+                    items.forEach(function (item, index) {
+                        item.hidden = index < startIndex || index >= endIndex;
+                    });
+
+                    list.dataset.unitInventoryPage = String(currentPage);
+                    if (pagination instanceof HTMLElement) {
+                        pagination.hidden = items.length <= pageSize;
+                    }
+                    if (status instanceof HTMLElement) {
+                        status.textContent = items.length > 0
+                            ? 'Menampilkan ' + (startIndex + 1) + '-' + endIndex + ' dari ' + items.length + ' file'
+                            : 'Belum ada file unit test.';
+                    }
+                    if (prevButton instanceof HTMLButtonElement) {
+                        prevButton.disabled = currentPage <= 1;
+                    }
+                    if (nextButton instanceof HTMLButtonElement) {
+                        nextButton.disabled = currentPage >= totalPages;
+                    }
+                };
+
+                if (list.dataset.unitInventoryPaginationBound !== '1') {
+                    list.dataset.unitInventoryPaginationBound = '1';
+                    if (prevButton instanceof HTMLButtonElement) {
+                        prevButton.addEventListener('click', function () {
+                            renderPage(normalizePage(list.dataset.unitInventoryPage) - 1);
+                        });
+                    }
+                    if (nextButton instanceof HTMLButtonElement) {
+                        nextButton.addEventListener('click', function () {
+                            renderPage(normalizePage(list.dataset.unitInventoryPage) + 1);
+                        });
+                    }
+                }
+
+                renderPage(list.dataset.unitInventoryPage || findPreferredPage());
             });
         };
 
@@ -3615,6 +3750,7 @@ if (!defined('ABSPATH')) {
             bindUnitTestTabs();
             bindChecklistTabs();
             bindCollapsibleHealthPanels();
+            bindUnitTestInventoryPagination();
             bindBannerClose();
             bindItemRunButtons();
             bindAsyncForms();

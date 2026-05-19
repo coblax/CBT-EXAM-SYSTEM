@@ -580,6 +580,10 @@ final class TestHubViewRenderTest extends TestCase
         ]);
 
         self::assertStringContainsString('Unit Test Inventory', $html);
+        self::assertStringContainsString('data-cbt-test-hub-collapsible="unit-inventory"', $html);
+        self::assertStringContainsString('data-unit-inventory-pagination', $html);
+        self::assertStringContainsString('data-unit-inventory-list data-page-size="25"', $html);
+        self::assertStringContainsString('data-unit-inventory-page-next', $html);
         self::assertStringContainsString('tests/php/unit/IncidentReportTest.php', $html);
         self::assertStringContainsString('Auto-mapped', $html);
         self::assertStringContainsString('Run File', $html);
