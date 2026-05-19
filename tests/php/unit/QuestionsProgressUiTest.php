@@ -62,12 +62,18 @@ final class QuestionsProgressUiTest extends TestCase
         foreach ([
             'startQuestionProgress',
             'completeQuestionProgress',
+            'getQuestionTabPanels().forEach',
+            'function getQuestionListPanel()',
+            'const currentPanel = getQuestionListPanel();',
             'replaceQuestionRefreshAreas',
             'runQuestionLocalAction',
             'bindQuestionLocalActions();',
             'bindQuestionContinuations();',
             "questionContinuationInFlight = false;\n                            bindQuestionContinuations();",
             'cbt_questions_local_refresh',
+            'cbtLocalActionInFlight',
+            'cbtListFilterBound',
+            'cbtListAsyncBound',
             'showQuestionLocalRefreshError',
         ] as $needle) {
             self::assertStringContainsString($needle, $this->viewSource);

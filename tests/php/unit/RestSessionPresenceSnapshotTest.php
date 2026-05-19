@@ -156,7 +156,7 @@ final class RestSessionPresenceSnapshotTest extends TestCase
             115 => [
                 'id' => 115,
                 'exam_id' => 17,
-                'student_id' => 8,
+                'student_id' => 7,
                 'status' => 'in_progress',
                 'started_at' => '2026-04-01 09:00:00',
                 'extra_time_minutes' => 0,

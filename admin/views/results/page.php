@@ -5378,6 +5378,9 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
                         return document.querySelector('[data-cbt-essay-content]');
                     }
 
+                    var essayContentRequestSeq = 0;
+                    var essayQuestionRequestSeq = 0;
+
                     function buildEssayFilterUrl(form) {
                         var url = new URL(form.getAttribute('action') || window.location.href, window.location.href);
                         var params = new URLSearchParams();
@@ -5402,16 +5405,25 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
                             return Promise.resolve(false);
                         }
 
+                        essayContentRequestSeq += 1;
+                        var requestSeq = essayContentRequestSeq;
                         currentContent.classList.add('is-loading');
+                        currentContent.setAttribute('data-cbt-essay-request-seq', String(requestSeq));
 
                         return fetch(String(url), {
                             method: 'GET',
                             credentials: 'same-origin'
                         })
                             .then(function (response) {
+                                if (!response.ok) {
+                                    throw new Error('Essay refresh gagal.');
+                                }
                                 return response.text();
                             })
                             .then(function (html) {
+                                if (requestSeq !== essayContentRequestSeq) {
+                                    return false;
+                                }
                                 var parsed = new DOMParser().parseFromString(html, 'text/html');
                                 var nextContent = parsed.querySelector('[data-cbt-essay-content]');
                                 var liveContent = getEssayContent();
@@ -5428,12 +5440,15 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
                                 return true;
                             })
                             .catch(function () {
-                                window.location.href = String(url);
+                                if (requestSeq === essayContentRequestSeq) {
+                                    window.location.href = String(url);
+                                }
                                 return false;
                             })
                             .then(function (ok) {
                                 var liveContent = getEssayContent();
-                                if (liveContent) {
+                                if (requestSeq === essayContentRequestSeq && liveContent) {
+                                    liveContent.removeAttribute('data-cbt-essay-request-seq');
                                     liveContent.classList.remove('is-loading');
                                 }
                                 return ok;
@@ -5470,6 +5485,8 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
 
                         examSelect.addEventListener('change', function () {
                             var examId = parseInt(examSelect.value || '0', 10);
+                            essayQuestionRequestSeq += 1;
+                            var questionRequestSeq = essayQuestionRequestSeq;
                             questionSelect.innerHTML = '';
                             questionSelect.appendChild(new Option(examId > 0 ? 'Memuat soal essay...' : 'Pilih exam dulu', '0'));
                             questionSelect.disabled = examId <= 0;
@@ -5494,6 +5511,9 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
                                     return response.json();
                                 })
                                 .then(function (payload) {
+                                    if (questionRequestSeq !== essayQuestionRequestSeq || String(examSelect.value || '0') !== String(examId)) {
+                                        return;
+                                    }
                                     var items = payload && payload.success && payload.data && Array.isArray(payload.data.items)
                                         ? payload.data.items
                                         : [];
@@ -5506,6 +5526,9 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
                                     submitFilter();
                                 })
                                 .catch(function () {
+                                    if (questionRequestSeq !== essayQuestionRequestSeq || String(examSelect.value || '0') !== String(examId)) {
+                                        return;
+                                    }
                                     questionSelect.innerHTML = '';
                                     questionSelect.appendChild(new Option('Gagal memuat soal essay', '0'));
                                     questionSelect.disabled = false;
@@ -5530,6 +5553,7 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
                         if (resetLink) {
                             resetLink.addEventListener('click', function (event) {
                                 event.preventDefault();
+                                essayQuestionRequestSeq += 1;
                                 examSelect.value = '0';
                                 questionSelect.innerHTML = '';
                                 questionSelect.appendChild(new Option('Pilih exam dulu', '0'));
@@ -5670,6 +5694,9 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
                             var panelScope = panel.getAttribute('data-scope') || 'question';
                             var autoApply = panel.getAttribute('data-auto-apply') === '1';
                             var activeToken = '';
+                            var essayAiJobSeq = 0;
+                            var essayAiTickTimer = null;
+                            var essayAiJobRunning = false;
 
                             function setMessage(text) {
                                 if (message) {
@@ -5721,7 +5748,15 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
                                 });
                             }
 
-                            function finishJob(payload) {
+                            function finishJob(payload, jobSeq) {
+                                if (jobSeq !== essayAiJobSeq) {
+                                    return;
+                                }
+                                if (essayAiTickTimer) {
+                                    window.clearTimeout(essayAiTickTimer);
+                                    essayAiTickTimer = null;
+                                }
+                                essayAiJobRunning = false;
                                 panel.classList.remove('is-running');
                                 panel.classList.add('is-complete');
                                 setStartButtonsDisabled(false);
@@ -5732,6 +5767,9 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
                                     setProgress(payload);
                                 }
                                 window.setTimeout(function () {
+                                    if (jobSeq !== essayAiJobSeq) {
+                                        return;
+                                    }
                                     var filterForm = document.querySelector('[data-cbt-essay-filter]');
                                     if (filterForm) {
                                         refreshEssayContentFromUrl(buildEssayFilterUrl(filterForm), false);
@@ -5741,16 +5779,19 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
                                 }, autoApply ? 1200 : 700);
                             }
 
-                            function tickJob() {
-                                if (!activeToken) {
+                            function tickJob(jobSeq) {
+                                if (!activeToken || jobSeq !== essayAiJobSeq) {
                                     return;
                                 }
 
                                 postAction('cbt_results_essay_ai_tick', { token: activeToken })
                                     .then(function (payload) {
+                                        if (jobSeq !== essayAiJobSeq) {
+                                            return;
+                                        }
                                         setProgress(payload);
                                         if (payload.complete) {
-                                            finishJob(payload);
+                                            finishJob(payload, jobSeq);
                                             return;
                                         }
                                         var retryAfter = payload && Number.isFinite(Number(payload.retry_after_seconds))
@@ -5759,9 +5800,15 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
                                         var nextDelay = retryAfter > 0
                                             ? Math.max(900, Math.min(300000, retryAfter * 1000))
                                             : 900;
-                                        window.setTimeout(tickJob, nextDelay);
+                                        essayAiTickTimer = window.setTimeout(function () {
+                                            tickJob(jobSeq);
+                                        }, nextDelay);
                                     })
                                     .catch(function (error) {
+                                        if (jobSeq !== essayAiJobSeq) {
+                                            return;
+                                        }
+                                        essayAiJobRunning = false;
                                         panel.classList.remove('is-running');
                                         setMessage(error && error.message ? error.message : 'AI gagal diproses.');
                                         setStartButtonsDisabled(false);
@@ -5772,6 +5819,16 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
                             }
 
                             function startJob(options) {
+                                if (essayAiJobRunning) {
+                                    return;
+                                }
+
+                                essayAiJobSeq += 1;
+                                var jobSeq = essayAiJobSeq;
+                                if (essayAiTickTimer) {
+                                    window.clearTimeout(essayAiTickTimer);
+                                    essayAiTickTimer = null;
+                                }
                                 var payload = {
                                     cbt_essay_exam_id: panel.getAttribute('data-exam-id') || '0',
                                     cbt_essay_question_id: panel.getAttribute('data-question-id') || '0',
@@ -5789,6 +5846,7 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
                                     payload.retry_mode = 'all';
                                 }
 
+                                essayAiJobRunning = true;
                                 panel.classList.add('is-running');
                                 panel.classList.remove('is-complete');
                                 setStartButtonsDisabled(true);
@@ -5802,15 +5860,22 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
 
                                 postAction('cbt_results_essay_ai_start', payload)
                                     .then(function (response) {
+                                        if (jobSeq !== essayAiJobSeq) {
+                                            return;
+                                        }
                                         activeToken = response.token || '';
                                         setProgress(response);
                                         if (response.complete) {
-                                            finishJob(response);
+                                            finishJob(response, jobSeq);
                                             return;
                                         }
-                                        tickJob();
+                                        tickJob(jobSeq);
                                     })
                                     .catch(function (error) {
+                                        if (jobSeq !== essayAiJobSeq) {
+                                            return;
+                                        }
+                                        essayAiJobRunning = false;
                                         panel.classList.remove('is-running');
                                         setMessage(error && error.message ? error.message : 'Gagal memulai AI Essay.');
                                         setStartButtonsDisabled(false);
@@ -5835,9 +5900,19 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
                                     if (!activeToken) {
                                         return;
                                     }
+                                    essayAiJobSeq += 1;
+                                    var stopSeq = essayAiJobSeq;
+                                    if (essayAiTickTimer) {
+                                        window.clearTimeout(essayAiTickTimer);
+                                        essayAiTickTimer = null;
+                                    }
                                     stopButton.disabled = true;
                                     postAction('cbt_results_essay_ai_stop', { token: activeToken })
                                         .then(function (payload) {
+                                            if (stopSeq !== essayAiJobSeq) {
+                                                return;
+                                            }
+                                            essayAiJobRunning = false;
                                             setProgress(payload);
                                             panel.classList.remove('is-running');
                                             setStartButtonsDisabled(false);
@@ -5845,7 +5920,11 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
                                             stopButton.disabled = false;
                                         })
                                         .catch(function () {
-                                            stopButton.disabled = false;
+                                            if (stopSeq === essayAiJobSeq) {
+                                                stopButton.disabled = false;
+                                                essayAiJobRunning = true;
+                                                tickJob(stopSeq);
+                                            }
                                         });
                                 });
                             }

@@ -1718,6 +1718,7 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
                 }
             };
             let autoContinueTimer = null;
+            let maintenanceRequestSeq = 0;
 
             const buildMaintenanceUrl = function (rawUrl) {
                 try {
@@ -1857,14 +1858,25 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
                 }
 
                 const url = buildMaintenanceUrl(rawUrl);
+                const requestSeq = maintenanceRequestSeq + 1;
+                maintenanceRequestSeq = requestSeq;
                 url.searchParams.set('page', 'cbt-maintenance');
                 url.searchParams.set('cbt_maintenance_async', '1');
                 setLoading(true, label || 'Memuat area...');
                 requestPageHtml(url.toString()).then(function (html) {
+                    if (requestSeq !== maintenanceRequestSeq) {
+                        return;
+                    }
                     replaceMaintenanceAreas(html);
                 }).catch(function (error) {
+                    if (requestSeq !== maintenanceRequestSeq) {
+                        return;
+                    }
                     showFeedback('Gagal memperbarui area maintenance tanpa reload global.' + buildErrorMessage(error));
                 }).finally(function () {
+                    if (requestSeq !== maintenanceRequestSeq) {
+                        return;
+                    }
                     setLoading(false);
                 });
             };
@@ -1920,6 +1932,8 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
                             : form.querySelector('button[type="submit"]');
                         const label = form.getAttribute('data-maintenance-loading-label') || 'Memproses...';
                         const formData = new FormData(form);
+                        const requestSeq = maintenanceRequestSeq + 1;
+                        maintenanceRequestSeq = requestSeq;
                         formData.set('cbt_maintenance_async', '1');
                         if (!formData.has('cbt_maintenance_tab')) {
                             formData.set('cbt_maintenance_tab', getActiveTab());
@@ -1931,11 +1945,20 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
                             method: 'POST',
                             body: formData
                         }).then(function (html) {
+                            if (requestSeq !== maintenanceRequestSeq) {
+                                return;
+                            }
                             replaceMaintenanceAreas(html);
                         }).catch(function (error) {
+                            if (requestSeq !== maintenanceRequestSeq) {
+                                return;
+                            }
                             showFeedback('Gagal memperbarui area maintenance tanpa reload global.' + buildErrorMessage(error));
                         }).finally(function () {
                             setButtonLoading(submitter, false);
+                            if (requestSeq !== maintenanceRequestSeq) {
+                                return;
+                            }
                             setLoading(false);
                         });
                     });
@@ -2041,7 +2064,9 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
             };
 
             const loadTestState = {
-                pollingTimer: null
+                pollingTimer: null,
+                jobsRequestSeq: 0,
+                jobsRequestInFlight: false
             };
 
             const initLoadTestPanel = function (panel) {
@@ -2753,6 +2778,9 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
                     if (!jobsWrap) {
                         return;
                     }
+                    if (loadTestState.jobsRequestInFlight) {
+                        return;
+                    }
                     const ajaxUrl = String(jobsWrap.getAttribute('data-load-jobs-ajax-url') || '');
                     const ajaxNonce = String(jobsWrap.getAttribute('data-load-jobs-ajax-nonce') || '');
                     if (ajaxUrl === '' || ajaxNonce === '' || typeof window.fetch !== 'function') {
@@ -2764,6 +2792,9 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
                     const currentJobId = currentJobSelector ? String(currentJobSelector.value || '') : '';
                     const url = new URL(ajaxUrl, window.location.origin);
                     url.searchParams.set('nonce', ajaxNonce);
+                    loadTestState.jobsRequestInFlight = true;
+                    loadTestState.jobsRequestSeq += 1;
+                    const jobsRequestSeq = loadTestState.jobsRequestSeq;
 
                     window.fetch(url.toString(), {
                         credentials: 'same-origin',
@@ -2774,6 +2805,9 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
                         return response.json();
                     }).then(function (payload) {
                         if (!payload || !payload.success || !payload.data) {
+                            return;
+                        }
+                        if (jobsRequestSeq !== loadTestState.jobsRequestSeq) {
                             return;
                         }
                         jobsWrap.innerHTML = String(payload.data.html || '');
@@ -2792,7 +2826,13 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
                         }
                         schedulePolling(Number(payload.data.running_count || 0));
                     }).catch(function () {
-                        schedulePolling(0);
+                        if (jobsRequestSeq === loadTestState.jobsRequestSeq) {
+                            schedulePolling(0);
+                        }
+                    }).finally(function () {
+                        if (jobsRequestSeq === loadTestState.jobsRequestSeq) {
+                            loadTestState.jobsRequestInFlight = false;
+                        }
                     });
                 };
 
@@ -4004,6 +4044,8 @@ k6 version</code></pre>
             };
 
             let pollingTimer = null;
+            let loadJobsRequestSeq = 0;
+            let loadJobsRequestInFlight = false;
             const schedulePolling = function (runningCount) {
                 if (pollingTimer) {
                     window.clearTimeout(pollingTimer);
@@ -4021,6 +4063,9 @@ k6 version</code></pre>
                 if (!jobsWrap) {
                     return;
                 }
+                if (loadJobsRequestInFlight) {
+                    return;
+                }
                 const ajaxUrl = String(jobsWrap.getAttribute('data-load-jobs-ajax-url') || '');
                 const ajaxNonce = String(jobsWrap.getAttribute('data-load-jobs-ajax-nonce') || '');
                 if (ajaxUrl === '' || ajaxNonce === '' || typeof window.fetch !== 'function') {
@@ -4031,6 +4076,9 @@ k6 version</code></pre>
                 const currentJobId = currentJobSelector ? String(currentJobSelector.value || '') : '';
                 const url = new URL(ajaxUrl, window.location.origin);
                 url.searchParams.set('nonce', ajaxNonce);
+                loadJobsRequestInFlight = true;
+                loadJobsRequestSeq += 1;
+                const jobsRequestSeq = loadJobsRequestSeq;
 
                 window.fetch(url.toString(), {
                     credentials: 'same-origin',
@@ -4041,6 +4089,9 @@ k6 version</code></pre>
                     return response.json();
                 }).then(function (payload) {
                     if (!payload || !payload.success || !payload.data) {
+                        return;
+                    }
+                    if (jobsRequestSeq !== loadJobsRequestSeq) {
                         return;
                     }
                     jobsWrap.innerHTML = String(payload.data.html || '');
@@ -4057,7 +4108,13 @@ k6 version</code></pre>
                     }
                     schedulePolling(Number(payload.data.running_count || 0));
                 }).catch(function () {
-                    schedulePolling(0);
+                    if (jobsRequestSeq === loadJobsRequestSeq) {
+                        schedulePolling(0);
+                    }
+                }).finally(function () {
+                    if (jobsRequestSeq === loadJobsRequestSeq) {
+                        loadJobsRequestInFlight = false;
+                    }
                 });
             };
 

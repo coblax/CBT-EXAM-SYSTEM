@@ -2573,7 +2573,12 @@
                             if (event.defaultPrevented) {
                                 return;
                             }
+                            if (form.dataset.cbtLocalActionInFlight === '1') {
+                                event.preventDefault();
+                                return;
+                            }
                             event.preventDefault();
+                            form.dataset.cbtLocalActionInFlight = '1';
                             const submitter = event.submitter || document.activeElement;
                             const actionUrl = new URL(form.getAttribute('action') || window.location.href, window.location.href);
                             const formData = new FormData(form);
@@ -2593,6 +2598,7 @@
                             }).catch((error) => {
                                 showUsersLocalRefreshError(error && error.message ? error.message : 'Aksi user gagal diproses lokal.');
                             }).finally(() => {
+                                delete form.dataset.cbtLocalActionInFlight;
                                 setUsersElementLoading(submitter, false);
                             });
                         });
@@ -2607,7 +2613,12 @@
                             if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
                                 return;
                             }
+                            if (link.dataset.cbtLocalActionInFlight === '1') {
+                                event.preventDefault();
+                                return;
+                            }
                             event.preventDefault();
+                            link.dataset.cbtLocalActionInFlight = '1';
                             const nextUrl = new URL(link.getAttribute('href') || window.location.href, window.location.href);
                             nextUrl.searchParams.set('cbt_users_local_refresh', '1');
                             setUsersElementLoading(link, true);
@@ -2616,6 +2627,7 @@
                             }).catch((error) => {
                                 showUsersLocalRefreshError(error && error.message ? error.message : 'Link user gagal diproses lokal.');
                             }).finally(() => {
+                                delete link.dataset.cbtLocalActionInFlight;
                                 setUsersElementLoading(link, false);
                             });
                         });

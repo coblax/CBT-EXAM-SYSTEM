@@ -2791,6 +2791,8 @@ if (!defined('ABSPATH')) {
         let globalUnitRunTimer = null;
         let globalUnitRunInFlight = false;
         let scopedRefreshInFlight = false;
+        let testHubRefreshRequestSeq = 0;
+        let testHubLocalActionInFlight = false;
         const loadingProgressStates = new Map();
         const canonicalRefreshUrl = root ? String(root.getAttribute('data-test-hub-refresh-url') || '') : '';
         const canonicalAsyncUrl = root ? String(root.getAttribute('data-test-hub-async-url') || '') : '';
@@ -3607,6 +3609,13 @@ if (!defined('ABSPATH')) {
                     }
 
                     event.preventDefault();
+                    if (testHubLocalActionInFlight || form.dataset.testHubAsyncInFlight === '1') {
+                        return;
+                    }
+                    testHubRefreshRequestSeq += 1;
+                    const requestSeq = testHubRefreshRequestSeq;
+                    testHubLocalActionInFlight = true;
+                    form.dataset.testHubAsyncInFlight = '1';
                     const areaNames = parseAreaNames(form.getAttribute('data-refresh-areas'));
                     const loadingLabel = form.getAttribute('data-loading-label') || 'Memproses...';
                     const submitter = event.submitter instanceof HTMLButtonElement
@@ -3634,26 +3643,38 @@ if (!defined('ABSPATH')) {
                         method: 'POST',
                         body: formData
                     }).then(function (html) {
+                        if (requestSeq !== testHubRefreshRequestSeq) {
+                            return;
+                        }
                         replaceAreasFromHtml(html, areaNames);
                     }).catch(function (error) {
+                        if (requestSeq !== testHubRefreshRequestSeq) {
+                            return;
+                        }
                         if (window.console && typeof window.console.error === 'function') {
                             window.console.error('CBT Test Hub async update failed', error);
                         }
                         showAreaFeedback(areaNames, 'Gagal memperbarui area ini tanpa reload global.' + buildErrorMessage(error));
                     }).finally(function () {
-                        setButtonLoading(submitter, false);
-                        setAreasLoading(areaNames, false);
+                        if (requestSeq === testHubRefreshRequestSeq) {
+                            testHubLocalActionInFlight = false;
+                            setButtonLoading(submitter, false);
+                            setAreasLoading(areaNames, false);
+                        }
+                        delete form.dataset.testHubAsyncInFlight;
                     });
                 });
             });
         };
 
         const refreshScopedFlowAreas = function () {
-            if (!hasActiveFlowJobs || scopedRefreshInFlight || !window.fetch || !window.DOMParser) {
+            if (!hasActiveFlowJobs || scopedRefreshInFlight || testHubLocalActionInFlight || !window.fetch || !window.DOMParser) {
                 return;
             }
 
             scopedRefreshInFlight = true;
+            testHubRefreshRequestSeq += 1;
+            const requestSeq = testHubRefreshRequestSeq;
             const areaNames = ['artifacts', 'checklist'];
             setAreasLoading(areaNames, true, 'Memperbarui flow check...', {
                 label: 'Memperbarui flow check...',
@@ -3668,16 +3689,24 @@ if (!defined('ABSPATH')) {
             url.searchParams.set('cbt_checklist_scope', currentChecklistScope);
 
             requestPageHtml(url.toString()).then(function (html) {
+                if (requestSeq !== testHubRefreshRequestSeq) {
+                    return;
+                }
                 replaceAreasFromHtml(html, areaNames);
             }).catch(function (error) {
+                if (requestSeq !== testHubRefreshRequestSeq) {
+                    return;
+                }
                 if (window.console && typeof window.console.error === 'function') {
                     window.console.error('CBT Test Hub scoped auto-refresh failed', error);
                 }
                 showAreaFeedback(['checklist'], 'Auto-refresh area Flow Check gagal. Halaman tidak direload agar input lain tetap aman.' + buildErrorMessage(error));
             }).finally(function () {
                 scopedRefreshInFlight = false;
-                setAreasLoading(areaNames, false);
-                if (hasActiveFlowJobs) {
+                if (requestSeq === testHubRefreshRequestSeq) {
+                    setAreasLoading(areaNames, false);
+                }
+                if (requestSeq === testHubRefreshRequestSeq && hasActiveFlowJobs) {
                     scheduleScopedRefresh();
                 }
             });
@@ -3695,7 +3724,7 @@ if (!defined('ABSPATH')) {
         }
 
         const runNextGlobalUnitStep = function () {
-            if (!hasActiveGlobalUnitRun || globalUnitRunInFlight || !window.fetch || !window.FormData || !window.DOMParser) {
+            if (!hasActiveGlobalUnitRun || globalUnitRunInFlight || testHubLocalActionInFlight || !window.fetch || !window.FormData || !window.DOMParser) {
                 return;
             }
 
@@ -3705,6 +3734,8 @@ if (!defined('ABSPATH')) {
             }
 
             globalUnitRunInFlight = true;
+            testHubRefreshRequestSeq += 1;
+            const requestSeq = testHubRefreshRequestSeq;
             const areaNames = parseAreaNames(form.getAttribute('data-refresh-areas'));
             const formData = new FormData(form);
             formData.set('cbt_test_hub_async', '1');
@@ -3716,8 +3747,14 @@ if (!defined('ABSPATH')) {
                 method: 'POST',
                 body: formData
             }).then(function (html) {
+                if (requestSeq !== testHubRefreshRequestSeq) {
+                    return;
+                }
                 replaceAreasFromHtml(html, areaNames);
             }).catch(function (error) {
+                if (requestSeq !== testHubRefreshRequestSeq) {
+                    return;
+                }
                 if (window.console && typeof window.console.error === 'function') {
                     window.console.error('CBT Test Hub global unit step failed', error);
                 }
@@ -3728,8 +3765,10 @@ if (!defined('ABSPATH')) {
                 }
             }).finally(function () {
                 globalUnitRunInFlight = false;
-                setAreasLoading(areaNames, false);
-                if (hasActiveGlobalUnitRun) {
+                if (requestSeq === testHubRefreshRequestSeq) {
+                    setAreasLoading(areaNames, false);
+                }
+                if (requestSeq === testHubRefreshRequestSeq && hasActiveGlobalUnitRun) {
                     scheduleGlobalUnitRunStep();
                 }
             });

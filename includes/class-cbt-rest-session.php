@@ -18,6 +18,9 @@ trait CBT_REST_Session_Routes
         if ($user_id <= 0) {
             return new WP_Error('unauthorized', 'Unauthorized', ['status' => 401]);
         }
+        if ($attempt_id <= 0) {
+            return new WP_Error('invalid_attempt_id', 'Attempt tidak valid.', ['status' => 400]);
+        }
 
         $question_revision = null;
         $question_count = 0;
@@ -25,79 +28,64 @@ trait CBT_REST_Session_Routes
         $attempt_timer = null;
         $show_student_result = null;
         $enable_calculator = null;
-        if ($attempt_id > 0) {
-            $attempt = self::get_attempt_for_question_revision($attempt_id, $user_id, $role);
-            if (is_wp_error($attempt)) {
-                return $attempt;
-            }
+        $attempt = self::get_attempt_for_question_revision($attempt_id, $user_id, $role);
+        if (is_wp_error($attempt)) {
+            return $attempt;
+        }
 
-            self::maybe_update_attempt_presence_from_session($attempt, $request);
+        self::maybe_update_attempt_presence_from_session($attempt, $request);
 
-            $exam_id = (int) ($attempt['exam_id'] ?? 0);
-            if ($exam_id > 0) {
-                $question_revision = CBT_Cache::get_exam_revision_meta($exam_id);
-                $attempt_status = (string) ($attempt['status'] ?? '');
-                $attempt_timer = null;
-                $attempt_question_order_ids = self::resolve_attempt_snapshot_question_order_ids($attempt);
-                if ($attempt_status === 'in_progress') {
-                    $attempt_table = $wpdb->prefix . 'cbt_attempts';
-                    $exam_table = $wpdb->prefix . 'cbt_exams';
-                    $exam = $wpdb->get_row(
-                        $wpdb->prepare(
-                            "SELECT id, subject_id, duration_minutes, randomize_questions, randomize_options, show_student_result, enable_calculator, status, starts_at, ends_at, target_kelas, target_agama, target_jenis_kelamin, restrict_to_subject_choice
-                             FROM {$exam_table}
-                             WHERE id = %d",
-                            $exam_id
-                        ),
-                        ARRAY_A
-                    );
+        $exam_id = (int) ($attempt['exam_id'] ?? 0);
+        if ($exam_id > 0) {
+            $question_revision = CBT_Cache::get_exam_revision_meta($exam_id);
+            $attempt_status = (string) ($attempt['status'] ?? '');
+            $attempt_timer = null;
+            $attempt_question_order_ids = self::resolve_attempt_snapshot_question_order_ids($attempt);
+            if ($attempt_status === 'in_progress') {
+                $attempt_table = $wpdb->prefix . 'cbt_attempts';
+                $exam_table = $wpdb->prefix . 'cbt_exams';
+                $exam = $wpdb->get_row(
+                    $wpdb->prepare(
+                        "SELECT id, subject_id, duration_minutes, randomize_questions, randomize_options, show_student_result, enable_calculator, status, starts_at, ends_at, target_kelas, target_agama, target_jenis_kelamin, restrict_to_subject_choice
+                         FROM {$exam_table}
+                         WHERE id = %d",
+                        $exam_id
+                    ),
+                    ARRAY_A
+                );
 
-                    if (is_array($exam)) {
-                        $attempt_session_snapshot = self::get_cached_attempt_session_snapshot($attempt, $exam, $attempt_table, $bootstrap_light);
-                        if (is_wp_error($attempt_session_snapshot)) {
-                            return $attempt_session_snapshot;
-                        }
-                        $session_duration_minutes = max(
-                            0,
-                            (int) ($attempt_session_snapshot['duration_minutes'] ?? $attempt['exam_duration_minutes'] ?? $exam['duration_minutes'] ?? 0)
-                        );
-                        $attempt_timer = self::build_attempt_timer_payload($attempt, $session_duration_minutes);
-                        $show_student_result = self::normalize_show_student_result(
-                            $attempt_session_snapshot['show_student_result'] ?? ($exam['show_student_result'] ?? 1)
-                        );
-                        $enable_calculator = self::normalize_enable_calculator(
-                            $attempt_session_snapshot['enable_calculator'] ?? ($exam['enable_calculator'] ?? 1)
-                        );
-                        $question_count = max(
-                            0,
-                            (int) ($attempt_session_snapshot['question_count'] ?? 0)
-                        );
-                        $question_order_signature = (string) ($attempt_session_snapshot['question_order_signature'] ?? '');
-                    } elseif (!empty($attempt_question_order_ids)) {
-                        $attempt_timer = self::build_attempt_timer_payload(
-                            $attempt,
-                            (int) ($attempt['exam_duration_minutes'] ?? 0)
-                        );
-                        $question_count = count($attempt_question_order_ids);
-                    } else {
-                        $attempt_timer = self::build_attempt_timer_payload(
-                            $attempt,
-                            (int) ($attempt['exam_duration_minutes'] ?? 0)
-                        );
-                        $question_table = $wpdb->prefix . 'cbt_questions';
-                        $question_count = (int) $wpdb->get_var(
-                            $wpdb->prepare(
-                                "SELECT COUNT(*)
-                                 FROM {$question_table}
-                                 WHERE exam_id = %d
-                                   AND COALESCE(is_active, 1) = 1",
-                                $exam_id
-                            )
-                        );
+                if (is_array($exam)) {
+                    $attempt_session_snapshot = self::get_cached_attempt_session_snapshot($attempt, $exam, $attempt_table, $bootstrap_light);
+                    if (is_wp_error($attempt_session_snapshot)) {
+                        return $attempt_session_snapshot;
                     }
+                    $session_duration_minutes = max(
+                        0,
+                        (int) ($attempt_session_snapshot['duration_minutes'] ?? $attempt['exam_duration_minutes'] ?? $exam['duration_minutes'] ?? 0)
+                    );
+                    $attempt_timer = self::build_attempt_timer_payload($attempt, $session_duration_minutes);
+                    $show_student_result = self::normalize_show_student_result(
+                        $attempt_session_snapshot['show_student_result'] ?? ($exam['show_student_result'] ?? 1)
+                    );
+                    $enable_calculator = self::normalize_enable_calculator(
+                        $attempt_session_snapshot['enable_calculator'] ?? ($exam['enable_calculator'] ?? 1)
+                    );
+                    $question_count = max(
+                        0,
+                        (int) ($attempt_session_snapshot['question_count'] ?? 0)
+                    );
+                    $question_order_signature = (string) ($attempt_session_snapshot['question_order_signature'] ?? '');
                 } elseif (!empty($attempt_question_order_ids)) {
+                    $attempt_timer = self::build_attempt_timer_payload(
+                        $attempt,
+                        (int) ($attempt['exam_duration_minutes'] ?? 0)
+                    );
                     $question_count = count($attempt_question_order_ids);
                 } else {
+                    $attempt_timer = self::build_attempt_timer_payload(
+                        $attempt,
+                        (int) ($attempt['exam_duration_minutes'] ?? 0)
+                    );
                     $question_table = $wpdb->prefix . 'cbt_questions';
                     $question_count = (int) $wpdb->get_var(
                         $wpdb->prepare(
@@ -109,6 +97,19 @@ trait CBT_REST_Session_Routes
                         )
                     );
                 }
+            } elseif (!empty($attempt_question_order_ids)) {
+                $question_count = count($attempt_question_order_ids);
+            } else {
+                $question_table = $wpdb->prefix . 'cbt_questions';
+                $question_count = (int) $wpdb->get_var(
+                    $wpdb->prepare(
+                        "SELECT COUNT(*)
+                         FROM {$question_table}
+                         WHERE exam_id = %d
+                           AND COALESCE(is_active, 1) = 1",
+                        $exam_id
+                    )
+                );
             }
         }
 

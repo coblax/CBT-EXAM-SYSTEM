@@ -5110,6 +5110,7 @@
                 let isAdaptiveFinalizeRunning = false;
                 let examListFilterTimer = null;
                 let examSnapshotFilterTimer = null;
+                let examSnapshotPreviewRequestSeq = 0;
                 let snapshotAutoRefreshTimer = null;
                 let snapshotCleanProgressTimer = null;
                 let bulkProgressTimer = null;
@@ -5685,6 +5686,8 @@
                         return;
                     }
 
+                    examSnapshotPreviewRequestSeq += 1;
+                    const requestSeq = examSnapshotPreviewRequestSeq;
                     previewRow.classList.add('is-loading');
                     previewRow.setAttribute('aria-busy', 'true');
 
@@ -5701,27 +5704,43 @@
                         }
 
                         const html = await response.text();
+                        if (requestSeq !== examSnapshotPreviewRequestSeq) {
+                            return;
+                        }
+
                         const parser = new window.DOMParser();
                         const nextDocument = parser.parseFromString(html, 'text/html');
                         const nextSummaryRow = nextDocument.querySelector('[data-cbt-exam-snapshot-summary-row="' + examId + '"]');
                         const nextPreviewRow = nextDocument.querySelector('[data-cbt-exam-snapshot-preview-row="' + examId + '"]');
+                        const liveSummaryRow = document.querySelector('[data-cbt-exam-snapshot-summary-row="' + examId + '"]');
+                        const livePreviewRow = document.querySelector('[data-cbt-exam-snapshot-preview-row="' + examId + '"]');
 
-                        if (!nextSummaryRow || !nextPreviewRow) {
+                        if (!nextSummaryRow || !nextPreviewRow || !liveSummaryRow || !livePreviewRow) {
                             throw new Error('snapshot rows missing');
                         }
 
                         const importedSummaryRow = document.importNode(nextSummaryRow, true);
                         const importedPreviewRow = document.importNode(nextPreviewRow, true);
 
-                        summaryRow.replaceWith(importedSummaryRow);
-                        previewRow.replaceWith(importedPreviewRow);
+                        liveSummaryRow.replaceWith(importedSummaryRow);
+                        livePreviewRow.replaceWith(importedPreviewRow);
 
                         if (window.history && typeof window.history.replaceState === 'function') {
                             window.history.replaceState({}, '', link.href);
                         }
                     } catch (error) {
-                        window.location.href = link.href;
+                        if (requestSeq === examSnapshotPreviewRequestSeq) {
+                            window.location.href = link.href;
+                        }
                         return;
+                    } finally {
+                        if (requestSeq === examSnapshotPreviewRequestSeq) {
+                            const livePreviewRow = document.querySelector('[data-cbt-exam-snapshot-preview-row="' + examId + '"]');
+                            if (livePreviewRow) {
+                                livePreviewRow.classList.remove('is-loading');
+                                livePreviewRow.removeAttribute('aria-busy');
+                            }
+                        }
                     }
                 }
 

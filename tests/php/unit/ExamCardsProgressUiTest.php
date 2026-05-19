@@ -49,6 +49,7 @@ final class ExamCardsProgressUiTest extends TestCase
             'watchPrintWindow',
             'replaceExamCardsRefreshAreas',
             'runExamCardsLocalRefresh',
+            'cbtExamCardsActionInFlight',
             'bindExamCardsUi();',
             'Gagal memperbarui area Administrative Documents',
         ] as $needle) {

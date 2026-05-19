@@ -545,6 +545,23 @@ final class UpdateReleaseHelperTest extends TestCase
         self::assertStringContainsString("add_action('admin_post_cbt_install_update_now'", $adminSource);
     }
 
+    public function test_update_page_javascript_guards_stale_polling_responses(): void
+    {
+        $viewSource = (string) file_get_contents(CBT_EXAM_SYSTEM_PATH . 'admin/views/update/page.php');
+
+        foreach ([
+            'updateOperationSeq',
+            'updateRequestSeq',
+            'updateRequestInFlight',
+            'runUpdateRequest',
+            'activeSeq !== updateOperationSeq',
+            'runSeq !== updateOperationSeq',
+            'requestSeq === updateRequestSeq',
+        ] as $needle) {
+            self::assertStringContainsString($needle, $viewSource);
+        }
+    }
+
     /**
      * @return array{0:string,1:string}
      */

@@ -155,6 +155,7 @@ final class CBT_Admin_Security_Service
         $security_must_watch_score_threshold = CBT_Security_Log::must_watch_score_threshold();
         $security_must_watch_high_risk_threshold = CBT_Security_Log::must_watch_high_risk_threshold();
         $security_log_status_snapshot = (array) ($security_live_snapshot['status_snapshot'] ?? []);
+        $security_redis_monitor_status = $security_log_status_snapshot;
         $security_observability_endpoint_url = rest_url('cbt/v1/security_observability_snapshot');
         $security_logs_page_endpoint_url = rest_url('cbt/v1/security_logs_page');
         $security_ingest_action_endpoint_url = rest_url('cbt/v1/security_ingest_admin_action');
@@ -201,6 +202,7 @@ final class CBT_Admin_Security_Service
             'security_log_event_definitions',
             'security_log_events_enabled',
             'security_log_status_snapshot',
+            'security_redis_monitor_status',
             'security_must_watch_high_risk_threshold',
             'security_must_watch_score_threshold',
             'security_live_roster_groups',

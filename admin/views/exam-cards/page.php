@@ -969,7 +969,11 @@
                 async function runExamCardsLocalRefresh(source, requestUrl, options) {
                     const config = options || {};
                     const areas = config.areas || ['overview', 'notices', 'summary', 'form'];
+                    if (source.dataset.cbtExamCardsActionInFlight === '1') {
+                        return;
+                    }
 
+                    source.dataset.cbtExamCardsActionInFlight = '1';
                     startExamCardsProgress(config.profile || 'reset');
                     source.setAttribute('aria-busy', 'true');
                     source.classList.add('is-loading');
@@ -1005,6 +1009,7 @@
                         const message = error && error.message ? error.message : 'Koneksi gagal saat memperbarui area Administrative Documents.';
                         showExamCardsLocalError('Gagal memperbarui area Administrative Documents', message);
                     } finally {
+                        delete source.dataset.cbtExamCardsActionInFlight;
                         source.removeAttribute('aria-busy');
                         source.classList.remove('is-loading');
                     }

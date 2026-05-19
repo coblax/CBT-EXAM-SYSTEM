@@ -4302,8 +4302,6 @@ if (!defined('ABSPATH')) {
         <script>
             (function () {
                 const page = document.querySelector('.cbt-questions-page');
-                const pageTabButtons = Array.from(document.querySelectorAll('[data-cbt-questions-tab]'));
-                const pageTabPanels = Array.from(document.querySelectorAll('[data-cbt-questions-panel]'));
                 const pageTabStorageKey = 'cbt-questions-active-tab';
                 const defaultTab = page ? String(page.getAttribute('data-cbt-questions-default-tab') || 'list') : 'list';
                 const forceTab = page ? page.getAttribute('data-cbt-questions-force-tab') === '1' : false;
@@ -4320,6 +4318,14 @@ if (!defined('ABSPATH')) {
                 let questionProgressValue = 0;
                 let questionContinuationTimer = 0;
                 let questionContinuationInFlight = false;
+
+                function getQuestionTabButtons() {
+                    return Array.from(document.querySelectorAll('[data-cbt-questions-tab]'));
+                }
+
+                function getQuestionTabPanels() {
+                    return Array.from(document.querySelectorAll('[data-cbt-questions-panel]'));
+                }
 
                 function getQuestionProgressProfile(profile) {
                     const profiles = {
@@ -4560,7 +4566,7 @@ if (!defined('ABSPATH')) {
 
                 function activatePageTab(tabId, persist) {
                     let hasTarget = false;
-                    pageTabButtons.forEach((button) => {
+                    getQuestionTabButtons().forEach((button) => {
                         const isActive = button.getAttribute('data-cbt-questions-tab') === tabId;
                         button.classList.toggle('is-active', isActive);
                         button.setAttribute('aria-selected', isActive ? 'true' : 'false');
@@ -4568,7 +4574,7 @@ if (!defined('ABSPATH')) {
                             hasTarget = true;
                         }
                     });
-                    pageTabPanels.forEach((panel) => {
+                    getQuestionTabPanels().forEach((panel) => {
                         const isActive = panel.getAttribute('data-cbt-questions-panel') === tabId;
                         panel.classList.toggle('is-active', isActive);
                     });
@@ -4597,11 +4603,11 @@ if (!defined('ABSPATH')) {
                     });
                 }
 
-                if (page && pageTabButtons.length > 0 && pageTabPanels.length > 0) {
+                if (page && getQuestionTabButtons().length > 0 && getQuestionTabPanels().length > 0) {
                     let initialTab = defaultTab;
                     if (!forceTab && window.localStorage) {
                         const savedTab = window.localStorage.getItem(pageTabStorageKey);
-                        if (savedTab && pageTabPanels.some((panel) => panel.getAttribute('data-cbt-questions-panel') === savedTab)) {
+                        if (savedTab && getQuestionTabPanels().some((panel) => panel.getAttribute('data-cbt-questions-panel') === savedTab)) {
                             initialTab = savedTab;
                         }
                     }
@@ -4609,7 +4615,7 @@ if (!defined('ABSPATH')) {
                     activatePageTab(initialTab, false);
                     scrollToQuestionHashTarget();
 
-                    pageTabButtons.forEach((button) => {
+                    getQuestionTabButtons().forEach((button) => {
                         button.addEventListener('click', function () {
                             activatePageTab(String(button.getAttribute('data-cbt-questions-tab') || ''), true);
                         });
@@ -5495,8 +5501,11 @@ if (!defined('ABSPATH')) {
                     }
                 }
 
-                const questionListPanel = document.querySelector('[data-cbt-questions-panel="list"]');
                 let questionListRequestId = 0;
+
+                function getQuestionListPanel() {
+                    return document.querySelector('[data-cbt-questions-panel="list"]');
+                }
 
                 function buildQuestionListUrlFromForm(form) {
                     const actionUrl = String(form.getAttribute('action') || window.location.href);
@@ -5513,13 +5522,14 @@ if (!defined('ABSPATH')) {
                 }
 
                 async function refreshQuestionList(url) {
-                    if (!questionListPanel) {
+                    const currentPanel = getQuestionListPanel();
+                    if (!currentPanel) {
                         showQuestionLocalRefreshError('Panel Question List tidak ditemukan untuk diperbarui lokal.');
                         return;
                     }
 
                     const currentRequestId = ++questionListRequestId;
-                    questionListPanel.classList.add('cbt-is-loading');
+                    currentPanel.classList.add('cbt-is-loading');
                     startQuestionProgress('list');
 
                     try {
@@ -5530,7 +5540,7 @@ if (!defined('ABSPATH')) {
 
                         const parsed = new window.DOMParser().parseFromString(result.html, 'text/html');
                         const incomingShell = parsed.querySelector('[data-cbt-questions-list-shell]');
-                        const currentShell = questionListPanel.querySelector('[data-cbt-questions-list-shell]');
+                        const currentShell = currentPanel.querySelector('[data-cbt-questions-list-shell]');
 
                         if (!incomingShell || !currentShell) {
                             throw new Error('Respons tidak memuat panel daftar soal.');
@@ -5547,7 +5557,7 @@ if (!defined('ABSPATH')) {
                         showQuestionLocalRefreshError(error && error.message ? error.message : 'Question List belum bisa dimuat lokal.');
                     } finally {
                         if (currentRequestId === questionListRequestId) {
-                            questionListPanel.classList.remove('cbt-is-loading');
+                            currentPanel.classList.remove('cbt-is-loading');
                         }
                     }
                 }
@@ -5567,7 +5577,8 @@ if (!defined('ABSPATH')) {
                     const inlineViewLinks = Array.from(listPanel.querySelectorAll('[data-cbt-questions-inline-view="1"]'));
                     const referenceViewLinks = Array.from(listPanel.querySelectorAll('[data-cbt-questions-reference-view="1"]'));
 
-                    if (questionFilterForm) {
+                    if (questionFilterForm && questionFilterForm.dataset.cbtListFilterBound !== '1') {
+                        questionFilterForm.dataset.cbtListFilterBound = '1';
                         questionFilterForm.addEventListener('submit', (event) => {
                             event.preventDefault();
                             refreshQuestionList(buildQuestionListUrlFromForm(questionFilterForm));
@@ -5583,7 +5594,8 @@ if (!defined('ABSPATH')) {
                         });
                     }
 
-                    if (filterResetLink) {
+                    if (filterResetLink && filterResetLink.dataset.cbtListAsyncBound !== '1') {
+                        filterResetLink.dataset.cbtListAsyncBound = '1';
                         filterResetLink.addEventListener('click', (event) => {
                             event.preventDefault();
                             refreshQuestionList(String(filterResetLink.getAttribute('href') || window.location.href));
@@ -5592,9 +5604,10 @@ if (!defined('ABSPATH')) {
 
                     paginationLinks.forEach((link) => {
                         const href = String(link.getAttribute('href') || '').trim();
-                        if (href === '' || link.classList.contains('current')) {
+                        if (href === '' || link.classList.contains('current') || link.dataset.cbtListAsyncBound === '1') {
                             return;
                         }
+                        link.dataset.cbtListAsyncBound = '1';
                         link.addEventListener('click', (event) => {
                             event.preventDefault();
                             refreshQuestionList(href);
@@ -5603,9 +5616,10 @@ if (!defined('ABSPATH')) {
 
                     inlineViewLinks.forEach((link) => {
                         const href = String(link.getAttribute('href') || '').trim();
-                        if (href === '') {
+                        if (href === '' || link.dataset.cbtListAsyncBound === '1') {
                             return;
                         }
+                        link.dataset.cbtListAsyncBound = '1';
                         link.addEventListener('click', (event) => {
                             event.preventDefault();
                             refreshQuestionList(href);
@@ -5614,16 +5628,18 @@ if (!defined('ABSPATH')) {
 
                     referenceViewLinks.forEach((link) => {
                         const href = String(link.getAttribute('href') || '').trim();
-                        if (href === '') {
+                        if (href === '' || link.dataset.cbtListAsyncBound === '1') {
                             return;
                         }
+                        link.dataset.cbtListAsyncBound = '1';
                         link.addEventListener('click', (event) => {
                             event.preventDefault();
                             refreshQuestionList(href);
                         });
                     });
 
-                    if (selectAllQuestions && questionCheckboxes.length > 0) {
+                    if (selectAllQuestions && questionCheckboxes.length > 0 && selectAllQuestions.dataset.cbtListSelectBound !== '1') {
+                        selectAllQuestions.dataset.cbtListSelectBound = '1';
                         const syncSelectAllState = () => {
                             const checkedCount = questionCheckboxes.filter((item) => item.checked).length;
                             selectAllQuestions.checked = checkedCount > 0 && checkedCount === questionCheckboxes.length;
@@ -5638,11 +5654,16 @@ if (!defined('ABSPATH')) {
                         });
 
                         questionCheckboxes.forEach((item) => {
+                            if (item.dataset.cbtListSelectBound === '1') {
+                                return;
+                            }
+                            item.dataset.cbtListSelectBound = '1';
                             item.addEventListener('change', syncSelectAllState);
                         });
                     }
 
-                    if (viewSelectedQuestionsButton && questionCheckboxes.length > 0) {
+                    if (viewSelectedQuestionsButton && questionCheckboxes.length > 0 && viewSelectedQuestionsButton.dataset.cbtListViewSelectedBound !== '1') {
+                        viewSelectedQuestionsButton.dataset.cbtListViewSelectedBound = '1';
                         viewSelectedQuestionsButton.addEventListener('click', () => {
                             const selectedViewUrls = questionCheckboxes
                                 .filter((item) => item.checked)
@@ -5784,8 +5805,13 @@ if (!defined('ABSPATH')) {
                             if (event.defaultPrevented) {
                                 return;
                             }
+                            if (form.dataset.cbtLocalActionInFlight === '1') {
+                                event.preventDefault();
+                                return;
+                            }
 
                             event.preventDefault();
+                            form.dataset.cbtLocalActionInFlight = '1';
                             const submitter = event.submitter || document.activeElement;
                             const actionUrl = new URL(form.getAttribute('action') || window.location.href, window.location.href);
                             const formData = new FormData(form);
@@ -5801,6 +5827,7 @@ if (!defined('ABSPATH')) {
                             }).catch((error) => {
                                 showQuestionLocalRefreshError(error && error.message ? error.message : 'Aksi soal gagal diproses lokal.');
                             }).finally(() => {
+                                delete form.dataset.cbtLocalActionInFlight;
                                 setQuestionElementLoading(submitter, false);
                             });
                         });
@@ -5815,7 +5842,12 @@ if (!defined('ABSPATH')) {
                             if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
                                 return;
                             }
+                            if (link.dataset.cbtLocalActionInFlight === '1') {
+                                event.preventDefault();
+                                return;
+                            }
                             event.preventDefault();
+                            link.dataset.cbtLocalActionInFlight = '1';
                             const nextUrl = new URL(link.getAttribute('href') || window.location.href, window.location.href);
                             nextUrl.searchParams.set('cbt_questions_local_refresh', '1');
                             setQuestionElementLoading(link, true);
@@ -5824,6 +5856,7 @@ if (!defined('ABSPATH')) {
                             }).catch((error) => {
                                 showQuestionLocalRefreshError(error && error.message ? error.message : 'Link soal gagal diproses lokal.');
                             }).finally(() => {
+                                delete link.dataset.cbtLocalActionInFlight;
                                 setQuestionElementLoading(link, false);
                             });
                         });

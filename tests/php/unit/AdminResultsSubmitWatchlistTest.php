@@ -92,6 +92,13 @@ final class AdminResultsSubmitWatchlistTest extends TestCase
         self::assertStringContainsString('cbt-results-attempt-row-501', $html);
         self::assertStringContainsString("panelIds.indexOf('cbt-results-essay-card')", $html);
         self::assertStringContainsString('initializeEssayDynamicArea();', $html);
+        self::assertStringContainsString('essayContentRequestSeq', $html);
+        self::assertStringContainsString('essayQuestionRequestSeq', $html);
+        self::assertStringContainsString('requestSeq !== essayContentRequestSeq', $html);
+        self::assertStringContainsString('essayAiJobSeq', $html);
+        self::assertStringContainsString('essayAiTickTimer', $html);
+        self::assertStringContainsString('essayAiJobRunning', $html);
+        self::assertStringContainsString('jobSeq !== essayAiJobSeq', $html);
     }
 
     #[RunInSeparateProcess]

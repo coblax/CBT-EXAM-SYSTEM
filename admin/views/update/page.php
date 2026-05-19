@@ -745,6 +745,9 @@
     var currentToken = '';
     var timer = null;
     var failureCount = 0;
+    var updateOperationSeq = 0;
+    var updateRequestSeq = 0;
+    var updateRequestInFlight = false;
 
     function readInitialPayload() {
         try {
@@ -812,16 +815,21 @@
         });
     }
 
-    function scheduleTick(delay) {
+    function scheduleTick(delay, runSeq) {
+        var activeSeq = runSeq || updateOperationSeq;
         if (timer) {
             window.clearTimeout(timer);
         }
         timer = window.setTimeout(function () {
-            request('tick').then(handlePayload).catch(handleFailure);
+            timer = null;
+            if (activeSeq !== updateOperationSeq || updateRequestInFlight) {
+                return;
+            }
+            runUpdateRequest('tick', {}, activeSeq);
         }, delay || 800);
     }
 
-    function handlePayload(payload) {
+    function handlePayload(payload, runSeq) {
         failureCount = 0;
         render(payload);
         var status = String(payload.status || '');
@@ -830,17 +838,21 @@
                 message.textContent = 'Reload halaman untuk melanjutkan health check.';
             }
             window.setTimeout(function () {
-                window.location.href = String(payload.redirect_url || window.location.href);
+                if (runSeq === updateOperationSeq) {
+                    window.location.href = String(payload.redirect_url || window.location.href);
+                }
             }, 700);
             return;
         }
         if (payload.complete) {
             window.setTimeout(function () {
-                window.location.href = String(payload.redirect_url || window.location.href);
+                if (runSeq === updateOperationSeq) {
+                    window.location.href = String(payload.redirect_url || window.location.href);
+                }
             }, 1200);
             return;
         }
-        scheduleTick(800);
+        scheduleTick(800, runSeq);
     }
 
     function handleFailure(error) {
@@ -854,11 +866,50 @@
         setButtonsDisabled(false);
     }
 
+    function runUpdateRequest(operation, extra, runSeq) {
+        if (updateRequestInFlight) {
+            return Promise.resolve(false);
+        }
+
+        updateRequestInFlight = true;
+        updateRequestSeq += 1;
+        var requestSeq = updateRequestSeq;
+
+        return request(operation, extra || {}).then(function (payload) {
+            if (runSeq !== updateOperationSeq) {
+                return false;
+            }
+            handlePayload(payload, runSeq);
+            return true;
+        }).catch(function (error) {
+            if (runSeq !== updateOperationSeq) {
+                return false;
+            }
+            handleFailure(error);
+            return false;
+        }).then(function (ok) {
+            if (requestSeq === updateRequestSeq) {
+                updateRequestInFlight = false;
+            }
+            return ok;
+        });
+    }
+
     function start(operation, extra) {
+        if (updateRequestInFlight) {
+            return;
+        }
+
+        updateOperationSeq += 1;
+        var runSeq = updateOperationSeq;
+        if (timer) {
+            window.clearTimeout(timer);
+            timer = null;
+        }
         failureCount = 0;
         panel.hidden = false;
         setButtonsDisabled(true);
-        request(operation, extra || {}).then(handlePayload).catch(handleFailure);
+        runUpdateRequest(operation, extra || {}, runSeq);
     }
 
     Array.from(document.querySelectorAll('[data-cbt-update-form]')).forEach(function (form) {
@@ -892,8 +943,8 @@
 
     if (resume) {
         resume.addEventListener('click', function () {
-            if (currentToken !== '') {
-                scheduleTick(10);
+            if (currentToken !== '' && !updateRequestInFlight) {
+                scheduleTick(10, updateOperationSeq);
             }
         });
     }
@@ -903,7 +954,8 @@
         render(initialPayload);
         if (!initialPayload.complete) {
             currentToken = String(initialPayload.token || '');
-            scheduleTick(String(initialPayload.status || '') === 'reload_required' ? 200 : 800);
+            updateOperationSeq += 1;
+            scheduleTick(String(initialPayload.status || '') === 'reload_required' ? 200 : 800, updateOperationSeq);
         }
     }
 })();

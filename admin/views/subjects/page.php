@@ -1615,8 +1615,13 @@
                             if (event.defaultPrevented) {
                                 return;
                             }
+                            if (form.dataset.cbtSubjectActionInFlight === '1') {
+                                event.preventDefault();
+                                return;
+                            }
 
                             event.preventDefault();
+                            form.dataset.cbtSubjectActionInFlight = '1';
                             writeSubjectStoredTab(String(form.getAttribute('data-cbt-subject-tab-submit') || ''));
                             if (submitter && submitter.name && !formData.has(submitter.name)) {
                                 formData.append(submitter.name, submitter.value || '1');
@@ -1639,6 +1644,7 @@
                                     completeSubjectProgress('Gagal memproses CBT Subjects.', error && error.message ? error.message : 'Form masih aman dikirim ulang.', 'error');
                                 })
                                 .finally(() => {
+                                    delete form.dataset.cbtSubjectActionInFlight;
                                     setSubjectActionButtonLoading(button, false);
                                 });
                         });
@@ -1660,12 +1666,17 @@
                             if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
                                 return;
                             }
+                            if (link.dataset.cbtSubjectActionInFlight === '1') {
+                                event.preventDefault();
+                                return;
+                            }
                             if (confirmMessage !== '' && !window.confirm(confirmMessage)) {
                                 event.preventDefault();
                                 return;
                             }
 
                             event.preventDefault();
+                            link.dataset.cbtSubjectActionInFlight = '1';
                             writeSubjectStoredTab(String(link.getAttribute('data-cbt-subject-success-tab') || 'list'));
                             setSubjectActionButtonLoading(link, true, 'Menghapus...');
                             startSubjectProgress(String(link.getAttribute('data-cbt-subject-progress-profile') || 'delete'));
@@ -1677,6 +1688,7 @@
                                     completeSubjectProgress('Gagal memproses CBT Subjects.', error && error.message ? error.message : 'Aksi masih aman dicoba ulang.', 'error');
                                 })
                                 .finally(() => {
+                                    delete link.dataset.cbtSubjectActionInFlight;
                                     setSubjectActionButtonLoading(link, false);
                                 });
                         });

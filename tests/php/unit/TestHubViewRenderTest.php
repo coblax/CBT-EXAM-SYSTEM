@@ -70,6 +70,10 @@ final class TestHubViewRenderTest extends TestCase
         self::assertStringContainsString('canonicalRefreshUrl', $html);
         self::assertStringContainsString('canonicalAsyncUrl', $html);
         self::assertStringContainsString('requestPageHtml(asyncUrl', $html);
+        self::assertStringContainsString('testHubRefreshRequestSeq', $html);
+        self::assertStringContainsString('testHubLocalActionInFlight', $html);
+        self::assertStringContainsString('testHubAsyncInFlight', $html);
+        self::assertStringContainsString('requestSeq !== testHubRefreshRequestSeq', $html);
         self::assertStringContainsString('Menyimpan settings...', $html);
         self::assertStringContainsString('data-cbt-test-hub-refresh-area="global-unit-run"', $html);
         self::assertStringContainsString('data-cbt-test-hub-async-form data-refresh-areas="banners,global-unit-run,unit-inventory,checklist" data-loading-label="Menjalankan..."', $html);

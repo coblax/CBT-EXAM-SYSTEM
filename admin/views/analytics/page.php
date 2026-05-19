@@ -2233,6 +2233,7 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
             };
             let progressTimer = null;
             let progressValue = 0;
+            let analyticsLocalRequestId = 0;
 
             function getAnalyticsRoot() {
                 return document.querySelector('[data-cbt-analytics-root]');
@@ -2362,6 +2363,9 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
             }
 
             async function runAnalyticsLocalAction(source, requestUrl, profileKey) {
+                const currentRequestId = analyticsLocalRequestId + 1;
+                analyticsLocalRequestId = currentRequestId;
+                source.dataset.cbtAnalyticsRequestId = String(currentRequestId);
                 startAnalyticsProgress(profileKey || 'filter');
                 source.setAttribute('aria-busy', 'true');
                 source.classList.add('is-loading');
@@ -2378,6 +2382,9 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
                     if (!response.ok) {
                         throw new Error('HTTP ' + response.status + ': ' + responseText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 180));
                     }
+                    if (currentRequestId !== analyticsLocalRequestId) {
+                        return;
+                    }
 
                     if (!replaceAnalyticsRoot(responseText)) {
                         throw new Error('Respons server tidak berisi area Analytics yang bisa diganti.');
@@ -2388,11 +2395,17 @@ if ($quality_reliability_label === 'Reliable' && (int) ($exam_item_flags['weak_d
                     }
                     completeAnalyticsProgress('Area Analytics sudah diperbarui', 'Konten, filter, chart, dan tabel Analytics berhasil disegarkan tanpa reload halaman global.', 'complete');
                 } catch (error) {
+                    if (currentRequestId !== analyticsLocalRequestId) {
+                        return;
+                    }
                     const message = error && error.message ? error.message : 'Koneksi gagal saat memperbarui area Analytics.';
                     showAnalyticsLocalError('Gagal memperbarui area Analytics', message);
                 } finally {
-                    source.removeAttribute('aria-busy');
-                    source.classList.remove('is-loading');
+                    if (source.dataset.cbtAnalyticsRequestId === String(currentRequestId)) {
+                        delete source.dataset.cbtAnalyticsRequestId;
+                        source.removeAttribute('aria-busy');
+                        source.classList.remove('is-loading');
+                    }
                 }
             }
 

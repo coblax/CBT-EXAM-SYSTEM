@@ -1045,6 +1045,10 @@ final class MaintenanceModularizationTest extends TestCase
         self::assertStringContainsString('data-maintenance-tab-link="seed"', $html);
         self::assertStringContainsString('data-maintenance-async-form', $html);
         self::assertStringContainsString("formData.set('cbt_maintenance_async', '1');", $html);
+        self::assertStringContainsString('maintenanceRequestSeq', $html);
+        self::assertStringContainsString('requestSeq !== maintenanceRequestSeq', $html);
+        self::assertStringContainsString('jobsRequestSeq', $html);
+        self::assertStringContainsString('jobsRequestInFlight', $html);
         self::assertStringContainsString('replaceMaintenanceAreas(html)', $html);
         self::assertStringNotContainsString('window.location.reload', $html);
         self::assertStringNotContainsString('window.location.href =', $html);
@@ -1058,6 +1062,8 @@ final class MaintenanceModularizationTest extends TestCase
 
         self::assertStringContainsString('5 subject dan 22 exam uji', $source);
         self::assertStringContainsString('11 exam khusus tipe soal dan 1 exam Mixed 50%', $source);
+        self::assertStringContainsString('loadJobsRequestSeq', $source);
+        self::assertStringContainsString('loadJobsRequestInFlight', $source);
         self::assertStringNotContainsString('17 exam uji', $source);
     }
 
