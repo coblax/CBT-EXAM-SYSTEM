@@ -1612,6 +1612,24 @@ sudo -u www-data redis-cli -s /var/run/redis/redis.sock PING
 redis-cli info memory | grep -E 'used_memory_human|maxmemory_human|maxmemory_policy'
 ```
 
+Output yang diharapkan:
+
+```text
+PONG
+PONG
+PONG
+used_memory_human:...
+maxmemory_human:1.50G
+maxmemory_policy:noeviction
+```
+
+Catatan verifikasi:
+- Tiga baris `PONG` berasal dari koneksi TCP Redis, socket Redis, lalu socket Redis sebagai user `www-data`.
+- Nilai `used_memory_human` boleh berbeda sesuai kondisi server.
+- `maxmemory_human` harus mendekati konfigurasi `1536mb` atau `1.50G`.
+- `maxmemory_policy` harus `noeviction`.
+- Jika command `sudo -u www-data redis-cli -s /var/run/redis/redis.sock PING` gagal `Permission denied`, pastikan user `www-data` bisa mengakses socket Redis, misalnya lewat group `redis`, lalu restart Redis/PHP-FPM.
+
 ### 18.4 Tuning Global Nginx
 
 ```bash
