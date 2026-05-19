@@ -6188,6 +6188,16 @@ $essay_bulk_summary = isset($essay_bulk_summary) && is_array($essay_bulk_summary
 
                     setupEssayQuestionFilter();
                     initializeEssayDynamicArea();
+                    document.addEventListener('cbt-results-panels-updated', function (event) {
+                        var panelIds = event && event.detail && Array.isArray(event.detail.panelIds)
+                            ? event.detail.panelIds
+                            : [];
+                        if (panelIds.length && panelIds.indexOf('cbt-results-essay-card') === -1) {
+                            return;
+                        }
+                        setupEssayQuestionFilter();
+                        initializeEssayDynamicArea();
+                    });
                 })();
             </script>
             <script>

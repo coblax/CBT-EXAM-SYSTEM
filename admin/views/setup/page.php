@@ -4396,6 +4396,13 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
 
                     function bindSecurityLogTools() {
                         var card = document.getElementById('cbt-setup-security-log-card');
+                        if (!card) {
+                            if (typeof window.cbtSetupSecurityLogCleanup === 'function') {
+                                window.cbtSetupSecurityLogCleanup();
+                            }
+                            return;
+                        }
+
                         var manageForm = document.getElementById('cbt-setup-security-log-manage-form');
                         var severityFilter = document.getElementById('cbt-setup-security-log-filter-severity');
                         var eventFilter = document.getElementById('cbt-setup-security-log-filter-event');
@@ -4430,8 +4437,8 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                         var deleteScopeInput = card ? card.querySelector('[data-security-log-delete-scope]') : null;
                         var deleteSelectedButton = card ? card.querySelector('[data-security-log-submit="selected"]') : null;
                         var deleteAllButton = card ? card.querySelector('[data-security-log-submit="all"]') : null;
-                    var autoRefreshTimer = 0;
-                    var refreshInFlight = false;
+                        var autoRefreshTimer = 0;
+                        var refreshInFlight = false;
                     var monitorActionInFlight = false;
                     var storageKey = 'cbt_setup_security_log_auto_refresh_enabled';
                     var activeViewStorageKey = 'cbt_setup_security_log_active_view';
@@ -4455,9 +4462,19 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                         ruang: 'all'
                     };
 
-                    if (!card || !manageForm || !severityFilter || !eventFilter || !deviceFilter || !kelasFilter || !ruangFilter || !studentNameFilter || !autoRefreshToggle || !liveStatus || !securityLogPanel || !tableRegion || observabilityEndpoint === '' || historyEndpoint === '') {
+                    if (!manageForm || !severityFilter || !eventFilter || !deviceFilter || !kelasFilter || !ruangFilter || !studentNameFilter || !autoRefreshToggle || !liveStatus || !securityLogPanel || !tableRegion || observabilityEndpoint === '' || historyEndpoint === '') {
+                        if (typeof window.cbtSetupSecurityLogCleanup === 'function') {
+                            window.cbtSetupSecurityLogCleanup();
+                        }
                         return;
                     }
+                    if (card.dataset.securityLogToolsBound === '1' && window.cbtSetupSecurityLogActiveCard === card) {
+                        return;
+                    }
+                    if (typeof window.cbtSetupSecurityLogCleanup === 'function') {
+                        window.cbtSetupSecurityLogCleanup();
+                    }
+                    card.dataset.securityLogToolsBound = '1';
 
                     function setLiveStatus(message, tone) {
                         liveStatus.textContent = String(message || '');
@@ -5720,6 +5737,16 @@ window.CBTNativeBridge.onSecuritySnapshotChanged = function (snapshot, reason) {
                         }
                         autoRefreshTimer = 0;
                     }
+                    window.cbtSetupSecurityLogActiveCard = card;
+                    window.cbtSetupSecurityLogCleanup = function () {
+                        stopAutoRefresh();
+                        if (card && card.dataset) {
+                            delete card.dataset.securityLogToolsBound;
+                        }
+                        if (window.cbtSetupSecurityLogActiveCard === card) {
+                            window.cbtSetupSecurityLogActiveCard = null;
+                        }
+                    };
 
                     function isSecurityLogPanelActive() {
                         return !securityLogPanel.hidden;

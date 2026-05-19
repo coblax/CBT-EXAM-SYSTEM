@@ -2644,6 +2644,7 @@
                             showUsersLocalRefreshError(error && error.message ? error.message : 'Batch import user berikutnya gagal dimuat lokal.');
                         }).finally(() => {
                             usersImportInFlight = false;
+                            bindUsersImportContinuation();
                         });
                     }, 420);
                 }

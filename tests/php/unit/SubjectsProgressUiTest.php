@@ -46,6 +46,7 @@ final class SubjectsProgressUiTest extends TestCase
         self::assertStringContainsString('replaceSubjectRefreshAreas', $html);
         self::assertStringContainsString('bindSubjectLocalActions();', $html);
         self::assertStringContainsString('bindSubjectImportContinuation();', $html);
+        self::assertStringContainsString("subjectImportInFlight = false;\n                                bindSubjectImportContinuation();", $html);
         self::assertStringNotContainsString('window.location.href =', $html);
         self::assertStringNotContainsString('window.location.assign', $html);
         self::assertStringNotContainsString('location.reload', $html);

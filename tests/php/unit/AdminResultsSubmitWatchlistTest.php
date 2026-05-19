@@ -90,6 +90,8 @@ final class AdminResultsSubmitWatchlistTest extends TestCase
         self::assertStringContainsString('Lompat ke Attempt', $html);
         self::assertStringContainsString('Result fetch gagal dari browser test.', $html);
         self::assertStringContainsString('cbt-results-attempt-row-501', $html);
+        self::assertStringContainsString("panelIds.indexOf('cbt-results-essay-card')", $html);
+        self::assertStringContainsString('initializeEssayDynamicArea();', $html);
     }
 
     #[RunInSeparateProcess]

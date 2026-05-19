@@ -50,6 +50,7 @@ final class UsersProgressUiTest extends TestCase
         self::assertStringContainsString('replaceUsersRefreshAreas', $html);
         self::assertStringContainsString('bindUsersLocalActions();', $html);
         self::assertStringContainsString('bindUsersImportContinuation();', $html);
+        self::assertStringContainsString("usersImportInFlight = false;\n                            bindUsersImportContinuation();", $html);
         self::assertStringContainsString('cbt_users_local_refresh', $html);
         self::assertStringNotContainsString('window.location.href =', $html);
         self::assertStringNotContainsString('window.location.assign', $html);

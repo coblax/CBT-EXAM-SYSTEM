@@ -1712,6 +1712,7 @@
                             })
                             .finally(() => {
                                 subjectImportInFlight = false;
+                                bindSubjectImportContinuation();
                             });
                     }, 420);
                 }

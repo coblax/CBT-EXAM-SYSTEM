@@ -70,6 +70,10 @@ final class SetupSecurityProgressUiTest extends TestCase
         self::assertStringContainsString('cbt_security_local_refresh', $html);
         self::assertStringContainsString('replaceSecurityRefreshAreas', $html);
         self::assertStringContainsString('bindSecurityAsyncForms();', $html);
+        self::assertStringContainsString('if (!card) {', $html);
+        self::assertStringContainsString('window.cbtSetupSecurityLogCleanup', $html);
+        self::assertStringContainsString('stopAutoRefresh();', $html);
+        self::assertStringContainsString('window.cbtSetupSecurityLogActiveCard', $html);
         self::assertStringContainsString('Memperbarui panel Security tanpa reload global.', $html);
         self::assertStringNotContainsString('window.location.reload', $html);
         self::assertStringNotContainsString('location.reload', $html);

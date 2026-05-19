@@ -66,6 +66,7 @@ final class QuestionsProgressUiTest extends TestCase
             'runQuestionLocalAction',
             'bindQuestionLocalActions();',
             'bindQuestionContinuations();',
+            "questionContinuationInFlight = false;\n                            bindQuestionContinuations();",
             'cbt_questions_local_refresh',
             'showQuestionLocalRefreshError',
         ] as $needle) {
