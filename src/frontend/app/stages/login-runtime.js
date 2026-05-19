@@ -117,12 +117,16 @@ export function mountLoginStage(context) {
     state.stage = 'login';
     restoreUiPreferences();
     mountListeners();
-    render('login-stage-mounted', {});
-
-    return {
+    var controller = {
         render: render,
         unmount: unmount
     };
+    if (typeof context.registerStageController === 'function') {
+        context.registerStageController(controller);
+    }
+    render('login-stage-mounted', {});
+
+    return controller;
 
     function restoreUiPreferences() {
         var persistedUiPreferences = uiPreferencesManager.readPersistedUiPreferences();

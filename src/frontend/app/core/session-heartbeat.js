@@ -238,6 +238,22 @@ export function createSessionHeartbeatManager(deps) {
         return query;
     }
 
+    function canRunExamHeartbeat() {
+        return !!state.token
+            && state.stage === 'exam'
+            && Number(state.attemptId) > 0;
+    }
+
+    function pauseInactiveHeartbeat() {
+        if (heartbeatTimer) {
+            windowRef.clearInterval(heartbeatTimer);
+            heartbeatTimer = 0;
+        }
+        resetHeartbeatLostState({
+            render: false
+        });
+    }
+
     function recordHeartbeatLostFailure(attemptId, error) {
         var safeAttemptId = Number(attemptId) || 0;
         if (safeAttemptId <= 0) {
@@ -326,10 +342,8 @@ export function createSessionHeartbeatManager(deps) {
     }
 
     function run() {
-        if (!state.token || state.stage === 'login') {
-            resetHeartbeatLostState({
-                render: false
-            });
+        if (!canRunExamHeartbeat()) {
+            pauseInactiveHeartbeat();
             return Promise.resolve(null);
         }
 
@@ -337,9 +351,7 @@ export function createSessionHeartbeatManager(deps) {
             return heartbeatInFlight;
         }
 
-        var heartbeatAttemptId = state.stage === 'exam' && state.attemptId > 0
-            ? Number(state.attemptId) || 0
-            : 0;
+        var heartbeatAttemptId = Number(state.attemptId) || 0;
         var heartbeatExamId = Number(state.selectedExamId) || 0;
         if (typeof recordTimeline === 'function') {
             recordTimeline('heartbeat:start', 'Heartbeat session dijalankan.', {
@@ -526,7 +538,8 @@ export function createSessionHeartbeatManager(deps) {
     function start(options) {
         options = options || {};
 
-        if (!state.token || state.stage === 'login') {
+        if (!canRunExamHeartbeat()) {
+            pauseInactiveHeartbeat();
             return;
         }
 

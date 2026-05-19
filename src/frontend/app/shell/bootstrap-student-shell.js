@@ -45,6 +45,7 @@ export function bootstrapStudentShell() {
         storageKey: AUTH_SESSION_STORAGE_KEY
     });
     var currentController = null;
+    var pendingController = null;
     var currentStage = '';
     var transitionSerial = 0;
     var context = {
@@ -57,6 +58,7 @@ export function bootstrapStudentShell() {
         loadLegacyRuntime: loadLegacyRuntime,
         recordActionTrail: recordActionTrail,
         recordTimeline: recordTimeline,
+        registerStageController: registerStageController,
         renderFatalError: renderFatalError,
         renderShell: function () {
             if (currentController && typeof currentController.render === 'function') {
@@ -92,6 +94,11 @@ export function bootstrapStudentShell() {
         var serial = transitionSerial + 1;
         transitionSerial = serial;
 
+        if (pendingController && pendingController !== currentController && typeof pendingController.unmount === 'function') {
+            pendingController.unmount();
+        }
+        pendingController = null;
+
         if (currentController && typeof currentController.unmount === 'function') {
             currentController.unmount();
         }
@@ -106,9 +113,15 @@ export function bootstrapStudentShell() {
                 if (controller && typeof controller.unmount === 'function') {
                     controller.unmount();
                 }
+                if (pendingController === controller) {
+                    pendingController = null;
+                }
                 return null;
             }
             currentController = controller || createEmptyStageController();
+            if (pendingController === currentController) {
+                pendingController = null;
+            }
             if (currentController && typeof currentController.render === 'function') {
                 currentController.render('stage-mounted', {
                     stage: currentStage
@@ -117,6 +130,10 @@ export function bootstrapStudentShell() {
             return currentController;
         } catch (error) {
             if (serial === transitionSerial) {
+                if (pendingController && pendingController !== currentController && typeof pendingController.unmount === 'function') {
+                    pendingController.unmount();
+                }
+                pendingController = null;
                 renderFatalError('stage-load', error);
             }
             throw error;
@@ -126,6 +143,10 @@ export function bootstrapStudentShell() {
     async function loadLegacyRuntime(reasonOrOptions) {
         var options = normalizeLegacyRuntimeOptions(reasonOrOptions);
         transitionSerial += 1;
+        if (pendingController && pendingController !== currentController && typeof pendingController.unmount === 'function') {
+            pendingController.unmount();
+        }
+        pendingController = null;
         if (currentController && typeof currentController.unmount === 'function') {
             currentController.unmount();
         }
@@ -147,6 +168,16 @@ export function bootstrapStudentShell() {
             renderFatalError('legacy-runtime', error);
             throw error;
         }
+    }
+
+    function registerStageController(controller) {
+        if (!controller || typeof controller !== 'object') {
+            return;
+        }
+        if (pendingController && pendingController !== controller && pendingController !== currentController && typeof pendingController.unmount === 'function') {
+            pendingController.unmount();
+        }
+        pendingController = controller;
     }
 
     function renderBootShell(stage) {

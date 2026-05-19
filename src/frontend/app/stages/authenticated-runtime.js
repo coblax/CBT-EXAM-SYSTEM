@@ -176,6 +176,9 @@ export function createAuthenticatedStageRuntime(context, options) {
         updateResultProgress: updateResultProgress
     };
 
+    if (typeof context.registerStageController === 'function') {
+        context.registerStageController(runtime);
+    }
     mountListeners();
     uiPreferencesManager.applyUiPreferences();
     syncBodyStageClass();

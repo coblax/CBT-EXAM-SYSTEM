@@ -370,6 +370,86 @@ describe('createSessionHeartbeatManager', function () {
         expect(fixture.calls.render).toEqual([]);
     });
 
+    it('skips heartbeat outside active exam attempts so transition screens do not call session with an empty attempt id', async function () {
+        var fixture = createHeartbeatFixture({
+            state: {
+                attemptId: 0,
+                heartbeatLostActive: true,
+                heartbeatLostFailureCount: 2,
+                heartbeatLostLastErrorCode: 'invalid_attempt_id',
+                stage: 'confirm'
+            }
+        });
+
+        var result = await fixture.manager.run();
+
+        expect(result).toBeNull();
+        expect(fixture.calls.apiRequest).toHaveLength(0);
+        expect(fixture.state.heartbeatLostActive).toBe(false);
+        expect(fixture.state.heartbeatLostFailureCount).toBe(0);
+        expect(fixture.state.heartbeatLostLastErrorCode).toBe('');
+        expect(fixture.calls.render).toEqual([]);
+    });
+
+    it('does not start the heartbeat timer on non-exam transition screens', function () {
+        var windowRef = {
+            clearInterval: vi.fn(),
+            navigator: {
+                onLine: true
+            },
+            setInterval: vi.fn(),
+            setTimeout: vi.fn()
+        };
+        var fixture = createHeartbeatFixture({
+            state: {
+                attemptId: 0,
+                stage: 'result'
+            },
+            windowRef: windowRef
+        });
+
+        fixture.manager.start();
+
+        expect(windowRef.setInterval).not.toHaveBeenCalled();
+        expect(fixture.calls.apiRequest).toHaveLength(0);
+    });
+
+    it('pauses an existing heartbeat timer after leaving an active exam attempt', async function () {
+        var windowRef = {
+            clearInterval: vi.fn(),
+            navigator: {
+                onLine: true
+            },
+            setInterval: vi.fn(function () {
+                return 77;
+            }),
+            setTimeout: vi.fn()
+        };
+        var fixture = createHeartbeatFixture({
+            windowRef: windowRef
+        });
+
+        fixture.manager.start({
+            immediate: false
+        });
+        fixture.state.attemptId = 0;
+        fixture.state.stage = 'result';
+
+        var result = await fixture.manager.run();
+
+        expect(result).toBeNull();
+        expect(windowRef.clearInterval).toHaveBeenCalledWith(77);
+        expect(fixture.calls.apiRequest).toHaveLength(0);
+
+        fixture.state.attemptId = 55;
+        fixture.state.stage = 'exam';
+        fixture.manager.start({
+            immediate: false
+        });
+
+        expect(windowRef.setInterval).toHaveBeenCalledTimes(2);
+    });
+
     it('refreshes question runtime when heartbeat detects question count drift', async function () {
         var fixture = createHeartbeatFixture({
             apiRequest: async function () {
