@@ -120,6 +120,10 @@ if (!trait_exists('CBT_REST_Supervisor_Routes')) {
     require_once __DIR__ . '/class-cbt-rest-supervisor.php';
 }
 
+if (!trait_exists('CBT_REST_Diagnostics_Routes')) {
+    require_once __DIR__ . '/class-cbt-rest-diagnostics.php';
+}
+
 class CBT_REST
 {
     use CBT_REST_Exam_Availability_Helpers;
@@ -134,6 +138,7 @@ class CBT_REST
     use CBT_REST_Start_Attempt_Routes;
     use CBT_REST_Submit_Answer_Routes;
     use CBT_REST_Supervisor_Routes;
+    use CBT_REST_Diagnostics_Routes;
 
     private const PRIORITY_WINDOW_TRANSIENT_KEY = 'cbt_exam_priority_window_until';
     private const AVAILABILITY_BASE_CATALOG_TTL = 900;
@@ -567,6 +572,24 @@ class CBT_REST
             'permission_callback' => [CBT_Auth::class, 'permission_teacher_or_student'],
             'args' => [
                 'attempt_id' => [
+                    'required' => false,
+                    'type' => 'integer',
+                    'sanitize_callback' => 'absint',
+                ],
+            ],
+        ]);
+
+        register_rest_route('cbt/v1', '/diagnostics/exam-cache-test', [
+            'methods' => WP_REST_Server::READABLE,
+            'callback' => [self::class, 'exam_cache_test'],
+            'permission_callback' => [self::class, 'permission_diagnostics_admin'],
+            'args' => [
+                'exam_id' => [
+                    'required' => true,
+                    'type' => 'integer',
+                    'sanitize_callback' => 'absint',
+                ],
+                'force_warmup' => [
                     'required' => false,
                     'type' => 'integer',
                     'sanitize_callback' => 'absint',

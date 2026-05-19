@@ -66,6 +66,12 @@ export async function mountConfirmStage(context, options) {
         if (action === 'start-exam') {
             event.preventDefault();
             await startExam(activeRuntime);
+            return;
+        }
+
+        if (action === 'test-redis-cache') {
+            event.preventDefault();
+            await testRedisCache(activeRuntime);
         }
     }
 
@@ -138,5 +144,38 @@ export async function mountConfirmStage(context, options) {
             reason: 'start-exam',
             selectedExam: selectedExam
         });
+    }
+
+    async function testRedisCache(activeRuntime) {
+        if (activeRuntime.state.adminDiagnosticBusy) {
+            return;
+        }
+
+        var selectedExam = activeRuntime.getSelectedExam();
+        if (!selectedExam) {
+            return;
+        }
+
+        activeRuntime.clearMessages();
+        activeRuntime.state.adminDiagnosticResult = null;
+        activeRuntime.state.adminDiagnosticBusy = true;
+        activeRuntime.render('test-redis-cache-start');
+
+        try {
+            var response = await context.api('diagnostics/exam-cache-test', {
+                method: 'GET',
+                query: {
+                    exam_id: selectedExam.id,
+                    force_warmup: 1
+                }
+            });
+            activeRuntime.state.adminDiagnosticResult = response;
+        } catch (error) {
+            activeRuntime.state.adminDiagnosticResult = null;
+            activeRuntime.state.error = error instanceof Error ? error.message : 'Gagal mengecek Redis cache.';
+        } finally {
+            activeRuntime.state.adminDiagnosticBusy = false;
+            activeRuntime.render('test-redis-cache-complete');
+        }
     }
 }

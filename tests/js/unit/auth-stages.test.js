@@ -21,6 +21,7 @@ function createFixture(overrides = {}) {
         stage: 'confirm',
         user: {
             username: 'ayu',
+            role: 'student',
             kode_kelas: 'XII IPA 1',
             kode_ruang: 'R-3'
         }
@@ -240,4 +241,217 @@ describe('createAuthStageManager', function () {
         expect(html).toContain('Belum Ada Exam Aktif');
         expect(html).toContain('Akun ini belum memiliki ujian yang bisa dikerjakan atau dilihat saat ini.');
     });
+
+    it('renders full technical Redis diagnostics for administrators', function () {
+        var manager = createFixture({
+            state: {
+                adminDiagnosticResult: buildDiagnosticResult({
+                    diagnostics: {
+                        redis_host: '/var/run/redis/redis.sock',
+                        redis_database: 5,
+                        storage_key: 'cbt_start_snapshot:exam:55:rev:12:abcdefghijklmnopqrstuvwxyz:v2:index',
+                        snapshot_item_count: 330,
+                        snapshot_payload_bytes: 14520,
+                        snapshot_ttl_seconds: 43100,
+                        storage_shape: 'start_per_question_v2',
+                        v2_index_status: 'ready',
+                        v2_fragment_count: 330,
+                        v2_missing_fragment_count: 0,
+                        fallback_reason: '',
+                        revision_meta: {
+                            version: 12,
+                            invalidated_at: '2026-05-19 20:00:00',
+                            signature: 'abcdefghijklmnopqrstuvwxyz0123456789'
+                        },
+                        repair_status: 'clean',
+                        repair_message: ''
+                    }
+                }),
+                user: {
+                    username: 'admin',
+                    role: 'administrator',
+                    kode_kelas: 'STAFF',
+                    kode_ruang: 'OPS'
+                }
+            }
+        });
+
+        var html = manager.renderConfirmStage();
+
+        expect(html).toContain('Admin Diagnostic: Redis Preflight');
+        expect(html).toContain('READY | v2 fragmented | 330 soal | TTL 11j 58m | payload index 14.18 KB');
+        expect(html).toContain('Koneksi Redis');
+        expect(html).toContain('/var/run/redis/redis.sock');
+        expect(html).toContain('Snapshot');
+        expect(html).toContain('YA');
+        expect(html).toContain('Storage Key');
+        expect(html).toContain('cbt_start_snapshot:exa...');
+        expect(html).toContain('title="cbt_start_snapshot:exam:55:rev:12:abcdefghijklmnopqrstuvwxyz:v2:index"');
+        expect(html).toContain('V2 Fragment');
+        expect(html).toContain('330');
+        expect(html).toContain('Revision &amp; Repair');
+        expect(html).toContain('abcdef');
+        expect(html).toContain('14520 bytes (14.18 KB)');
+    });
+
+    it('formats Redis diagnostic TTL edge cases for admins', function () {
+        [
+            [-2, 'missing'],
+            [-1, 'no expiry'],
+            [0, 'expired'],
+            [3552, '59 menit 12 detik']
+        ].forEach(function (entry) {
+            var manager = createFixture({
+                state: {
+                    adminDiagnosticResult: buildDiagnosticResult({
+                        diagnostics: {
+                            snapshot_ttl_seconds: entry[0]
+                        }
+                    }),
+                    user: {
+                        username: 'admin',
+                        role: 'administrator',
+                        kode_kelas: 'STAFF',
+                        kode_ruang: 'OPS'
+                    }
+                }
+            });
+
+            expect(manager.renderConfirmStage()).toContain('TTL ' + entry[1]);
+        });
+    });
+
+    it('renders Redis unavailable diagnostics with connection errors', function () {
+        var manager = createFixture({
+            state: {
+                adminDiagnosticResult: buildDiagnosticResult({
+                    ping_success: false,
+                    redis_status: 'disconnected',
+                    snapshot_status: 'unavailable',
+                    diagnostics: {
+                        redis_available: false,
+                        redis_error: 'Permission denied',
+                        redis_host: '/var/run/redis/redis.sock',
+                        snapshot_status: 'unavailable',
+                        snapshot_message: 'Redis start snapshot tidak tersedia.',
+                        snapshot_ttl_seconds: -2
+                    }
+                }),
+                user: {
+                    username: 'admin',
+                    role: 'administrator',
+                    kode_kelas: 'STAFF',
+                    kode_ruang: 'OPS'
+                }
+            }
+        });
+
+        var html = manager.renderConfirmStage();
+
+        expect(html).toContain('GAGAL/MATI');
+        expect(html).toContain('UNAVAILABLE');
+        expect(html).toContain('Permission denied');
+        expect(html).toContain('Redis start snapshot tidak tersedia.');
+    });
+
+    it('renders snapshot miss reason and repair messages when cache is not ready', function () {
+        var manager = createFixture({
+            state: {
+                adminDiagnosticResult: buildDiagnosticResult({
+                    snapshot_status: 'miss',
+                    warmup_error: 'Warmup belum selesai.',
+                    diagnostics: {
+                        snapshot_exists: false,
+                        snapshot_valid: false,
+                        snapshot_status: 'miss',
+                        snapshot_miss_reason: 'revision_unavailable',
+                        snapshot_miss_reason_label: 'Revision belum tersedia',
+                        snapshot_message: 'Start snapshot belum ditemukan.',
+                        repair_status: 'queued_auto_heal',
+                        repair_message: 'Auto-heal sudah diantrikan.',
+                        snapshot_ttl_seconds: -2
+                    }
+                }),
+                user: {
+                    username: 'admin',
+                    role: 'administrator',
+                    kode_kelas: 'STAFF',
+                    kode_ruang: 'OPS'
+                }
+            }
+        });
+
+        var html = manager.renderConfirmStage();
+
+        expect(html).toContain('Revision belum tersedia');
+        expect(html).toContain('Reason: revision_unavailable');
+        expect(html).toContain('Start snapshot belum ditemukan.');
+        expect(html).toContain('Auto-heal sudah diantrikan.');
+        expect(html).toContain('Warmup belum selesai.');
+    });
+
+    it('does not render Redis diagnostics for non-admin users', function () {
+        var manager = createFixture({
+            state: {
+                adminDiagnosticResult: buildDiagnosticResult()
+            }
+        });
+
+        var html = manager.renderConfirmStage();
+
+        expect(html).not.toContain('Admin Diagnostic: Redis Preflight');
+        expect(html).not.toContain('Koneksi Redis');
+    });
 });
+
+function buildDiagnosticResult(overrides = {}) {
+    var diagnostics = Object.assign({
+        redis_available: true,
+        redis_error: '',
+        redis_host: '127.0.0.1',
+        redis_database: 2,
+        revision_meta: {
+            version: 1,
+            invalidated_at: '',
+            signature: 'sig-ready'
+        },
+        storage_key: 'cbt_start_snapshot:exam:55:rev:1:sig-ready:v2:index',
+        snapshot_exists: true,
+        snapshot_valid: true,
+        snapshot_status: 'ready',
+        snapshot_miss_reason: '',
+        snapshot_miss_reason_label: '',
+        snapshot_message: 'Start snapshot Redis siap dipakai untuk kontrak start_attempt.',
+        repair_status: '',
+        repair_message: '',
+        storage_shape: 'start_per_question_v2',
+        v2_index_status: 'ready',
+        v2_fragment_count: 330,
+        v2_missing_fragment_count: 0,
+        fallback_reason: '',
+        snapshot_item_count: 330,
+        snapshot_payload_bytes: 14520,
+        snapshot_ttl_seconds: 43100,
+        question_count: 330
+    }, overrides.diagnostics || {});
+    var resultOverrides = Object.assign({}, overrides);
+    delete resultOverrides.diagnostics;
+
+    return Object.assign({
+        diagnostics: diagnostics,
+        exam_id: 55,
+        item_count: diagnostics.snapshot_item_count || diagnostics.question_count || 0,
+        latency_ms: 113.07,
+        payload_bytes: diagnostics.snapshot_payload_bytes || 0,
+        ping_success: true,
+        question_count: diagnostics.question_count || 0,
+        redis_status: diagnostics.redis_available ? 'connected' : 'disconnected',
+        snapshot_message: diagnostics.snapshot_message || '',
+        snapshot_miss_reason: diagnostics.snapshot_miss_reason || '',
+        snapshot_miss_reason_label: diagnostics.snapshot_miss_reason_label || '',
+        snapshot_status: diagnostics.snapshot_status || 'ready',
+        ttl_seconds: diagnostics.snapshot_ttl_seconds,
+        warmup_attempted: true,
+        warmup_error: ''
+    }, resultOverrides);
+}

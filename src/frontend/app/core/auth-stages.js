@@ -298,6 +298,260 @@ export function createAuthStageManager(deps) {
         ].join('');
     }
 
+    function formatDiagnosticTtl(seconds) {
+        var ttlSeconds = Number(seconds);
+        if (!Number.isFinite(ttlSeconds)) {
+            return '-';
+        }
+
+        ttlSeconds = Math.floor(ttlSeconds);
+        if (ttlSeconds === -2) {
+            return 'missing';
+        }
+        if (ttlSeconds === -1) {
+            return 'no expiry';
+        }
+        if (ttlSeconds <= 0) {
+            return 'expired';
+        }
+
+        var hours = Math.floor(ttlSeconds / 3600);
+        var minutes = Math.floor((ttlSeconds % 3600) / 60);
+        var secondsLeft = ttlSeconds % 60;
+        if (hours > 0) {
+            return String(hours) + 'j ' + String(minutes) + 'm';
+        }
+        if (minutes > 0) {
+            return String(minutes) + ' menit ' + String(secondsLeft) + ' detik';
+        }
+
+        return String(secondsLeft) + ' detik';
+    }
+
+    function formatDiagnosticBytes(bytes, compact) {
+        var byteCount = Number(bytes);
+        if (!Number.isFinite(byteCount) || byteCount < 0) {
+            byteCount = 0;
+        }
+        byteCount = Math.round(byteCount);
+
+        if (byteCount >= 1024 * 1024) {
+            var mb = (byteCount / (1024 * 1024)).toFixed(2) + ' MB';
+            return compact ? mb : String(byteCount) + ' bytes (' + mb + ')';
+        }
+        if (byteCount >= 1024) {
+            var kb = (byteCount / 1024).toFixed(2) + ' KB';
+            return compact ? kb : String(byteCount) + ' bytes (' + kb + ')';
+        }
+
+        return String(byteCount) + ' bytes';
+    }
+
+    function formatDiagnosticBool(value) {
+        if (value === true || value === 1 || value === '1' || String(value).toLowerCase() === 'true') {
+            return 'YA';
+        }
+        return 'TIDAK';
+    }
+
+    function truncateDiagnosticValue(value, head, tail) {
+        var text = String(value === null || value === undefined ? '' : value);
+        var headLength = Math.max(1, Number(head) || 14);
+        var tailLength = Math.max(1, Number(tail) || 8);
+        if (text.length <= headLength + tailLength + 3) {
+            return text;
+        }
+
+        return text.slice(0, headLength) + '...' + text.slice(text.length - tailLength);
+    }
+
+    function readDiagnosticObject(diagnosticResult) {
+        return diagnosticResult && diagnosticResult.diagnostics && typeof diagnosticResult.diagnostics === 'object'
+            ? diagnosticResult.diagnostics
+            : {};
+    }
+
+    function diagnosticText(value, fallback) {
+        if (value === null || value === undefined || value === '') {
+            return fallback !== undefined ? String(fallback) : '-';
+        }
+
+        return String(value);
+    }
+
+    function formatDiagnosticStorageShape(value) {
+        var shape = String(value || '').trim();
+        if (shape === 'start_per_question_v2') {
+            return 'v2 fragmented';
+        }
+        if (shape === 'legacy_monolith') {
+            return 'legacy monolith';
+        }
+        if (shape === 'none' || shape === '') {
+            return 'none';
+        }
+
+        return shape.replace(/_/g, ' ');
+    }
+
+    function renderDiagnosticRow(label, value, title) {
+        var fullTitle = title !== undefined ? String(title || '') : String(value || '');
+        var titleAttr = fullTitle !== '' ? ' title="' + escapeHtml(fullTitle) + '"' : '';
+
+        return [
+            '<div class="cbt-admin-diagnostic-row" style="min-width: 0;">',
+            '<span style="display: block; color: #475569; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;">' + escapeHtml(label) + '</span>',
+            '<strong' + titleAttr + ' style="display: block; margin-top: 2px; color: #0f172a; font-size: 12px; overflow-wrap: anywhere;">' + escapeHtml(value) + '</strong>',
+            '</div>'
+        ].join('');
+    }
+
+    function renderDiagnosticSection(title, rows) {
+        return [
+            '<section class="cbt-admin-diagnostic-section" style="border-top: 1px solid rgba(88,80,236,.18); padding-top: 12px;">',
+            '<h5 style="margin: 0 0 8px 0; color: #334155; font-size: 12px; text-transform: uppercase;">' + escapeHtml(title) + '</h5>',
+            '<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px;">',
+            rows.join(''),
+            '</div>',
+            '</section>'
+        ].join('');
+    }
+
+    function renderAdminDiagnosticPanel(hasSelectedExam, selectedExam) {
+        var userRole = String(state.user && state.user.role ? state.user.role : '').toLowerCase();
+        if (userRole !== 'administrator' && userRole !== 'admin') {
+            return '';
+        }
+
+        var panelContent = '';
+        if (!hasSelectedExam) {
+            panelContent = '<p class="cbt-muted">Pilih ujian untuk melihat diagnostik cache Redis.</p>';
+        } else {
+            var diagnosticResult = state.adminDiagnosticResult;
+            if (state.adminDiagnosticBusy) {
+                panelContent = '<p class="cbt-muted">Mengecek koneksi Redis dan status snapshot...</p>';
+            } else if (diagnosticResult && Number(diagnosticResult.exam_id) === Number(selectedExam.id)) {
+                var diagnostics = readDiagnosticObject(diagnosticResult);
+                var revisionMeta = diagnostics.revision_meta && typeof diagnostics.revision_meta === 'object'
+                    ? diagnostics.revision_meta
+                    : {};
+                var redisStatus = diagnosticText(diagnosticResult.redis_status, 'unknown');
+                var isConnected = redisStatus === 'connected';
+                var isPingSuccess = diagnosticResult.ping_success;
+                var snapshotStatus = String(diagnosticResult.snapshot_status || 'unknown');
+                var latency = Number(diagnosticResult.latency_ms) || 0;
+                var itemCount = Number(diagnosticResult.item_count) || 0;
+                var snapshotMessage = diagnosticText(diagnosticResult.snapshot_message || diagnostics.snapshot_message, '');
+                var repairMessage = diagnosticText(diagnostics.repair_message, '');
+                var warmupError = diagnosticText(diagnosticResult.warmup_error, '');
+                var storageShape = diagnosticText(diagnostics.storage_shape, 'none');
+                var storageShapeLabel = formatDiagnosticStorageShape(storageShape);
+                var ttlSeconds = diagnostics.snapshot_ttl_seconds !== undefined
+                    ? diagnostics.snapshot_ttl_seconds
+                    : diagnosticResult.ttl_seconds;
+                var payloadBytes = diagnostics.snapshot_payload_bytes !== undefined
+                    ? diagnostics.snapshot_payload_bytes
+                    : diagnosticResult.payload_bytes;
+                var ttlLabel = formatDiagnosticTtl(ttlSeconds);
+                var payloadLabel = formatDiagnosticBytes(payloadBytes);
+                var payloadCompact = formatDiagnosticBytes(payloadBytes, true);
+                var snapshotMissLabel = diagnosticText(diagnosticResult.snapshot_miss_reason_label || diagnostics.snapshot_miss_reason_label, '');
+                var snapshotMissReason = diagnosticText(diagnosticResult.snapshot_miss_reason || diagnostics.snapshot_miss_reason, '');
+                var storageKey = diagnosticText(diagnostics.storage_key, '');
+                var revisionSignature = diagnosticText(revisionMeta.signature, '');
+
+                var connectionClass = (isConnected && isPingSuccess) ? 'is-ready' : 'is-warn';
+                var snapshotClass = snapshotStatus === 'ready' ? 'is-ready' : 'is-warn';
+                var summaryClass = snapshotStatus === 'ready' ? 'cbt-finish-modal-ok' : 'cbt-finish-modal-warning';
+                var summary = [
+                    snapshotStatus.toUpperCase(),
+                    storageShapeLabel,
+                    String(itemCount) + ' soal',
+                    'TTL ' + ttlLabel,
+                    'payload index ' + payloadCompact
+                ].join(' | ');
+                var detailMessages = [];
+                if (snapshotStatus !== 'ready') {
+                    if (snapshotMissLabel !== '') {
+                        detailMessages.push(snapshotMissLabel);
+                    }
+                    if (snapshotMissReason !== '') {
+                        detailMessages.push('Reason: ' + snapshotMissReason);
+                    }
+                    if (snapshotMessage !== '') {
+                        detailMessages.push(snapshotMessage);
+                    }
+                    if (repairMessage !== '') {
+                        detailMessages.push(repairMessage);
+                    }
+                    if (warmupError !== '') {
+                        detailMessages.push(warmupError);
+                    }
+                }
+
+                panelContent = [
+                    '<div class="cbt-admin-diagnostic-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; font-size: 13px;">',
+                    '<div><strong>Koneksi Redis:</strong> <span class="cbt-chip ' + connectionClass + '">' + (isConnected && isPingSuccess ? 'TERHUBUNG' : 'GAGAL/MATI') + '</span></div>',
+                    '<div><strong>Status Cache:</strong> <span class="cbt-chip ' + snapshotClass + '">' + escapeHtml(snapshotStatus).toUpperCase() + '</span></div>',
+                    '<div><strong>Jumlah Soal:</strong> ' + escapeHtml(itemCount) + '</div>',
+                    '<div><strong>Latency Cek:</strong> ' + escapeHtml(latency) + ' ms</div>',
+                    '</div>',
+                    '<div class="' + summaryClass + '" style="margin-bottom: 12px; font-size: 13px;">' + escapeHtml(summary) + '</div>',
+                    detailMessages.length
+                        ? '<p class="cbt-muted" style="margin: 0 0 12px 0; font-size: 12px;">' + escapeHtml(detailMessages.join(' | ')) + '</p>'
+                        : '',
+                    '<div style="display: grid; gap: 12px; margin-bottom: 12px;">',
+                    renderDiagnosticSection('Koneksi Redis', [
+                        renderDiagnosticRow('Status', redisStatus.toUpperCase()),
+                        renderDiagnosticRow('Host', diagnosticText(diagnostics.redis_host, '-')),
+                        renderDiagnosticRow('Database', diagnosticText(diagnostics.redis_database, '-')),
+                        renderDiagnosticRow('Error', diagnosticText(diagnostics.redis_error, '-'))
+                    ]),
+                    renderDiagnosticSection('Snapshot', [
+                        renderDiagnosticRow('Status', snapshotStatus.toUpperCase()),
+                        renderDiagnosticRow('Exists', formatDiagnosticBool(diagnostics.snapshot_exists)),
+                        renderDiagnosticRow('Valid', formatDiagnosticBool(diagnostics.snapshot_valid)),
+                        renderDiagnosticRow('Storage Shape', storageShapeLabel, storageShape),
+                        renderDiagnosticRow('Storage Key', storageKey !== '' ? truncateDiagnosticValue(storageKey, 22, 12) : '-', storageKey),
+                        renderDiagnosticRow('TTL', ttlLabel),
+                        renderDiagnosticRow('Payload Size', payloadLabel),
+                        renderDiagnosticRow('Jumlah Soal', String(itemCount))
+                    ]),
+                    renderDiagnosticSection('V2 Fragment', [
+                        renderDiagnosticRow('Index Status', diagnosticText(diagnostics.v2_index_status, '-')),
+                        renderDiagnosticRow('Fragment Count', diagnosticText(diagnostics.v2_fragment_count, '0')),
+                        renderDiagnosticRow('Missing Fragment', diagnosticText(diagnostics.v2_missing_fragment_count, '0')),
+                        renderDiagnosticRow('Fallback Reason', diagnosticText(diagnostics.fallback_reason, '-'))
+                    ]),
+                    renderDiagnosticSection('Revision & Repair', [
+                        renderDiagnosticRow('Revision Version', diagnosticText(revisionMeta.version, '-')),
+                        renderDiagnosticRow('Invalidated At', diagnosticText(revisionMeta.invalidated_at, '-')),
+                        renderDiagnosticRow('Signature', revisionSignature !== '' ? truncateDiagnosticValue(revisionSignature, 16, 10) : '-', revisionSignature),
+                        renderDiagnosticRow('Repair Status', diagnosticText(diagnostics.repair_status, '-')),
+                        renderDiagnosticRow('Repair Message', repairMessage || '-'),
+                        renderDiagnosticRow('Warmup', formatDiagnosticBool(diagnosticResult.warmup_attempted)),
+                        renderDiagnosticRow('Warmup Error', warmupError || '-'),
+                        renderDiagnosticRow('Snapshot Message', snapshotMessage || '-')
+                    ]),
+                    '</div>',
+                    '<button class="cbt-button cbt-button-secondary cbt-button-small" data-action="test-redis-cache" type="button" style="padding: 4px 8px; font-size: 12px;">Uji Ulang / Warmup Cache</button>'
+                ].join('');
+            } else {
+                panelContent = [
+                    '<p class="cbt-muted" style="margin-bottom: 12px;">Anda adalah Admin. Anda dapat memastikan apakah ujian ini di-cache di memori (Redis) untuk mencegah kelambatan saat diakses siswa.</p>',
+                    '<button class="cbt-button cbt-button-secondary cbt-button-small" data-action="test-redis-cache" type="button" style="padding: 4px 8px; font-size: 12px;">Test Redis Cache</button>'
+                ].join('');
+            }
+        }
+
+        return [
+            '<div class="cbt-card cbt-admin-diagnostic-panel" style="margin-top: 16px; border: 2px solid #5850ec; background: #ebf4ff; border-radius: 8px; padding: 16px;">',
+            '<h4 style="margin: 0 0 8px 0; color: #5850ec; display: flex; align-items: center; gap: 8px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg> Admin Diagnostic: Redis Preflight</h4>',
+            panelContent,
+            '</div>'
+        ].join('');
+    }
+
     function renderConfirmStage() {
         if (!state.exams.length) {
             return [
@@ -632,6 +886,7 @@ export function createAuthStageManager(deps) {
             ),
             '<div class="cbt-field cbt-confirm-field cbt-confirm-field-note"><p class="cbt-confirm-token-note">' + escapeHtml(confirmSupportText) + '</p></div>',
             '</div>',
+            renderAdminDiagnosticPanel(hasSelectedExam, selectedExam),
             renderAlert(),
             renderConfirmRefreshProgressCard(),
             '<div class="cbt-actions cbt-confirm-actions">',
