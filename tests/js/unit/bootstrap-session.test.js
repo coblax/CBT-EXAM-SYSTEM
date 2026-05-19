@@ -562,4 +562,33 @@ describe('createBootstrapSessionManager', function () {
                 && snapshot.sessionRecoveryCanRetry;
         })).toBe(true);
     });
+
+    it('stops session recovery retries at the configured limit and asks for login again', async function () {
+        var fixture = createFixture({
+            persisted: {
+                token: 'token-123',
+                user: {
+                    user_id: 9,
+                    role: 'student'
+                },
+                selectedExamId: 44
+            },
+            state: {
+                sessionRecoveryCanRetry: true,
+                sessionRecoveryMode: 'confirm_restore',
+                sessionRecoveryRetryCount: 5,
+                sessionRecoveryVisible: true
+            }
+        });
+
+        var result = await fixture.manager.retrySessionRecovery();
+
+        expect(result).toBe(false);
+        expect(fixture.calls.loadExams).toBe(0);
+        expect(fixture.state.busy).toBe(false);
+        expect(fixture.state.sessionRecoveryCanRetry).toBe(false);
+        expect(fixture.state.sessionRecoverySlowStage).toBe('failed');
+        expect(fixture.state.sessionRecoveryStatus).toBe('Pemulihan sesi gagal');
+        expect(fixture.state.error).toContain('login ulang');
+    });
 });

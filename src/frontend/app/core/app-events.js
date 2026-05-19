@@ -62,8 +62,14 @@ export function createAppEventManager(deps) {
     var fullLogout = deps.fullLogout;
     var flushAttemptUiStateSilently = deps.flushAttemptUiStateSilently;
     var flushPendingAnswerBatchSilently = deps.flushPendingAnswerBatchSilently;
+    var maybeFinalizeLockedExam = typeof deps.maybeFinalizeLockedExam === 'function'
+        ? deps.maybeFinalizeLockedExam
+        : function () {
+            return Promise.resolve(null);
+        };
     var suppressedClickAction = '';
     var suppressedClickUntil = 0;
+    var BACK_CONFIRM_FLUSH_TIMEOUT_MS = 8000;
     var IMAGE_RICH_ZOOM_SCALE_STEPS = [75, 100, 125, 150, 175, 200, 225, 250];
     var TABLE_RICH_ZOOM_SCALE_STEPS = [75, 100, 125, 150, 175, 200];
 
@@ -211,6 +217,45 @@ export function createAppEventManager(deps) {
             noteQuestionPrefetchActivity();
         } catch (error) {
             // Prefetch bookkeeping should never block UI controls.
+        }
+    }
+
+    function withBackConfirmFlushTimeout(promise, label) {
+        return new Promise(function (resolve, reject) {
+            var settled = false;
+            var timerId = setTimeout(function () {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                var timeoutError = new Error('Sinkronisasi ' + String(label || 'data') + ' terlalu lama.');
+                timeoutError.code = 'back_confirm_flush_timeout';
+                reject(timeoutError);
+            }, BACK_CONFIRM_FLUSH_TIMEOUT_MS);
+
+            Promise.resolve(promise).then(function (value) {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                clearTimeout(timerId);
+                resolve(value);
+            }).catch(function (error) {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                clearTimeout(timerId);
+                reject(error);
+            });
+        });
+    }
+
+    function runBackConfirmFlush(flusher, options, label) {
+        try {
+            return withBackConfirmFlushTimeout(flusher(options), label);
+        } catch (error) {
+            return Promise.reject(error);
         }
     }
 
@@ -844,6 +889,19 @@ export function createAppEventManager(deps) {
             return true;
         }
 
+        if (action === 'retry-finish-recovery') {
+            if (typeof event.preventDefault === 'function') {
+                event.preventDefault();
+            }
+            state.finishRecoveryCanExit = false;
+            state.finishLockStartedAt = Date.now();
+            maybeFinalizeLockedExam('manual-finish-recovery');
+            render('retry-finish-recovery', {
+                action: action
+            });
+            return true;
+        }
+
         if (action === 'retry-load-exam-stage') {
             stageRuntimeManager.retryLoadExamStage();
             return true;
@@ -919,20 +977,49 @@ export function createAppEventManager(deps) {
 
         if (action === 'back-confirm') {
             cancelOpeningAttemptFlow();
-            flushPendingAnswerBatchSilently({
-                flushAll: true,
-                keepalive: true
-            });
-            flushAttemptUiStateSilently({
-                force: true,
-                keepalive: true
-            });
-            resetExamSession();
-            state.stage = 'confirm';
-            state.busy = false;
-            clearMessages();
-            render('back-confirm', {
+            state.busy = true;
+            render('back-confirm-flushing', {
                 action: action
+            }, {
+                immediate: true,
+                skipPostRenderEffects: true
+            });
+            Promise.allSettled([
+                runBackConfirmFlush(flushPendingAnswerBatchSilently, {
+                    flushAll: true,
+                    keepalive: true,
+                    swallowErrors: false
+                }, 'jawaban'),
+                runBackConfirmFlush(flushAttemptUiStateSilently, {
+                    force: true,
+                    keepalive: true,
+                    swallowErrors: false
+                }, 'status ujian')
+            ]).then(function (results) {
+                var hadFlushIssue = results.some(function (result) {
+                    return result && result.status === 'rejected';
+                });
+                resetExamSession();
+                state.stage = 'confirm';
+                state.busy = false;
+                clearMessages();
+                if (hadFlushIssue) {
+                    state.notice = 'Jawaban lokal tetap tersimpan. Jika sinkronisasi terakhir belum selesai, sistem akan mencoba lagi saat ujian dilanjutkan.';
+                }
+                render('back-confirm', {
+                    action: action,
+                    syncWarning: hadFlushIssue ? 1 : 0
+                });
+            }).catch(function () {
+                resetExamSession();
+                state.stage = 'confirm';
+                state.busy = false;
+                clearMessages();
+                state.notice = 'Jawaban lokal tetap tersimpan. Jika sinkronisasi terakhir belum selesai, sistem akan mencoba lagi saat ujian dilanjutkan.';
+                render('back-confirm', {
+                    action: action,
+                    syncWarning: 1
+                });
             });
             return true;
         }

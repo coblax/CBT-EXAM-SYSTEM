@@ -55,6 +55,8 @@ function createLifecycleFixture(overrides = {}) {
         calculatorVisible: true,
         error: '',
         examLockedForPendingFinish: false,
+        finishLockStartedAt: 0,
+        finishRecoveryCanExit: false,
         examPickerMobileOpen: true,
         examToken: 'ABC123',
         finishConfirmOpen: true,
@@ -576,6 +578,72 @@ describe('createSessionLifecycleManager', function () {
         expect(fixture.state.authProgressMode).toBe('');
         expect(fixture.state.authProgressPercent).toBe(0);
         expect(fixture.calls.clearPersistedAuthSession).toBe(1);
+    });
+
+    it('blocks logout while finish recovery is locked before the escape option is available', async function () {
+        var fixture = createLifecycleFixture({
+            state: {
+                attemptId: 55,
+                examLockedForPendingFinish: true,
+                finishRecoveryCanExit: false,
+                questionOrderIds: [101],
+                questions: [{ id: 101 }],
+                stage: 'exam',
+                totalQuestions: 1
+            }
+        });
+
+        await fixture.manager.fullLogout();
+
+        expect(fixture.state.stage).toBe('exam');
+        expect(fixture.state.error).toContain('Logout diblokir');
+        expect(fixture.calls.sendLogoutRequestSilently).toEqual([]);
+        expect(fixture.calls.clearPersistedAuthSession).toBe(0);
+    });
+
+    it('allows logout after finish recovery escape while preserving attempt recovery cache', async function () {
+        var fixture = createLifecycleFixture({
+            state: {
+                attemptId: 55,
+                examLockedForPendingFinish: true,
+                finishLockStartedAt: Date.now() - 130000,
+                finishRecoveryCanExit: true,
+                finishReceipt: {
+                    attempt_id: 55,
+                    exam_id: 9,
+                    status: 'completed'
+                },
+                finishResultPending: true,
+                questionOrderIds: [101],
+                questions: [{ id: 101 }],
+                stage: 'exam',
+                totalQuestions: 1
+            }
+        });
+
+        await fixture.manager.fullLogout();
+
+        expect(fixture.state.stage).toBe('login');
+        expect(fixture.calls.flushPendingAnswerBatch).toBe(0);
+        expect(fixture.calls.flushAttemptUiState).toBe(0);
+        expect(fixture.calls.sendLogoutRequestSilently).toEqual(['token-123']);
+        expect(fixture.calls.clearPersistedAttemptUiState).toEqual([]);
+        expect(fixture.calls.clearPersistedQuestionCache).toEqual([]);
+        expect(fixture.calls.clearPersistedAuthSession).toBe(1);
+    });
+
+    it('renders a diagnostic reason when auth session expires', function () {
+        var fixture = createLifecycleFixture();
+
+        fixture.manager.expireAuthSession('Sesi habis.');
+
+        expect(fixture.state.stage).toBe('login');
+        expect(fixture.calls.render.at(-1)).toMatchObject({
+            meta: {
+                message: 'Sesi habis.'
+            },
+            reason: 'auth-session-expired'
+        });
     });
 
     it('keeps local auth state when server logout fails so the user can retry logout', async function () {

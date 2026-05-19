@@ -690,11 +690,16 @@ export function createStageRuntimeManager(deps) {
     }
 
     function retryLoadExamStage() {
+        if (examStageRendererPromise) {
+            render();
+            return examStageRendererPromise;
+        }
         examStageLoadError = '';
-        ensureExamStageRenderer({
+        var promise = ensureExamStageRenderer({
             renderOnResolve: true
         }).catch(function () {});
         render();
+        return promise;
     }
 
     function retryLoadResultStage() {

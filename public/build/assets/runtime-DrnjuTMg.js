@@ -1,0 +1,1 @@
+import{t as e}from"./frontend-student-shell-B4WVtz9U.js";function t(){return e()}export{t as bootstrapFrontendApp};

@@ -285,6 +285,25 @@ describe('createAppShellManager rich zoom modal', function () {
         expect(html).toContain('Percobaan sambung ulang: 2');
     });
 
+    it('renders login ulang action when session recovery retry limit is reached', function () {
+        var manager = createFixture({
+            state: {
+                sessionRecoveryVisible: true,
+                sessionRecoveryMode: 'confirm_restore',
+                sessionRecoveryStatus: 'Pemulihan sesi gagal',
+                sessionRecoveryDetail: 'Batas percobaan sambung ulang tercapai.',
+                sessionRecoveryCanRetry: false,
+                sessionRecoveryRetryCount: 5,
+                sessionRecoverySlowStage: 'failed'
+            }
+        });
+        var html = manager.renderSessionRecoveryOverlay();
+
+        expect(html).toContain('Login Ulang');
+        expect(html).toContain('data-action="logout"');
+        expect(html).not.toContain('data-action="retry-session-recovery"');
+    });
+
     it('renders a final review modal with safe sync status when all questions are ready', function () {
         var manager = createFixture({
             state: {
@@ -309,6 +328,26 @@ describe('createAppShellManager rich zoom modal', function () {
         expect(html).toContain('Saya Yakin Kumpulkan');
         expect(html).not.toContain('data-action="finish-review-unanswered"');
         expect(html).not.toContain('data-action="finish-review-doubtful"');
+    });
+
+    it('renders finish recovery retry and exit actions after the finish lock escape opens', function () {
+        var manager = createFixture({
+            state: {
+                stage: 'exam',
+                examLockedForPendingFinish: true,
+                finishRecoveryCanExit: true,
+                finishProgressPercent: 90,
+                finishProgressStepIndex: 4,
+                finishProgressStepTotal: 4,
+                finishProgressStatus: 'Pemulihan hasil belum selesai',
+                finishProgressDetail: 'Hasil belum bisa dimuat.'
+            }
+        });
+        var html = manager.renderFinishConfirmModal();
+
+        expect(html).toContain('data-action="retry-finish-recovery"');
+        expect(html).toContain('Coba Pulihkan Lagi');
+        expect(html).toContain('Keluar ke Login');
     });
 
     it('renders unanswered, doubtful, and pending sync warnings without blocking final submit', function () {

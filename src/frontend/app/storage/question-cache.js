@@ -745,6 +745,19 @@ export function createQuestionCacheStorage(deps) {
                 safeSnapshot.exam_locked_for_pending_finish !== undefined
                     ? safeSnapshot.exam_locked_for_pending_finish
                     : (safeSnapshot.examLockedForPendingFinish ? 1 : 0)
+            ) === 1,
+            finishLockStartedAt: Math.max(
+                0,
+                Number(
+                    safeSnapshot.finish_lock_started_at !== undefined
+                        ? safeSnapshot.finish_lock_started_at
+                        : safeSnapshot.finishLockStartedAt
+                ) || 0
+            ),
+            finishRecoveryCanExit: Number(
+                safeSnapshot.finish_recovery_can_exit !== undefined
+                    ? safeSnapshot.finish_recovery_can_exit
+                    : (safeSnapshot.finishRecoveryCanExit ? 1 : 0)
             ) === 1
         };
     }
@@ -1127,6 +1140,8 @@ export function createQuestionCacheStorage(deps) {
             lastSyncError: autoSaveState.lastSyncError,
             syncBlockingReason: autoSaveState.syncBlockingReason,
             examLockedForPendingFinish: autoSaveState.examLockedForPendingFinish,
+            finishLockStartedAt: autoSaveState.finishLockStartedAt,
+            finishRecoveryCanExit: autoSaveState.finishRecoveryCanExit,
             finishReceipt: finishReceipt,
             windowOffset: Math.max(0, Number(snapshot.window_offset) || 0),
             windowLimit: Math.max(0, Number(snapshot.window_limit) || 0),
@@ -1187,7 +1202,9 @@ export function createQuestionCacheStorage(deps) {
             pending_answer_batch_order: pendingSnapshotOrder,
             last_sync_error: String(autoSaveState.lastSyncError || ''),
             sync_blocking_reason: String(autoSaveState.syncBlockingReason || ''),
-            exam_locked_for_pending_finish: autoSaveState.examLockedForPendingFinish ? 1 : 0
+            exam_locked_for_pending_finish: autoSaveState.examLockedForPendingFinish ? 1 : 0,
+            finish_lock_started_at: Math.max(0, Number(autoSaveState.finishLockStartedAt) || 0),
+            finish_recovery_can_exit: autoSaveState.finishRecoveryCanExit ? 1 : 0
         };
     }
 
@@ -1323,6 +1340,8 @@ export function createQuestionCacheStorage(deps) {
             last_sync_error: normalizedSnapshot.lastSyncError,
             sync_blocking_reason: normalizedSnapshot.syncBlockingReason,
             exam_locked_for_pending_finish: normalizedSnapshot.examLockedForPendingFinish ? 1 : 0,
+            finish_lock_started_at: Math.max(0, Number(normalizedSnapshot.finishLockStartedAt) || 0),
+            finish_recovery_can_exit: normalizedSnapshot.finishRecoveryCanExit ? 1 : 0,
             finish_receipt: serializeStoredFinishReceipt(normalizedSnapshot.finishReceipt),
             window_offset: normalizedSnapshot.windowOffset,
             window_limit: normalizedSnapshot.windowLimit,
@@ -1372,6 +1391,8 @@ export function createQuestionCacheStorage(deps) {
             last_sync_error: normalizedSnapshot.lastSyncError,
             sync_blocking_reason: normalizedSnapshot.syncBlockingReason,
             exam_locked_for_pending_finish: normalizedSnapshot.examLockedForPendingFinish ? 1 : 0,
+            finish_lock_started_at: Math.max(0, Number(normalizedSnapshot.finishLockStartedAt) || 0),
+            finish_recovery_can_exit: normalizedSnapshot.finishRecoveryCanExit ? 1 : 0,
             finish_receipt: serializeStoredFinishReceipt(normalizedSnapshot.finishReceipt),
             window_offset: normalizedSnapshot.windowOffset,
             window_limit: normalizedSnapshot.windowLimit,

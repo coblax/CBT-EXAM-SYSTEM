@@ -237,6 +237,8 @@ export function createAppShellManager(deps) {
             slowCopy = 'Server sedang padat, kami masih mencoba otomatis';
         } else if (slowStage === 'hold') {
             slowCopy = 'Jangan refresh lagi. Sesi masih dipulihkan.';
+        } else if (slowStage === 'failed') {
+            slowCopy = 'Batas sambung ulang tercapai. Login ulang untuk memulai sesi bersih.';
         }
         var retryCount = Math.max(0, Number(state.sessionRecoveryRetryCount) || 0);
         var retryMarkup = state.sessionRecoveryCanRetry
@@ -248,7 +250,9 @@ export function createAppShellManager(deps) {
                     : '',
                 '</div>'
             ].join('')
-            : '';
+            : (slowStage === 'failed'
+                ? '<div class="cbt-session-recovery-actions"><button class="cbt-button cbt-button-primary" data-action="logout" type="button">Login Ulang</button></div>'
+                : '');
         var examNoteMarkup = mode === 'exam_restore'
             ? '<p class="cbt-session-recovery-note">Jawaban lokal tetap aman dan akan disinkronkan setelah sesi pulih.</p>'
             : '';
@@ -395,6 +399,7 @@ export function createAppShellManager(deps) {
         var finishProgressStatus = String(state.finishProgressStatus || 'Menyelesaikan ujian...');
         var finishProgressDetail = String(state.finishProgressDetail || 'Mohon tunggu sebentar, kami sedang memastikan hasil ujian Anda tersimpan.');
         var showFinishLiveProgress = state.isFinishing || finishProgressStepIndex > 0 || state.examLockedForPendingFinish;
+        var showFinishRecoveryExit = state.examLockedForPendingFinish && state.finishRecoveryCanExit === true;
         var finishTitle = showFinishLiveProgress
             ? 'PROSES'
             : 'REVIEW SEBELUM KUMPULKAN';
@@ -467,6 +472,9 @@ export function createAppShellManager(deps) {
                 '<span class="cbt-finish-live-progress-fill" style="width: ' + escapeHtml(finishProgressWidth) + '%;"></span>',
                 '</div>',
                 '<p class="cbt-muted">Progress finalisasi: ' + escapeHtml(finishProgressLabel) + '%</p>',
+                showFinishRecoveryExit
+                    ? '<div class="cbt-actions cbt-finish-recovery-actions"><button class="cbt-button cbt-button-primary" data-action="retry-finish-recovery" type="button">Coba Pulihkan Lagi</button><button class="cbt-button cbt-button-secondary" data-action="logout" type="button">Keluar ke Login</button></div>'
+                    : '',
                 '</div>'
             ].join('')
             : '';

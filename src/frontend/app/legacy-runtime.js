@@ -1878,6 +1878,7 @@ export function bootstrapFrontendApp() {
         isExamFullscreenBlockingActive: isExamFullscreenBlockingActive,
         isQuestionRevisionRefreshActive: isQuestionRevisionRefreshActive,
         loadExams: loadExams,
+        maybeFinalizeLockedExam: maybeFinalizeLockedExam,
         noteQuestionPrefetchActivity: noteQuestionPrefetchActivity,
         render: render,
         requestExamFullscreen: requestExamFullscreen,

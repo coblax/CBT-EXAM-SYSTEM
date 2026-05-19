@@ -42,8 +42,10 @@ export function createFinishFlowManager(deps) {
     var syncFullscreenState = deps.syncFullscreenState;
     var syncPendingAnswerRuntimeState = deps.syncPendingAnswerRuntimeState;
     var finishRecoveryRetryTimerId = 0;
+    var finishLockEscapeTimerId = 0;
     var finishRecoveryRetryAttempt = 0;
     var FINISH_RECOVERY_RETRY_DELAYS_MS = [5000, 15000, 30000];
+    var FINISH_LOCK_ESCAPE_TIMEOUT_MS = 120000;
     var finishSubmitStartedAtMs = 0;
     var finishAcknowledgedAtMs = 0;
     var submitFlowMetricSequence = 0;
@@ -215,14 +217,94 @@ export function createFinishFlowManager(deps) {
         finishRecoveryRetryTimerId = 0;
     }
 
+    function clearFinishLockEscapeTimer() {
+        if (finishLockEscapeTimerId && windowRef && typeof windowRef.clearTimeout === 'function') {
+            windowRef.clearTimeout(finishLockEscapeTimerId);
+        }
+        finishLockEscapeTimerId = 0;
+    }
+
+    function markFinishRecoveryExitAvailable(reason) {
+        if (!state.examLockedForPendingFinish || state.stage !== 'exam') {
+            return;
+        }
+
+        finishLockEscapeTimerId = 0;
+        state.finishRecoveryCanExit = true;
+        state.isFinishing = false;
+        state.busy = false;
+        updateFinishRecoveryWaitingStatus(
+            'Pemulihan hasil belum selesai',
+            'Ujian sudah selesai di server, tetapi hasil belum berhasil dimuat. Anda dapat mencoba lagi atau keluar sementara; data pemulihan tetap disimpan.',
+            {
+                render: false
+            }
+        );
+        recordTimelineEntry('finish_recovery_exit_available', 'Escape hatch pemulihan hasil tersedia.', {
+            attemptId: Number(state.attemptId) || 0,
+            reason: String(reason || '')
+        });
+        render('finish-recovery-exit-available', {
+            attemptId: Number(state.attemptId) || 0,
+            reason: String(reason || '')
+        });
+    }
+
+    function scheduleFinishLockEscape(reason) {
+        if (
+            !state.examLockedForPendingFinish
+            || state.finishRecoveryCanExit
+            || finishLockEscapeTimerId
+            || !windowRef
+            || typeof windowRef.setTimeout !== 'function'
+        ) {
+            return;
+        }
+
+        var startedAt = Math.max(0, Number(state.finishLockStartedAt) || 0);
+        if (startedAt <= 0) {
+            startedAt = Date.now();
+            state.finishLockStartedAt = startedAt;
+        }
+
+        var elapsedMs = Math.max(0, Date.now() - startedAt);
+        var delayMs = Math.max(0, FINISH_LOCK_ESCAPE_TIMEOUT_MS - elapsedMs);
+        finishLockEscapeTimerId = windowRef.setTimeout(function () {
+            markFinishRecoveryExitAvailable(reason || 'finish-lock-timeout');
+        }, delayMs);
+        if (finishLockEscapeTimerId && typeof finishLockEscapeTimerId.unref === 'function') {
+            finishLockEscapeTimerId.unref();
+        }
+    }
+
+    function beginFinishLock(options) {
+        options = options || {};
+        state.examLockedForPendingFinish = true;
+        if (options.resetTimer === true || Math.max(0, Number(state.finishLockStartedAt) || 0) <= 0) {
+            state.finishLockStartedAt = Date.now();
+        }
+        if (options.resetExit === true) {
+            state.finishRecoveryCanExit = false;
+        }
+        scheduleFinishLockEscape(options.reason || 'finish-lock');
+    }
+
+    function clearFinishLockState() {
+        clearFinishLockEscapeTimer();
+        state.finishLockStartedAt = 0;
+        state.finishRecoveryCanExit = false;
+    }
+
     function resetFinishRecoveryReceiptState() {
         clearFinishRecoveryRetryTimer();
+        clearFinishLockState();
         finishRecoveryRetryAttempt = 0;
         finishSubmitStartedAtMs = 0;
         finishAcknowledgedAtMs = 0;
         state.finishReceipt = null;
         state.finishResultPending = false;
         state.finishRecoveryLastError = '';
+        state.examLockedForPendingFinish = false;
     }
 
     function getNormalizedFinishReceipt(receipt) {
@@ -317,6 +399,9 @@ export function createFinishFlowManager(deps) {
         state.finishReceipt = normalizedReceipt;
         state.finishResultPending = true;
         state.finishRecoveryLastError = '';
+        if (Math.max(0, Number(state.finishLockStartedAt) || 0) <= 0) {
+            state.finishLockStartedAt = Date.now();
+        }
         finishAcknowledgedAtMs = Number(normalizedReceipt.updated_at) || 0;
         persistCurrentQuestionCacheLocally();
         return normalizedReceipt;
@@ -387,6 +472,9 @@ export function createFinishFlowManager(deps) {
             });
             maybeFinalizeLockedExam(reason || 'finish-result-recovery-retry');
         }, delay);
+        if (finishRecoveryRetryTimerId && typeof finishRecoveryRetryTimerId.unref === 'function') {
+            finishRecoveryRetryTimerId.unref();
+        }
     }
 
     function buildScenarioFinishError(mode) {
@@ -603,11 +691,13 @@ export function createFinishFlowManager(deps) {
 
         if (resolvedAttemptId > 0) {
             try {
-                var reviewPayload = await apiRequest('result', {
-                    query: {
-                        attempt_id: resolvedAttemptId
-                    }
-                });
+                var reviewPayload = options.reviewPayload && typeof options.reviewPayload === 'object'
+                    ? options.reviewPayload
+                    : await apiRequest('result', {
+                        query: {
+                            attempt_id: resolvedAttemptId
+                        }
+                    });
 
                 if (reviewPayload && typeof reviewPayload === 'object') {
                     resultPayload.attempt = reviewPayload.attempt || null;
@@ -683,6 +773,102 @@ export function createFinishFlowManager(deps) {
         return resultPayload;
     }
 
+    function isCompletedResultProbePayload(payload) {
+        if (!payload || typeof payload !== 'object') {
+            return false;
+        }
+
+        var attempt = payload.attempt && typeof payload.attempt === 'object' ? payload.attempt : null;
+        var rawStatus = String(
+            attempt && attempt.status !== undefined
+                ? attempt.status
+                : (payload.status !== undefined ? payload.status : 'completed')
+        ).trim().toLowerCase();
+
+        return rawStatus === '' || rawStatus === 'completed';
+    }
+
+    function buildFinishPayloadFromResultProbe(reviewPayload, attemptId) {
+        var payload = reviewPayload && typeof reviewPayload === 'object' ? reviewPayload : {};
+        var attempt = payload.attempt && typeof payload.attempt === 'object' ? payload.attempt : {};
+        var exam = payload.exam && typeof payload.exam === 'object' ? payload.exam : {};
+        function numberOr(value, fallback) {
+            var number = Number(value);
+            return Number.isFinite(number) ? number : Number(fallback) || 0;
+        }
+        return {
+            attempt_id: Number(attempt.id || payload.attempt_id) || Number(attemptId) || Number(state.attemptId) || 0,
+            finished_at: String(attempt.finished_at || payload.finished_at || ''),
+            status: 'completed',
+            show_student_result: numberOr(payload.show_student_result !== undefined ? payload.show_student_result : (exam.show_student_result !== undefined ? exam.show_student_result : 1), 1),
+            result_view_mode: String(payload.result_view_mode || ''),
+            submission_summary: payload.submission_summary && typeof payload.submission_summary === 'object'
+                ? payload.submission_summary
+                : null,
+            score: numberOr(attempt.score !== undefined ? attempt.score : payload.score, 0),
+            max_score: numberOr(attempt.max_score !== undefined ? attempt.max_score : payload.max_score, 0),
+            percentage: numberOr(payload.percentage !== undefined ? payload.percentage : 0, 0),
+            kkm_percentage: numberOr(payload.kkm_percentage !== undefined ? payload.kkm_percentage : exam.kkm_percentage, 75),
+            passing_score: numberOr(payload.passing_score !== undefined ? payload.passing_score : 0, 0),
+            is_passed: numberOr(payload.is_passed !== undefined ? payload.is_passed : 0, 0),
+            pass_label: String(payload.pass_label || ''),
+            result_tone: String(payload.result_tone || '')
+        };
+    }
+
+    async function recoverAmbiguousFinishFailureFromResult(reason) {
+        var attemptId = Number(state.attemptId) || 0;
+        if (attemptId <= 0 || getNavigatorConnectionStatus() === 'offline') {
+            return false;
+        }
+
+        try {
+            var reviewPayload = await apiRequest('result', {
+                query: {
+                    attempt_id: attemptId
+                }
+            });
+            if (!isCompletedResultProbePayload(reviewPayload)) {
+                return false;
+            }
+
+            var finishPayload = buildFinishPayloadFromResultProbe(reviewPayload, attemptId);
+            var finishReceipt = persistFinishReceipt(buildFinishReceiptFromPayload(finishPayload, 'ambiguous_finish_probe'));
+            if (!finishReceipt) {
+                return false;
+            }
+            beginFinishLock({
+                reason: reason || 'ambiguous-finish-result-probe'
+            });
+            updateFinishRecoveryWaitingStatus(
+                'Memulihkan hasil ujian',
+                'Server sudah menandai attempt selesai. Kami sedang menampilkan hasil terbaru.',
+                {
+                    render: false
+                }
+            );
+
+            var resultPayload = await buildFinishedResultPayload(finishPayload, {
+                allowFallbackWithoutReview: false,
+                reviewPayload: reviewPayload
+            });
+            await prepareResultStageForFinishTransition();
+            completeExamWithResult(resultPayload);
+            render();
+            recordTimelineEntry('finish_result_probe_recovered', 'Hasil berhasil dipulihkan dari probe setelah finalisasi ambigu.', {
+                attemptId: attemptId,
+                stage: 'result'
+            });
+            return true;
+        } catch (probeError) {
+            recordTimelineEntry('finish_result_probe_miss', probeError instanceof Error ? probeError.message : 'Probe hasil tidak menemukan attempt selesai.', {
+                attemptId: attemptId,
+                stage: String(state.stage || '')
+            });
+            return false;
+        }
+    }
+
     function completeExamWithResult(resultPayload) {
         var autoSubmit = !!state.pendingFinishAutoSubmit;
         var completedAttemptId = Number(resultPayload && resultPayload.attempt_id) || Number(state.attemptId) || 0;
@@ -749,7 +935,11 @@ export function createFinishFlowManager(deps) {
 
         state.finishReceipt = finishReceipt;
         state.finishResultPending = true;
-        state.examLockedForPendingFinish = true;
+        beginFinishLock({
+            reason: reason || 'finish-result-recovery',
+            resetExit: String(reason || '') === 'manual-finish-recovery',
+            resetTimer: String(reason || '') === 'manual-finish-recovery'
+        });
 
         if (getNavigatorConnectionStatus() === 'offline') {
             state.isFinishing = false;
@@ -1065,6 +1255,11 @@ export function createFinishFlowManager(deps) {
                     });
                 }
             } else {
+                var recoveredFromResultProbe = await recoverAmbiguousFinishFailureFromResult('finish-submit-error-probe');
+                if (recoveredFromResultProbe) {
+                    return;
+                }
+
                 state.lastSyncError = error instanceof Error && error.message ? error.message : 'Gagal menyelesaikan ujian.';
                 state.error = error instanceof Error ? error.message : 'Gagal menyelesaikan ujian.';
                 if (shouldUnlockExamAfterFinishFailure()) {
@@ -1094,6 +1289,13 @@ export function createFinishFlowManager(deps) {
 
     function maybeFinalizeLockedExam(reason) {
         var hasFinishReceipt = !!getNormalizedFinishReceipt(state.finishReceipt);
+        if (state.stage === 'exam' && state.examLockedForPendingFinish) {
+            beginFinishLock({
+                reason: reason || 'finish-result-recovery',
+                resetExit: String(reason || '') === 'manual-finish-recovery',
+                resetTimer: String(reason || '') === 'manual-finish-recovery'
+            });
+        }
         if (
             state.stage !== 'exam'
             || (state.attemptId <= 0 && !hasFinishReceipt)
@@ -1135,9 +1337,13 @@ export function createFinishFlowManager(deps) {
 
         state.finishConfirmOpen = false;
         state.finishConfirmSummary = null;
-        state.examLockedForPendingFinish = true;
-        state.pendingFinishAutoSubmit = !!autoSubmit;
         resetFinishRecoveryReceiptState();
+        beginFinishLock({
+            reason: autoSubmit ? 'finish-auto-submit' : 'finish-confirmed',
+            resetExit: true,
+            resetTimer: true
+        });
+        state.pendingFinishAutoSubmit = !!autoSubmit;
         updateFinishProgress(
             12,
             1,

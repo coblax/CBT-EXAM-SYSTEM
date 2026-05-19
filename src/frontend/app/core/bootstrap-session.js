@@ -1,6 +1,7 @@
 export function createBootstrapSessionManager(deps) {
     var CONFIRM_RECOVERY_STEP_TOTAL = 4;
     var EXAM_RECOVERY_STEP_TOTAL = 7;
+    var MAX_SESSION_RECOVERY_RETRIES = 5;
     var RECOVERY_SLOW_STAGE_BUSY_DELAY_MS = 5000;
     var RECOVERY_SLOW_STAGE_HOLD_DELAY_MS = 15000;
     var clearMessages = deps.clearMessages;
@@ -259,6 +260,21 @@ export function createBootstrapSessionManager(deps) {
         });
     }
 
+    function markSessionRecoveryRetryLimitReached() {
+        clearSessionRecoveryTimers();
+        state.busy = false;
+        state.error = 'Sesi belum dapat dipulihkan setelah beberapa percobaan. Silakan login ulang.';
+        state.sessionRecoveryVisible = true;
+        state.sessionRecoveryCanRetry = false;
+        state.sessionRecoverySlowStage = 'failed';
+        state.sessionRecoveryStatus = 'Pemulihan sesi gagal';
+        state.sessionRecoveryDetail = 'Batas percobaan sambung ulang tercapai. Login ulang diperlukan agar sesi kembali bersih.';
+        render('session-recovery-retry-limit', {
+            retryCount: Math.max(0, Number(state.sessionRecoveryRetryCount) || 0),
+            selectedExamId: Number(state.selectedExamId) || 0
+        });
+    }
+
     function getPersistedSelectedExam() {
         var exams = Array.isArray(state.exams) ? state.exams : [];
         var selectedExamId = Number(state.selectedExamId) || 0;
@@ -388,6 +404,8 @@ export function createBootstrapSessionManager(deps) {
         state.busy = false;
         state.attemptId = finishReceipt.attempt_id;
         state.examLockedForPendingFinish = true;
+        state.finishLockStartedAt = Date.now();
+        state.finishRecoveryCanExit = false;
         state.pendingFinishAutoSubmit = false;
         state.finishReceipt = finishReceipt;
         state.finishResultPending = true;
@@ -576,6 +594,11 @@ export function createBootstrapSessionManager(deps) {
 
     function retrySessionRecovery() {
         if (!state.sessionRecoveryVisible) {
+            return Promise.resolve(false);
+        }
+
+        if (Math.max(0, Number(state.sessionRecoveryRetryCount) || 0) >= MAX_SESSION_RECOVERY_RETRIES) {
+            markSessionRecoveryRetryLimitReached();
             return Promise.resolve(false);
         }
 

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFinishFlowManager } from '../../../src/frontend/app/exam/finish-flow.js';
 
 function createState(overrides = {}) {
@@ -88,6 +88,10 @@ function createDeps(state, overrides = {}) {
 }
 
 describe('createFinishFlowManager', function () {
+    afterEach(function () {
+        vi.useRealTimers();
+    });
+
     describe('handleFinish', function () {
         it('opens confirm modal when not auto-submit and not skipping confirmation', async function () {
             var state = createState();
@@ -290,6 +294,92 @@ describe('createFinishFlowManager', function () {
             expect(state.finishResultPending).toBe(true);
             expect(state.finishRecoveryLastError).toContain('Koneksi');
             expect(state.isFinishing).toBe(false);
+        });
+    });
+
+    describe('finish recovery escape hatch', function () {
+        it('records lock start time and only opens exit after the 120 second timeout', async function () {
+            vi.useFakeTimers();
+            vi.setSystemTime(new Date('2026-05-19T10:00:00Z'));
+            var state = createState();
+            var deps = createDeps(state, {
+                getNavigatorConnectionStatus: vi.fn().mockReturnValue('offline'),
+                windowRef: {
+                    clearTimeout: function (id) {
+                        clearTimeout(id);
+                    },
+                    document: { visibilityState: 'visible' },
+                    requestAnimationFrame: function (fn) {
+                        fn();
+                        return 1;
+                    },
+                    setTimeout: function (fn, ms) {
+                        return setTimeout(fn, ms);
+                    }
+                }
+            });
+            var manager = createFinishFlowManager(deps);
+
+            await manager.handleFinish(false, { skipConfirmation: true });
+
+            expect(state.examLockedForPendingFinish).toBe(true);
+            expect(state.finishLockStartedAt).toBe(Date.now());
+            expect(state.finishRecoveryCanExit).toBe(false);
+
+            vi.advanceTimersByTime(119999);
+            await Promise.resolve();
+            expect(state.finishRecoveryCanExit).toBe(false);
+
+            vi.advanceTimersByTime(1);
+            await Promise.resolve();
+            expect(state.finishRecoveryCanExit).toBe(true);
+            expect(deps.render).toHaveBeenCalled();
+        });
+
+        it('manual finish recovery retry keeps the exam locked and hides the exit option while retrying', async function () {
+            vi.useFakeTimers();
+            vi.setSystemTime(new Date('2026-05-19T10:00:00Z'));
+            var state = createState({
+                examLockedForPendingFinish: true,
+                finishLockStartedAt: Date.now() - 130000,
+                finishRecoveryCanExit: true,
+                finishResultPending: true,
+                finishReceipt: {
+                    attempt_id: 42,
+                    exam_id: 10,
+                    finished_at: '2026-03-24 11:00:00',
+                    status: 'completed',
+                    result_view_mode_hint: 'full',
+                    show_student_result_hint: 1,
+                    ack_source: 'finish_exam',
+                    pending_result_fetch: 1,
+                    updated_at: 1710000000000
+                }
+            });
+            var deps = createDeps(state, {
+                apiRequest: vi.fn().mockRejectedValue(new Error('Result belum tersedia')),
+                windowRef: {
+                    clearTimeout: function (id) {
+                        clearTimeout(id);
+                    },
+                    document: { visibilityState: 'visible' },
+                    requestAnimationFrame: function (fn) {
+                        fn();
+                        return 1;
+                    },
+                    setTimeout: function (fn, ms) {
+                        return setTimeout(fn, ms);
+                    }
+                }
+            });
+            var manager = createFinishFlowManager(deps);
+
+            await manager.maybeFinalizeLockedExam('manual-finish-recovery');
+
+            expect(state.stage).toBe('exam');
+            expect(state.examLockedForPendingFinish).toBe(true);
+            expect(state.finishRecoveryCanExit).toBe(false);
+            expect(state.finishLockStartedAt).toBe(Date.now());
         });
     });
 });

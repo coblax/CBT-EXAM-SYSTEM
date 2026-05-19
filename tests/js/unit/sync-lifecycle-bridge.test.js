@@ -20,15 +20,17 @@ describe('sync-lifecycle-bridge', () => {
     });
 
     describe('flushPendingAnswerBatchSilently', () => {
-        it('flushes when in exam stage', () => {
-            bridge.flushPendingAnswerBatchSilently({});
+        it('flushes when in exam stage', async () => {
+            var result = bridge.flushPendingAnswerBatchSilently({});
+            expect(result && typeof result.then).toBe('function');
+            await result;
             expect(deps.queueLoadedQuestionAnswersForFlush).toHaveBeenCalled();
             expect(deps.flushPendingAnswerBatch).toHaveBeenCalled();
         });
 
-        it('skips when not in exam stage', () => {
+        it('skips when not in exam stage', async () => {
             state.stage = 'login';
-            bridge.flushPendingAnswerBatchSilently({});
+            await expect(bridge.flushPendingAnswerBatchSilently({})).resolves.toBeNull();
             expect(deps.flushPendingAnswerBatch).not.toHaveBeenCalled();
         });
 
@@ -43,18 +45,42 @@ describe('sync-lifecycle-bridge', () => {
             bridge.flushPendingAnswerBatchSilently({});
             expect(deps.flushPendingAnswerBatch).not.toHaveBeenCalled();
         });
+
+        it('swallows flush errors by default', async () => {
+            deps.flushPendingAnswerBatch.mockRejectedValueOnce(new Error('batch gagal'));
+
+            await expect(bridge.flushPendingAnswerBatchSilently({})).resolves.toBeNull();
+        });
+
+        it('propagates flush errors when swallowErrors is false', async () => {
+            deps.flushPendingAnswerBatch.mockRejectedValueOnce(new Error('batch gagal'));
+
+            await expect(bridge.flushPendingAnswerBatchSilently({
+                swallowErrors: false
+            })).rejects.toThrow('batch gagal');
+        });
     });
 
     describe('flushAttemptUiStateSilently', () => {
-        it('flushes when in exam stage', () => {
-            bridge.flushAttemptUiStateSilently({});
+        it('flushes when in exam stage', async () => {
+            var result = bridge.flushAttemptUiStateSilently({});
+            expect(result && typeof result.then).toBe('function');
+            await result;
             expect(deps.flushAttemptUiState).toHaveBeenCalled();
         });
 
-        it('skips when not in exam stage', () => {
+        it('skips when not in exam stage', async () => {
             state.stage = 'result';
-            bridge.flushAttemptUiStateSilently({});
+            await expect(bridge.flushAttemptUiStateSilently({})).resolves.toBeNull();
             expect(deps.flushAttemptUiState).not.toHaveBeenCalled();
+        });
+
+        it('propagates UI state errors when swallowErrors is false', async () => {
+            deps.flushAttemptUiState.mockRejectedValueOnce(new Error('ui gagal'));
+
+            await expect(bridge.flushAttemptUiStateSilently({
+                swallowErrors: false
+            })).rejects.toThrow('ui gagal');
         });
     });
 

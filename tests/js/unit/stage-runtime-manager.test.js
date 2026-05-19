@@ -252,4 +252,41 @@ describe('createStageRuntimeManager', function () {
             expect(String(fixture.state.notice || '')).toContain('Kalkulator gagal dimuat');
         });
     });
+
+    it('renders exam stage fallback with retry and back controls when the exam chunk fails', async function () {
+        var failedOnce = false;
+        var fixture = createFixture({
+            diagnosticsManager: {
+                enabled: true,
+                consumeFailNextChunkLoad: function (target) {
+                    if (!failedOnce && target === 'exam') {
+                        failedOnce = true;
+                        return true;
+                    }
+                    return false;
+                }
+            }
+        });
+
+        fixture.manager.renderExamStageShell();
+
+        await waitForAssertion(function () {
+            var markup = fixture.manager.renderExamStageShell();
+            expect(markup).toContain('Runtime Ujian Gagal Dimuat');
+            expect(markup).toContain('data-action="retry-load-exam-stage"');
+            expect(markup).toContain('data-action="back-confirm"');
+        });
+    });
+
+    it('does not start a parallel exam chunk import while a load is already in flight', function () {
+        var fixture = createFixture();
+
+        fixture.manager.renderExamStageShell();
+        fixture.manager.retryLoadExamStage();
+        fixture.manager.retryLoadExamStage();
+
+        expect(fixture.calls.timeline.filter(function (entry) {
+            return entry.kind === 'chunk:exam:load:start';
+        })).toHaveLength(1);
+    });
 });

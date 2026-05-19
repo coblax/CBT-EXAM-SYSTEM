@@ -7,12 +7,27 @@ async function flushAsyncWork() {
     await Promise.resolve();
 }
 
+function createDeferred() {
+    var resolve;
+    var reject;
+    var promise = new Promise(function (promiseResolve, promiseReject) {
+        resolve = promiseResolve;
+        reject = promiseReject;
+    });
+    return {
+        promise: promise,
+        reject: reject,
+        resolve: resolve
+    };
+}
+
 function createFixture(overrides = {}) {
     var root = document.createElement('div');
     document.body.appendChild(root);
     var calls = {
         clearMessages: 0,
-        render: []
+        render: [],
+        resetExamSession: 0
     };
     var clearMessages = overrides.clearMessages || vi.fn(function () {
         calls.clearMessages += 1;
@@ -24,6 +39,16 @@ function createFixture(overrides = {}) {
         return Promise.resolve();
     });
     var handleFinish = overrides.handleFinish || vi.fn(function () {});
+    var flushAttemptUiStateSilently = overrides.flushAttemptUiStateSilently || vi.fn(function () {
+        return Promise.resolve(null);
+    });
+    var flushPendingAnswerBatchSilently = overrides.flushPendingAnswerBatchSilently || vi.fn(function () {
+        return Promise.resolve(null);
+    });
+    var resetExamSession = overrides.resetExamSession || vi.fn(function () {
+        calls.resetExamSession += 1;
+        state.attemptId = 0;
+    });
     var state = Object.assign({
         stage: 'confirm',
         examPickerMobileOpen: false,
@@ -40,8 +65,8 @@ function createFixture(overrides = {}) {
         closeFinishConfirmModal: function () {},
         debugManager: null,
         documentRef: document,
-        flushAttemptUiStateSilently: function () {},
-        flushPendingAnswerBatchSilently: function () {},
+        flushAttemptUiStateSilently: flushAttemptUiStateSilently,
+        flushPendingAnswerBatchSilently: flushPendingAnswerBatchSilently,
         fontScaleDefault: 100,
         fontScaleStep: 10,
         fullLogout: function () {},
@@ -101,7 +126,7 @@ function createFixture(overrides = {}) {
         requestExamFullscreen: function () {
             return Promise.resolve(false);
         },
-        resetExamSession: function () {},
+        resetExamSession: resetExamSession,
         retrySessionRecovery: retrySessionRecovery,
         root: root,
         stageRuntimeManager: {
@@ -123,9 +148,12 @@ function createFixture(overrides = {}) {
     return {
         calls: calls,
         clearMessages: clearMessages,
+        flushAttemptUiStateSilently: flushAttemptUiStateSilently,
+        flushPendingAnswerBatchSilently: flushPendingAnswerBatchSilently,
         loadExams: loadExams,
         handleFinish: handleFinish,
         manager: manager,
+        resetExamSession: resetExamSession,
         retrySessionRecovery: retrySessionRecovery,
         root: root,
         state: state
@@ -187,6 +215,119 @@ describe('createAppEventManager session recovery actions', function () {
         expect(handled).toBe(true);
         expect(fixture.handleFinish).toHaveBeenCalledTimes(1);
         expect(fixture.handleFinish).toHaveBeenCalledWith(false, { skipConfirmation: true });
+    });
+
+    it('waits for answer and UI flushes before resetting on back-confirm', async function () {
+        var answerFlush = createDeferred();
+        var uiFlush = createDeferred();
+        var fixture = createFixture({
+            flushAttemptUiStateSilently: vi.fn(function () {
+                return uiFlush.promise;
+            }),
+            flushPendingAnswerBatchSilently: vi.fn(function () {
+                return answerFlush.promise;
+            }),
+            state: {
+                attemptId: 91,
+                stage: 'exam'
+            }
+        });
+        fixture.root.innerHTML = '<button type="button" data-action="back-confirm">Kembali</button>';
+
+        var handled = fixture.manager.handleRootClick({
+            preventDefault: vi.fn(),
+            target: fixture.root.querySelector('[data-action="back-confirm"]')
+        });
+
+        expect(handled).toBe(true);
+        expect(fixture.state.busy).toBe(true);
+        expect(fixture.calls.render.at(-1)).toMatchObject({
+            reason: 'back-confirm-flushing'
+        });
+        expect(fixture.resetExamSession).not.toHaveBeenCalled();
+
+        answerFlush.resolve({ ok: true });
+        await flushAsyncWork();
+        expect(fixture.resetExamSession).not.toHaveBeenCalled();
+
+        uiFlush.resolve({ ok: true });
+        await flushAsyncWork();
+
+        expect(fixture.flushPendingAnswerBatchSilently).toHaveBeenCalledWith(expect.objectContaining({
+            flushAll: true,
+            keepalive: true,
+            swallowErrors: false
+        }));
+        expect(fixture.flushAttemptUiStateSilently).toHaveBeenCalledWith(expect.objectContaining({
+            force: true,
+            keepalive: true,
+            swallowErrors: false
+        }));
+        expect(fixture.resetExamSession).toHaveBeenCalledTimes(1);
+        expect(fixture.state.stage).toBe('confirm');
+        expect(fixture.state.busy).toBe(false);
+        expect(fixture.state.notice || '').toBe('');
+    });
+
+    it('keeps moving to confirm with a recovery notice when back-confirm flush fails', async function () {
+        var fixture = createFixture({
+            flushPendingAnswerBatchSilently: vi.fn(function () {
+                return Promise.reject(new Error('sync gagal'));
+            }),
+            state: {
+                attemptId: 91,
+                stage: 'exam'
+            }
+        });
+        fixture.root.innerHTML = '<button type="button" data-action="back-confirm">Kembali</button>';
+
+        fixture.manager.handleRootClick({
+            preventDefault: vi.fn(),
+            target: fixture.root.querySelector('[data-action="back-confirm"]')
+        });
+        await flushAsyncWork();
+
+        expect(fixture.resetExamSession).toHaveBeenCalledTimes(1);
+        expect(fixture.state.stage).toBe('confirm');
+        expect(fixture.state.busy).toBe(false);
+        expect(fixture.state.notice).toContain('Jawaban lokal tetap tersimpan');
+        expect(fixture.calls.render.at(-1)).toMatchObject({
+            meta: expect.objectContaining({
+                syncWarning: 1
+            }),
+            reason: 'back-confirm'
+        });
+    });
+
+    it('does not leave the UI busy when back-confirm flush times out', async function () {
+        vi.useFakeTimers();
+        try {
+            var fixture = createFixture({
+                flushPendingAnswerBatchSilently: vi.fn(function () {
+                    return new Promise(function () {});
+                }),
+                state: {
+                    attemptId: 91,
+                    stage: 'exam'
+                }
+            });
+            fixture.root.innerHTML = '<button type="button" data-action="back-confirm">Kembali</button>';
+
+            fixture.manager.handleRootClick({
+                preventDefault: vi.fn(),
+                target: fixture.root.querySelector('[data-action="back-confirm"]')
+            });
+
+            vi.advanceTimersByTime(8000);
+            await flushAsyncWork();
+
+            expect(fixture.resetExamSession).toHaveBeenCalledTimes(1);
+            expect(fixture.state.stage).toBe('confirm');
+            expect(fixture.state.busy).toBe(false);
+            expect(fixture.state.notice).toContain('Jawaban lokal tetap tersimpan');
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it('keeps the current screen and shows the nginx authorization hint when reload receives missing_token', async function () {

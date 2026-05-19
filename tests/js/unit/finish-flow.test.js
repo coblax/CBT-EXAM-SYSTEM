@@ -446,6 +446,74 @@ describe('createFinishFlowManager', function () {
         ]);
     });
 
+    it('recovers result instead of unlocking when a finish error was already committed server-side', async function () {
+        var fixture = createFixture({
+            apiRequest: async function (path) {
+                if (path === 'submit_flow_metric') {
+                    return undefined;
+                }
+
+                if (path === 'finish_exam') {
+                    var error = new Error('Gateway timeout setelah commit.');
+                    error.status = 504;
+                    throw error;
+                }
+
+                if (path === 'result') {
+                    return {
+                        attempt: {
+                            exam_id: 9,
+                            finished_at: '2026-03-24 15:10:00',
+                            id: 88,
+                            max_score: 100,
+                            score: 82,
+                            started_at: '2026-03-24 14:00:00',
+                            status: 'completed'
+                        },
+                        exam: {
+                            id: 9,
+                            kkm_percentage: 75,
+                            show_student_result: 1,
+                            title: 'Flow Result Fixture'
+                        },
+                        is_passed: 1,
+                        kkm_percentage: 75,
+                        pass_label: 'LULUS',
+                        percentage: 82,
+                        result_tone: 'pass',
+                        result_view_mode: 'full',
+                        review_items: [],
+                        review_summary: {
+                            answered_questions: 10,
+                            correct_questions: 8,
+                            manual_questions: 0,
+                            total_questions: 10,
+                            unanswered_questions: 0,
+                            wrong_questions: 2
+                        },
+                        show_student_result: 1,
+                        submission_summary: {
+                            answered_questions: 10,
+                            pending_manual_questions: 0,
+                            total_questions: 10
+                        }
+                    };
+                }
+
+                throw new Error('Unexpected apiRequest path: ' + String(path));
+            }
+        });
+
+        await fixture.manager.maybeFinalizeLockedExam('unit-test');
+
+        expect(fixture.state.stage).toBe('result');
+        expect(fixture.state.result.score).toBe(82);
+        expect(fixture.state.examLockedForPendingFinish).toBe(false);
+        expect(fixture.calls.startTimer).toBe(0);
+        expect(fixture.calls.clearPersistedAttemptUiState).toEqual([88]);
+        expect(fixture.calls.clearPersistedQuestionCache).toEqual([88]);
+    });
+
     it('emits submit telemetry events across submit, ack, and ready phases', async function () {
         var fixture = createFixture();
 

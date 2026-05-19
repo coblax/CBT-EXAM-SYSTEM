@@ -8,21 +8,42 @@ export function createSyncLifecycleBridge(deps) {
     var setConnectionStatus = deps.setConnectionStatus;
     var state = deps.state;
 
-    function flushPendingAnswerBatchSilently(options) {
-        if (state.stage !== 'exam' || state.attemptId <= 0 || state.isFinishing) {
-            return;
+    function resolveSilentOperation(promise, options) {
+        var resolvedPromise = Promise.resolve(promise);
+        if (options && options.swallowErrors === false) {
+            return resolvedPromise;
         }
 
-        queueLoadedQuestionAnswersForFlush();
-        flushPendingAnswerBatch(options || {}).catch(function () {});
+        return resolvedPromise.catch(function () {
+            return null;
+        });
+    }
+
+    function flushPendingAnswerBatchSilently(options) {
+        options = options || {};
+        if (state.stage !== 'exam' || state.attemptId <= 0 || state.isFinishing) {
+            return Promise.resolve(null);
+        }
+
+        try {
+            queueLoadedQuestionAnswersForFlush();
+            return resolveSilentOperation(flushPendingAnswerBatch(options), options);
+        } catch (error) {
+            return resolveSilentOperation(Promise.reject(error), options);
+        }
     }
 
     function flushAttemptUiStateSilently(options) {
+        options = options || {};
         if (state.stage !== 'exam' || state.attemptId <= 0 || state.isFinishing) {
-            return;
+            return Promise.resolve(null);
         }
 
-        flushAttemptUiState(options || {}).catch(function () {});
+        try {
+            return resolveSilentOperation(flushAttemptUiState(options), options);
+        } catch (error) {
+            return resolveSilentOperation(Promise.reject(error), options);
+        }
     }
 
     function triggerPendingSyncLifecycleRetry(reason, options) {

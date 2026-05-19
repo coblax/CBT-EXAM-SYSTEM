@@ -251,6 +251,8 @@ export function createInitialState(win) {
         pendingSyncCount: 0,
         syncBlockingReason: '',
         examLockedForPendingFinish: false,
+        finishLockStartedAt: 0,
+        finishRecoveryCanExit: false,
         lastSyncError: '',
         heartbeatLostActive: false,
         heartbeatLostFailureCount: 0,

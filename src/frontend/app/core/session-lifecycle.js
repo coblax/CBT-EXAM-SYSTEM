@@ -262,6 +262,9 @@ export function createSessionLifecycleManager(deps) {
         state.finishReceipt = null;
         state.finishResultPending = false;
         state.finishRecoveryLastError = '';
+        state.examLockedForPendingFinish = false;
+        state.finishLockStartedAt = 0;
+        state.finishRecoveryCanExit = false;
         resetAuthProgressState();
         state.result = null;
         state.finishConfirmOpen = false;
@@ -296,6 +299,7 @@ export function createSessionLifecycleManager(deps) {
         options = options || {};
 
         var previousAttemptId = Number(state.attemptId) || 0;
+        var preserveAttemptRecovery = options.preserveAttemptRecovery === true;
         stopTimer();
         stopSessionHeartbeat();
         exitFullscreenSilently();
@@ -358,6 +362,9 @@ export function createSessionLifecycleManager(deps) {
         state.finishReceipt = null;
         state.finishResultPending = false;
         state.finishRecoveryLastError = '';
+        state.examLockedForPendingFinish = false;
+        state.finishLockStartedAt = 0;
+        state.finishRecoveryCanExit = false;
         resetAuthProgressState();
         state.result = null;
         state.finishConfirmOpen = false;
@@ -382,7 +389,7 @@ export function createSessionLifecycleManager(deps) {
         state.heartbeatLostActive = false;
         state.heartbeatLostFailureCount = 0;
         state.heartbeatLostLastErrorCode = '';
-        if (previousAttemptId > 0) {
+        if (previousAttemptId > 0 && !preserveAttemptRecovery) {
             clearPersistedAttemptUiState(previousAttemptId);
             clearPersistedQuestionCache(previousAttemptId);
         }
@@ -399,7 +406,9 @@ export function createSessionLifecycleManager(deps) {
             stage: 'login',
             error: normalizedMessage
         });
-        render();
+        render('auth-session-expired', {
+            message: normalizedMessage
+        });
     }
 
     async function fullLogout() {
@@ -470,7 +479,11 @@ export function createSessionLifecycleManager(deps) {
             return;
         }
 
-        if (state.stage === 'exam' && state.examLockedForPendingFinish) {
+        var allowFinishRecoveryExit = state.stage === 'exam'
+            && state.examLockedForPendingFinish
+            && state.finishRecoveryCanExit === true;
+
+        if (state.stage === 'exam' && state.examLockedForPendingFinish && !allowFinishRecoveryExit) {
             state.busy = false;
             resetAuthProgressState();
             state.error = 'Logout diblokir sementara jawaban terakhir masih menunggu sinkronisasi/finalisasi.';
@@ -478,7 +491,7 @@ export function createSessionLifecycleManager(deps) {
             return;
         }
 
-        if (state.stage === 'exam' && state.attemptId > 0 && !state.isFinishing) {
+        if (state.stage === 'exam' && state.attemptId > 0 && !state.isFinishing && !allowFinishRecoveryExit) {
             state.busy = true;
             clearMessages();
             state.notice = 'Menyimpan jawaban terakhir sebelum logout...';
@@ -543,7 +556,8 @@ export function createSessionLifecycleManager(deps) {
             return;
         }
         clearAuthenticatedFrontendState({
-            stage: 'login'
+            stage: 'login',
+            preserveAttemptRecovery: allowFinishRecoveryExit
         });
         recordTimelineEntry('logout:done', 'Logout selesai.', {
             attemptId: 0,

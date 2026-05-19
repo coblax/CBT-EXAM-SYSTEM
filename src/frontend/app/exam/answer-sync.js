@@ -277,6 +277,8 @@ export function createAnswerSyncManager(deps) {
             retryCount: Number(answerSyncRetryCount) || 0,
             nextRetryDueAt: answerBatchFlushDueAt > 0 ? new Date(answerBatchFlushDueAt).toISOString() : '',
             autoSaveCongestedUntil: autoSaveCongestedUntil > 0 ? new Date(autoSaveCongestedUntil).toISOString() : '',
+            finishLockStartedAt: Math.max(0, Number(state.finishLockStartedAt) || 0),
+            finishRecoveryCanExit: Boolean(state.finishRecoveryCanExit),
             reason: String(reason || ''),
             lastUpdatedAt: new Date().toISOString()
         });
@@ -499,6 +501,8 @@ export function createAnswerSyncManager(deps) {
             answerBatchInFlightItems: answerBatchInFlightItems,
             autoSaveCongestedUntil: autoSaveCongestedUntil,
             examLockedForPendingFinish: state.examLockedForPendingFinish,
+            finishLockStartedAt: state.finishLockStartedAt,
+            finishRecoveryCanExit: state.finishRecoveryCanExit,
             lastSubmittedPayloadByQuestion: lastSubmittedPayloadByQuestion,
             lastSyncError: state.lastSyncError,
             pendingAnswerBatchByQuestion: pendingAnswerBatchByQuestion,
@@ -634,6 +638,8 @@ export function createAnswerSyncManager(deps) {
         autoSaveCongestedUntil = Math.max(0, Number(normalizedState.autoSaveCongestedUntil) || 0);
         state.lastSyncError = String(normalizedState.lastSyncError || '');
         state.examLockedForPendingFinish = !!normalizedState.examLockedForPendingFinish;
+        state.finishLockStartedAt = Math.max(0, Number(normalizedState.finishLockStartedAt) || 0);
+        state.finishRecoveryCanExit = !!normalizedState.finishRecoveryCanExit;
         state.syncBlockingReason = String(normalizedState.syncBlockingReason || '');
         answerSyncRetryCount = 0;
         lastSyncErrorRetryable = String(state.lastSyncError || '') !== ''
@@ -745,6 +751,8 @@ export function createAnswerSyncManager(deps) {
         lastSyncErrorRetryable = false;
         state.lastSyncError = '';
         state.examLockedForPendingFinish = false;
+        state.finishLockStartedAt = 0;
+        state.finishRecoveryCanExit = false;
         state.pendingFinishAutoSubmit = false;
         if (durableAnswerQueue && hasDurableQueueContext() && typeof durableAnswerQueue.clearAuthGrant === 'function') {
             durableAnswerQueue.clearAuthGrant(getDurableQueueContext()).catch(function () {});
