@@ -74,6 +74,7 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
             : '';
         $settings = self::start_snapshot_redis_settings();
         $redis = self::start_snapshot_redis();
+        $redis_stats = self::get_redis_info_stats($redis, $settings);
         $snapshot_exists = false;
         $snapshot_valid = false;
         $snapshot_item_count = 0;
@@ -92,7 +93,7 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
         $fallback_reason = '';
 
         if ($exam_id <= 0) {
-            return [
+            return array_merge([
                 'exam_id' => 0,
                 'redis_available' => $redis instanceof Redis,
                 'redis_error' => self::$start_snapshot_redis_last_connection_error,
@@ -120,11 +121,11 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
                 'duration_minutes' => 0,
                 'show_student_result' => 0,
                 'enable_calculator' => 0,
-            ];
+            ], $redis_stats);
         }
 
         if (!$redis instanceof Redis) {
-            return [
+            return array_merge([
                 'exam_id' => $exam_id,
                 'redis_available' => false,
                 'redis_error' => self::$start_snapshot_redis_last_connection_error,
@@ -152,7 +153,7 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
                 'duration_minutes' => 0,
                 'show_student_result' => 0,
                 'enable_calculator' => 0,
-            ];
+            ], $redis_stats);
         }
 
         if (!self::snapshot_v2_disabled()) {
@@ -246,7 +247,7 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
         }
         $queue_meta = self::build_queue_repair_meta($exam_id);
 
-        return [
+        return array_merge([
             'exam_id' => $exam_id,
             'redis_available' => true,
             'redis_error' => self::$start_snapshot_redis_last_connection_error,
@@ -274,7 +275,7 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
             'duration_minutes' => $duration_minutes,
             'show_student_result' => $show_student_result,
             'enable_calculator' => $enable_calculator,
-        ];
+        ], $redis_stats);
     }
 
     /**
@@ -1744,5 +1745,90 @@ class CBT_Exam_Start_Attempt_Snapshot_Cache
         }
 
         return $default;
+    }
+
+    /**
+     * Get Redis server info diagnostics.
+     *
+     * @param mixed $redis
+     * @param array $settings
+     * @return array
+     */
+    private static function get_redis_info_stats($redis, array $settings): array
+    {
+        $default_stats = [
+            'redis_version'                 => 'unknown',
+            'redis_used_memory'             => 0,
+            'redis_used_memory_peak'        => 0,
+            'redis_maxmemory'               => 0,
+            'redis_mem_fragmentation_ratio' => 0.0,
+            'redis_connected_clients'       => 0,
+            'redis_uptime_in_seconds'       => 0,
+            'redis_db_keys'                 => 0,
+        ];
+
+        if (!$redis || !method_exists($redis, 'info')) {
+            return $default_stats;
+        }
+
+        try {
+            $info = @$redis->info();
+            if (!is_array($info)) {
+                return $default_stats;
+            }
+
+            $get_val = static function (array $arr, string $target_key) {
+                $target_key = strtolower($target_key);
+                foreach ($arr as $k => $v) {
+                    if (strtolower($k) === $target_key) {
+                        return $v;
+                    }
+                    if (is_array($v)) {
+                        foreach ($v as $sub_k => $sub_v) {
+                            if (strtolower($sub_k) === $target_key) {
+                                return $sub_v;
+                            }
+                        }
+                    }
+                }
+                return null;
+            };
+
+            $version = $get_val($info, 'redis_version');
+            $used_memory = $get_val($info, 'used_memory');
+            $used_memory_peak = $get_val($info, 'used_memory_peak');
+            $maxmemory = $get_val($info, 'maxmemory');
+            $mem_fragmentation_ratio = $get_val($info, 'mem_fragmentation_ratio');
+            $connected_clients = $get_val($info, 'connected_clients');
+            $uptime_in_seconds = $get_val($info, 'uptime_in_seconds');
+
+            $db_keys = 0;
+            $db_id = (int) ($settings['database'] ?? 0);
+            $db_key = 'db' . $db_id;
+            $db_info = $get_val($info, $db_key);
+
+            if ($db_info !== null) {
+                if (is_array($db_info) && isset($db_info['keys'])) {
+                    $db_keys = (int) $db_info['keys'];
+                } elseif (is_string($db_info)) {
+                    if (preg_match('/keys=(\d+)/', $db_info, $matches)) {
+                        $db_keys = (int) $matches[1];
+                    }
+                }
+            }
+
+            return [
+                'redis_version'                 => $version !== null ? (string) $version : 'unknown',
+                'redis_used_memory'             => $used_memory !== null ? (int) $used_memory : 0,
+                'redis_used_memory_peak'        => $used_memory_peak !== null ? (int) $used_memory_peak : 0,
+                'redis_maxmemory'               => $maxmemory !== null ? (int) $maxmemory : 0,
+                'redis_mem_fragmentation_ratio' => $mem_fragmentation_ratio !== null ? (float) $mem_fragmentation_ratio : 0.0,
+                'redis_connected_clients'       => $connected_clients !== null ? (int) $connected_clients : 0,
+                'redis_uptime_in_seconds'       => $uptime_in_seconds !== null ? (int) $uptime_in_seconds : 0,
+                'redis_db_keys'                 => $db_keys,
+            ];
+        } catch (\Throwable $e) {
+            return $default_stats;
+        }
     }
 }

@@ -449,6 +449,39 @@ export function createAuthStageManager(deps) {
         ].join('');
     }
 
+    function formatDiagnosticUptime(seconds) {
+        var uptimeSeconds = Number(seconds);
+        if (!Number.isFinite(uptimeSeconds) || uptimeSeconds <= 0) {
+            return '-';
+        }
+
+        uptimeSeconds = Math.floor(uptimeSeconds);
+        var days = Math.floor(uptimeSeconds / 86400);
+        var hours = Math.floor((uptimeSeconds % 86400) / 3600);
+        var minutes = Math.floor((uptimeSeconds % 3600) / 60);
+
+        var result = [];
+        if (days > 0) {
+            result.push(days + ' hari');
+        }
+        if (hours > 0) {
+            result.push(hours + ' jam');
+        }
+        if (minutes > 0 || (days === 0 && hours === 0)) {
+            result.push(minutes + ' menit');
+        }
+
+        return result.join(', ');
+    }
+
+    function formatDiagnosticMaxMemory(bytes) {
+        var maxBytes = Number(bytes);
+        if (!Number.isFinite(maxBytes) || maxBytes <= 0) {
+            return 'Unlimited';
+        }
+        return formatDiagnosticBytes(maxBytes);
+    }
+
     function formatDiagnosticTtl(seconds) {
         var ttlSeconds = Number(seconds);
         if (!Number.isFinite(ttlSeconds)) {
@@ -580,7 +613,13 @@ export function createAuthStageManager(deps) {
         } else {
             var diagnosticResult = state.adminDiagnosticResult;
             if (state.adminDiagnosticBusy) {
-                panelContent = '<p class="cbt-muted">Mengecek koneksi Redis dan status snapshot...</p>';
+                panelContent = [
+                    '<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px 16px; text-align: center;">',
+                    '  <span class="cbt-finish-live-spinner" style="width: 28px; height: 28px; margin-bottom: 12px; border-width: 3px;" aria-hidden="true"></span>',
+                    '  <strong style="display: block; font-size: 13.5px; color: #4f46e5; margin-bottom: 4px;">Memindai Infrastruktur Redis...</strong>',
+                    '  <p class="cbt-muted" style="margin: 0; font-size: 12px; line-height: 1.4;">Menghubungi engine memori server dan memverifikasi integritas data cache ujian...</p>',
+                    '</div>'
+                ].join('');
             } else if (diagnosticResult && Number(diagnosticResult.exam_id) === Number(selectedExam.id)) {
                 var diagnostics = readDiagnosticObject(diagnosticResult);
                 var revisionMeta = diagnostics.revision_meta && typeof diagnostics.revision_meta === 'object'
@@ -611,16 +650,68 @@ export function createAuthStageManager(deps) {
                 var storageKey = diagnosticText(diagnostics.storage_key, '');
                 var revisionSignature = diagnosticText(revisionMeta.signature, '');
 
-                var connectionClass = (isConnected && isPingSuccess) ? 'is-ready' : 'is-warn';
-                var snapshotClass = snapshotStatus === 'ready' ? 'is-ready' : 'is-warn';
-                var summaryClass = snapshotStatus === 'ready' ? 'cbt-finish-modal-ok' : 'cbt-finish-modal-warning';
-                var summary = [
-                    snapshotStatus.toUpperCase(),
-                    storageShapeLabel,
-                    String(itemCount) + ' soal',
-                    'TTL ' + ttlLabel,
-                    'payload index ' + payloadCompact
-                ].join(' | ');
+                var readinessPercentage = 0;
+                var readinessLabel = '';
+                var readinessDesc = '';
+                var readinessGradient = '';
+                var readinessIcon = '';
+                var loadCapacityText = '';
+                var capacityColor = '';
+
+                if (isConnected && isPingSuccess) {
+                    if (snapshotStatus === 'ready') {
+                        readinessPercentage = 100;
+                        readinessLabel = '100% SIAP DIGUNAKAN';
+                        readinessDesc = 'Soal ujian telah disalin ke RAM. Kecepatan akses siswa maksimal!';
+                        readinessGradient = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+                        readinessIcon = '🚀';
+                        loadCapacityText = '🟢 Sangat Siap melayani > 1.000 siswa masuk bersamaan secara instan.';
+                        capacityColor = '#0e9f6e';
+                    } else {
+                        readinessPercentage = 50;
+                        readinessLabel = '50% SIAP (PERLU WARMUP)';
+                        readinessDesc = 'Koneksi Redis aktif, tetapi cache soal belum dibuat. Klik Warmup di bawah.';
+                        readinessGradient = 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)';
+                        readinessIcon = '⚠️';
+                        loadCapacityText = '🟡 Direkomendasikan hanya untuk < 50 siswa. Harap klik "Uji Ulang / Warmup" terlebih dahulu agar database MySQL tidak overload.';
+                        capacityColor = '#d97706';
+                    }
+                } else {
+                    readinessPercentage = 0;
+                    readinessLabel = '0% KONEKSI TERPUTUS';
+                    readinessDesc = 'Redis mati/error. Ujian membebani database biasa langsung, berisiko lambat.';
+                    readinessGradient = 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)';
+                    readinessIcon = '❌';
+                    loadCapacityText = '🔴 Hanya aman untuk < 20 siswa. Risiko database crash sangat tinggi jika diakses oleh lebih banyak siswa.';
+                    capacityColor = '#c53030';
+                }
+
+                var checkExt = isConnected ? '✔' : '❌';
+                var checkExtColor = isConnected ? '#0e9f6e' : '#c53030';
+                var checkExtText = isConnected ? 'Driver PHP Redis Terdeteksi' : 'Driver PHP Redis Tidak Terdeteksi';
+
+                var checkConn = (isConnected && isPingSuccess) ? '✔' : '❌';
+                var checkConnColor = (isConnected && isPingSuccess) ? '#0e9f6e' : '#c53030';
+                var checkConnText = (isConnected && isPingSuccess) ? 'Server Redis Terhubung (' + latency.toFixed(1) + ' ms)' : 'Koneksi Server Redis Gagal';
+
+                var checkCache = (snapshotStatus === 'ready') ? '✔' : '○';
+                var checkCacheColor = (snapshotStatus === 'ready') ? '#0e9f6e' : 'var(--cbt-muted)';
+                var checkCacheText = (snapshotStatus === 'ready')
+                    ? 'Data Ujian Tersimpan di RAM (' + itemCount + ' soal)'
+                    : 'Cache Soal Ujian Kosong / Perlu Warmup';
+
+                var pingStatusText = latency < 1.5 ? 'Instan' : (latency < 5 ? 'Sangat Cepat' : 'Normal');
+                var pingStatusColor = latency < 5 ? '#0e9f6e' : '#f59e0b';
+
+                var soalStatusText = snapshotStatus === 'ready' ? 'Lengkap (100%)' : 'Belum Ada';
+                var soalStatusColor = snapshotStatus === 'ready' ? '#0e9f6e' : 'var(--cbt-muted)';
+
+                var payloadStatusText = payloadBytes > 0 ? 'Optimal' : '-';
+                var payloadStatusColor = payloadBytes > 0 ? '#0e9f6e' : 'var(--cbt-muted)';
+
+                var ttlStatusText = ttlSeconds > 3600 ? 'Sangat Aman' : (ttlSeconds > 0 ? 'Cukup' : 'Kosong');
+                var ttlStatusColor = ttlSeconds > 3600 ? '#0e9f6e' : (ttlSeconds > 0 ? '#f59e0b' : 'var(--cbt-muted)');
+
                 var detailMessages = [];
                 if (snapshotStatus !== 'ready') {
                     if (snapshotMissLabel !== '') {
@@ -640,64 +731,166 @@ export function createAuthStageManager(deps) {
                     }
                 }
 
+                var detailBlock = '';
+                if (detailMessages.length > 0) {
+                    detailBlock = [
+                        '<div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; font-size: 12px; color: #b91c1c; line-height: 1.45;">',
+                        '  <strong>Catatan Diagnostik:</strong> ' + escapeHtml(detailMessages.join(' | ')),
+                        '</div>'
+                    ].join('');
+                }
+
                 panelContent = [
-                    '<div class="cbt-admin-diagnostic-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; font-size: 13px;">',
-                    '<div><strong>Koneksi Redis:</strong> <span class="cbt-chip ' + connectionClass + '">' + (isConnected && isPingSuccess ? 'TERHUBUNG' : 'GAGAL/MATI') + '</span></div>',
-                    '<div><strong>Status Cache:</strong> <span class="cbt-chip ' + snapshotClass + '">' + escapeHtml(snapshotStatus).toUpperCase() + '</span></div>',
-                    '<div><strong>Jumlah Soal:</strong> ' + escapeHtml(itemCount) + '</div>',
-                    '<div><strong>Latency Cek:</strong> ' + escapeHtml(latency) + ' ms</div>',
+                    '<!-- Readiness Score Card -->',
+                    '<div style="background: ' + readinessGradient + '; color: #ffffff; border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 4px 12px rgba(15, 76, 129, 0.05);">',
+                    '  <div style="min-width: 0;">',
+                    '    <div style="font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.9;">Tingkat Kesiapan Cache</div>',
+                    '    <div style="font-size: 16px; font-weight: 900; margin-top: 4px; line-height: 1.2;">' + readinessLabel + '</div>',
+                    '    <div style="font-size: 11.5px; margin-top: 6px; opacity: 0.85; line-height: 1.4;">' + readinessDesc + '</div>',
+                    '  </div>',
+                    '  <div style="font-size: 32px; font-weight: 900; opacity: 0.3; padding-left: 10px;">' + readinessIcon + '</div>',
                     '</div>',
-                    '<div class="' + summaryClass + '" style="margin-bottom: 12px; font-size: 13px;">' + escapeHtml(summary) + '</div>',
-                    detailMessages.length
-                        ? '<p class="cbt-muted" style="margin: 0 0 12px 0; font-size: 12px;">' + escapeHtml(detailMessages.join(' | ')) + '</p>'
-                        : '',
-                    '<div style="display: grid; gap: 12px; margin-bottom: 12px;">',
-                    renderDiagnosticSection('Koneksi Redis', [
-                        renderDiagnosticRow('Status', redisStatus.toUpperCase()),
-                        renderDiagnosticRow('Host', diagnosticText(diagnostics.redis_host, '-')),
-                        renderDiagnosticRow('Database', diagnosticText(diagnostics.redis_database, '-')),
-                        renderDiagnosticRow('Error', diagnosticText(diagnostics.redis_error, '-'))
-                    ]),
-                    renderDiagnosticSection('Snapshot', [
-                        renderDiagnosticRow('Status', snapshotStatus.toUpperCase()),
-                        renderDiagnosticRow('Exists', formatDiagnosticBool(diagnostics.snapshot_exists)),
-                        renderDiagnosticRow('Valid', formatDiagnosticBool(diagnostics.snapshot_valid)),
-                        renderDiagnosticRow('Storage Shape', storageShapeLabel, storageShape),
-                        renderDiagnosticRow('Storage Key', storageKey !== '' ? truncateDiagnosticValue(storageKey, 22, 12) : '-', storageKey),
-                        renderDiagnosticRow('TTL', ttlLabel),
-                        renderDiagnosticRow('Payload Size', payloadLabel),
-                        renderDiagnosticRow('Jumlah Soal', String(itemCount))
-                    ]),
-                    renderDiagnosticSection('V2 Fragment', [
-                        renderDiagnosticRow('Index Status', diagnosticText(diagnostics.v2_index_status, '-')),
-                        renderDiagnosticRow('Fragment Count', diagnosticText(diagnostics.v2_fragment_count, '0')),
-                        renderDiagnosticRow('Missing Fragment', diagnosticText(diagnostics.v2_missing_fragment_count, '0')),
-                        renderDiagnosticRow('Fallback Reason', diagnosticText(diagnostics.fallback_reason, '-'))
-                    ]),
-                    renderDiagnosticSection('Revision & Repair', [
-                        renderDiagnosticRow('Revision Version', diagnosticText(revisionMeta.version, '-')),
-                        renderDiagnosticRow('Invalidated At', diagnosticText(revisionMeta.invalidated_at, '-')),
-                        renderDiagnosticRow('Signature', revisionSignature !== '' ? truncateDiagnosticValue(revisionSignature, 16, 10) : '-', revisionSignature),
-                        renderDiagnosticRow('Repair Status', diagnosticText(diagnostics.repair_status, '-')),
-                        renderDiagnosticRow('Repair Message', repairMessage || '-'),
-                        renderDiagnosticRow('Warmup', formatDiagnosticBool(diagnosticResult.warmup_attempted)),
-                        renderDiagnosticRow('Warmup Error', warmupError || '-'),
-                        renderDiagnosticRow('Snapshot Message', snapshotMessage || '-')
-                    ]),
+
+                    '<!-- Checking Checklist -->',
+                    '<div style="display: grid; gap: 8px; margin-bottom: 14px; background: var(--cbt-white); border: 1px solid var(--cbt-border); border-radius: 8px; padding: 12px 14px;">',
+                    '  <div style="display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--cbt-text); font-weight: 600;">',
+                    '    <span style="color: ' + checkExtColor + '; font-size: 13px; font-weight: 900;">' + checkExt + '</span> ' + checkExtText,
+                    '  </div>',
+                    '  <div style="display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--cbt-text); font-weight: 600;">',
+                    '    <span style="color: ' + checkConnColor + '; font-size: 13px; font-weight: 900;">' + checkConn + '</span> ' + checkConnText,
+                    '  </div>',
+                    '  <div style="display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--cbt-text); font-weight: 600;">',
+                    '    <span style="color: ' + checkCacheColor + '; font-size: 13px; font-weight: 900;">' + checkCache + '</span> ' + checkCacheText,
+                    '  </div>',
                     '</div>',
-                    '<button class="cbt-button cbt-button-secondary cbt-button-small" data-action="test-redis-cache" type="button" style="padding: 4px 8px; font-size: 12px;">Uji Ulang / Warmup Cache</button>'
+
+                    detailBlock,
+
+                    '<!-- Metrics Grid -->',
+                    '<div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px;">',
+                    '  <div style="background: var(--cbt-white); border: 1px solid var(--cbt-border); border-radius: 8px; padding: 10px 12px;">',
+                    '    <span style="display: block; color: var(--cbt-muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;">Respon Ping</span>',
+                    '    <strong style="display: block; font-size: 15px; color: var(--cbt-text); margin-top: 4px; display: flex; align-items: baseline; gap: 2px;">' + latency.toFixed(1) + ' <span style="font-size: 10px; font-weight: 500; color: var(--cbt-muted);">ms</span></strong>',
+                    '    <span style="font-size: 10px; color: ' + pingStatusColor + '; font-weight: 600;">' + pingStatusText + '</span>',
+                    '  </div>',
+                    '  <div style="background: var(--cbt-white); border: 1px solid var(--cbt-border); border-radius: 8px; padding: 10px 12px;">',
+                    '    <span style="display: block; color: var(--cbt-muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;">Soal Ter-cache</span>',
+                    '    <strong style="display: block; font-size: 15px; color: var(--cbt-text); margin-top: 4px; display: flex; align-items: baseline; gap: 2px;">' + itemCount + ' <span style="font-size: 10px; font-weight: 500; color: var(--cbt-muted);">soal</span></strong>',
+                    '    <span style="font-size: 10px; color: ' + soalStatusColor + '; font-weight: 600;">' + soalStatusText + '</span>',
+                    '  </div>',
+                    '  <div style="background: var(--cbt-white); border: 1px solid var(--cbt-border); border-radius: 8px; padding: 10px 12px;">',
+                    '    <span style="display: block; color: var(--cbt-muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;">Ukuran Cache</span>',
+                    '    <strong style="display: block; font-size: 15px; color: var(--cbt-text); margin-top: 4px;">' + payloadCompact + '</strong>',
+                    '    <span style="font-size: 10px; color: ' + payloadStatusColor + '; font-weight: 600;">' + payloadStatusText + '</span>',
+                    '  </div>',
+                    '  <div style="background: var(--cbt-white); border: 1px solid var(--cbt-border); border-radius: 8px; padding: 10px 12px;">',
+                    '    <span style="display: block; color: var(--cbt-muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;">Masa Aktif (TTL)</span>',
+                    '    <strong style="display: block; font-size: 15px; color: var(--cbt-text); margin-top: 4px;">' + ttlLabel + '</strong>',
+                    '    <span style="font-size: 10px; color: ' + ttlStatusColor + '; font-weight: 600;">' + ttlStatusText + '</span>',
+                    '  </div>',
+                    '</div>',
+                    
+                    '<!-- Estimasi Kapasitas Beban -->',
+                    '<div style="background: var(--cbt-white); border: 1px solid var(--cbt-border); border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; font-size: 11.5px;">',
+                    '  <span style="display: block; color: var(--cbt-muted); font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px;">Estimasi Kapasitas Beban Siswa</span>',
+                    '  <strong style="color: ' + capacityColor + '; font-weight: 700; line-height: 1.4; display: block;">' + loadCapacityText + '</strong>',
+                    '</div>',
+                    
+                    '<!-- Kotak Edukasi Ringkas -->',
+                    '<div style="background: rgba(99, 102, 241, 0.04); border: 1px dashed rgba(99, 102, 241, 0.25); border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; font-size: 11px; line-height: 1.45; color: var(--cbt-text);">',
+                    '  <strong style="display: block; color: #4f46e5; margin-bottom: 4px; font-size: 11.5px;">💡 Mengapa RAM Cache Sangat Penting?</strong>',
+                    '  Mengambil soal dari database biasa (MySQL) membutuhkan waktu ±50ms. Dengan menyalin soal ke RAM (Redis), kecepatan respons naik drastis menjadi &lt; 1ms, memastikan server tidak overload saat siswa mulai masuk secara bersamaan.',
+                    '</div>',
+
+                    '<!-- Technical Details Accordion -->',
+                    '<details style="margin-bottom: 14px; font-size: 12px; border: 1px solid var(--cbt-border); border-radius: 8px; padding: 10px 12px; background: var(--cbt-white);">',
+                    '  <summary style="font-weight: 700; color: #4f46e5; cursor: pointer; outline: none; display: flex; align-items: center; gap: 6px;">',
+                    '    Detail Parameter Teknis',
+                    '  </summary>',
+                    '  <div style="margin-top: 10px; display: grid; gap: 12px; border-top: 1px solid var(--cbt-border); padding-top: 10px;">',
+                    '    ' + renderDiagnosticSection('Koneksi Redis', [
+                              renderDiagnosticRow('Status', redisStatus.toUpperCase()),
+                              renderDiagnosticRow('Host', diagnosticText(diagnostics.redis_host, '-')),
+                              renderDiagnosticRow('Database', diagnosticText(diagnostics.redis_database, '-')),
+                              renderDiagnosticRow('Error', diagnosticText(diagnostics.redis_error, '-'))
+                          ]),
+                    '    ' + renderDiagnosticSection('Engine & Memori Redis', [
+                              renderDiagnosticRow('Versi Redis', diagnosticText(diagnostics.redis_version, '-')),
+                              renderDiagnosticRow('Memori Digunakan', diagnostics.redis_used_memory ? formatDiagnosticBytes(diagnostics.redis_used_memory) : '-'),
+                              renderDiagnosticRow('Puncak Memori', diagnostics.redis_used_memory_peak ? formatDiagnosticBytes(diagnostics.redis_used_memory_peak) : '-'),
+                              renderDiagnosticRow('Batas Memori (Max)', diagnostics.redis_maxmemory ? formatDiagnosticMaxMemory(diagnostics.redis_maxmemory) : '-'),
+                              renderDiagnosticRow('Rasio Fragmentasi', diagnostics.redis_mem_fragmentation_ratio ? Number(diagnostics.redis_mem_fragmentation_ratio).toFixed(2) : '-'),
+                              renderDiagnosticRow('Klien Terhubung', diagnostics.redis_connected_clients !== undefined ? String(diagnostics.redis_connected_clients) : '-'),
+                              renderDiagnosticRow('Uptime Sistem', diagnostics.redis_uptime_in_seconds ? formatDiagnosticUptime(diagnostics.redis_uptime_in_seconds) : '-'),
+                              renderDiagnosticRow('Total Kunci (DB)', diagnostics.redis_db_keys !== undefined ? String(diagnostics.redis_db_keys) : '-')
+                          ]),
+                    '    ' + renderDiagnosticSection('Snapshot', [
+                              renderDiagnosticRow('Status', snapshotStatus.toUpperCase()),
+                              renderDiagnosticRow('Exists', formatDiagnosticBool(diagnostics.snapshot_exists)),
+                              renderDiagnosticRow('Valid', formatDiagnosticBool(diagnostics.snapshot_valid)),
+                              renderDiagnosticRow('Storage Shape', storageShapeLabel, storageShape),
+                              renderDiagnosticRow('Storage Key', storageKey !== '' ? truncateDiagnosticValue(storageKey, 22, 12) : '-', storageKey),
+                              renderDiagnosticRow('TTL', ttlLabel),
+                              renderDiagnosticRow('Payload Size', payloadLabel),
+                              renderDiagnosticRow('Jumlah Soal', String(itemCount))
+                          ]),
+                    '    ' + renderDiagnosticSection('V2 Fragment', [
+                              renderDiagnosticRow('Index Status', diagnosticText(diagnostics.v2_index_status, '-')),
+                              renderDiagnosticRow('Fragment Count', diagnosticText(diagnostics.v2_fragment_count, '0')),
+                              renderDiagnosticRow('Missing Fragment', diagnosticText(diagnostics.v2_missing_fragment_count, '0')),
+                              renderDiagnosticRow('Fallback Reason', diagnosticText(diagnostics.fallback_reason, '-'))
+                          ]),
+                    '    ' + renderDiagnosticSection('Revision & Repair', [
+                              renderDiagnosticRow('Revision Version', diagnosticText(revisionMeta.version, '-')),
+                              renderDiagnosticRow('Invalidated At', diagnosticText(revisionMeta.invalidated_at, '-')),
+                              renderDiagnosticRow('Signature', revisionSignature !== '' ? truncateDiagnosticValue(revisionSignature, 16, 10) : '-', revisionSignature),
+                              renderDiagnosticRow('Repair Status', diagnosticText(diagnostics.repair_status, '-')),
+                              renderDiagnosticRow('Repair Message', repairMessage || '-'),
+                              renderDiagnosticRow('Warmup', formatDiagnosticBool(diagnosticResult.warmup_attempted)),
+                              renderDiagnosticRow('Warmup Error', warmupError || '-'),
+                              renderDiagnosticRow('Snapshot Message', snapshotMessage || '-')
+                          ]),
+                    '  </div>',
+                    '</details>',
+
+                    '<button class="cbt-button cbt-button-secondary cbt-button-small" data-action="test-redis-cache" type="button" style="width: 100%; justify-content: center; padding: 6px 12px; font-size: 12px; font-weight: 700;">Uji Ulang / Warmup Cache</button>'
                 ].join('');
             } else {
                 panelContent = [
-                    '<p class="cbt-muted" style="margin-bottom: 12px;">Anda adalah Admin. Anda dapat memastikan apakah ujian ini di-cache di memori (Redis) untuk mencegah kelambatan saat diakses siswa.</p>',
-                    '<button class="cbt-button cbt-button-secondary cbt-button-small" data-action="test-redis-cache" type="button" style="padding: 4px 8px; font-size: 12px;">Test Redis Cache</button>'
+                    '<p style="margin: 0 0 14px 0; font-size: 12.5px; line-height: 1.5; color: var(--cbt-muted);">',
+                    '  Gunakan fitur ini untuk memastikan semua soal ujian telah disalin ke memori RAM server agar akses siswa menjadi instan dan bebas lag.',
+                    '</p>',
+                    '<div style="display: grid; gap: 10px; margin-bottom: 16px; background: var(--cbt-white); border: 1px solid var(--cbt-border); border-radius: 8px; padding: 12px 14px;">',
+                    '  <div style="display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--cbt-text); font-weight: 600;">',
+                    '    <span style="color: var(--cbt-muted); font-size: 14px; font-weight: 400; line-height: 1;">○</span> Ekstensi PHP Redis (Menunggu pemindaian...)',
+                    '  </div>',
+                    '  <div style="display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--cbt-text); font-weight: 600;">',
+                    '    <span style="color: var(--cbt-muted); font-size: 14px; font-weight: 400; line-height: 1;">○</span> Server Redis Connection (Menunggu pemindaian...)',
+                    '  </div>',
+                    '  <div style="display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--cbt-text); font-weight: 600;">',
+                    '    <span style="color: var(--cbt-muted); font-size: 14px; font-weight: 400; line-height: 1;">○</span> Caching Soal Ujian di RAM (Menunggu pemindaian...)',
+                    '  </div>',
+                    '</div>',
+                    '<button class="cbt-button cbt-button-primary cbt-button-small" data-action="test-redis-cache" type="button" style="width: 100%; justify-content: center; padding: 8px 12px; font-size: 12px; font-weight: 800; letter-spacing: .04em;">',
+                    '  PINDAI & HANGATKAN CACHE',
+                    '</button>'
                 ].join('');
             }
         }
 
         return [
-            '<div class="cbt-card cbt-admin-diagnostic-panel" style="margin-top: 16px; border: 2px solid #5850ec; background: #ebf4ff; border-radius: 8px; padding: 16px;">',
-            '<h4 style="margin: 0 0 8px 0; color: #5850ec; display: flex; align-items: center; gap: 8px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg> Admin Diagnostic: Redis Preflight</h4>',
+            '<div class="cbt-card cbt-admin-diagnostic-panel" style="margin-top: 20px; border: 1px solid rgba(99, 102, 241, 0.25); background: rgba(99, 102, 241, 0.05); border-radius: 12px; padding: 18px; color: var(--cbt-text); box-shadow: 0 4px 12px rgba(15, 76, 129, 0.03);">',
+            '  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">',
+            '    <h4 style="margin: 0; color: #4f46e5; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700;">',
+            '      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>',
+            '      Status Kesiapan Redis',
+            '    </h4>',
+            '    <div style="display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; color: ' + (hasSelectedExam && state.adminDiagnosticResult && Number(state.adminDiagnosticResult.exam_id) === Number(selectedExam.id) && state.adminDiagnosticResult.redis_status === 'connected' && state.adminDiagnosticResult.ping_success ? '#0e9f6e' : 'var(--cbt-muted)') + '; text-transform: uppercase;">',
+            (hasSelectedExam && state.adminDiagnosticResult && Number(state.adminDiagnosticResult.exam_id) === Number(selectedExam.id) && state.adminDiagnosticResult.redis_status === 'connected' && state.adminDiagnosticResult.ping_success
+                ? '      <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 8px #10b981;"></span> Redis Online'
+                : '      Redis Preflight'),
+            '    </div>',
+            '  </div>',
             panelContent,
             '</div>'
         ].join('');

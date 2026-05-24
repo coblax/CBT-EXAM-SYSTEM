@@ -143,6 +143,17 @@
     font-size: 12px;
     line-height: 1.5;
     color: #5b6e82;
+    white-space: normal;
+    text-overflow: clip;
+    overflow: visible;
+}
+.cbt-confirm-token-note::before {
+    content: "";
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='rgba(37, 99, 235, 0.08)'/%3E%3Ccircle cx='16' cy='11.5' r='1.5' fill='%232563eb'/%3E%3Crect x='14.5' y='15' width='3' height='7' rx='1.5' fill='%232563eb'/%3E%3C/svg%3E") no-repeat center / contain;
+    flex-shrink: 0;
 }
 
 .cbt-confirm-actions {
@@ -481,266 +492,314 @@
     }
 }
 
+/* Base styles for floating layout (applicable to all screen sizes) */
+.cbt-stage-confirm .cbt-confirm-card-simple {
+    padding-bottom: 24px;
+}
+
+.cbt-confirm-card-simple .cbt-confirm-field-note {
+    position: fixed;
+    z-index: 90;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-left: 4px solid #2563eb;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.cbt-confirm-card-simple .cbt-confirm-token-note {
+    display: flex;
+    align-items: flex-start;
+    overflow: visible;
+    text-align: left;
+    text-overflow: clip;
+    white-space: normal;
+    font-weight: 600;
+    color: #334155;
+}
+
+.cbt-confirm-card-simple .cbt-confirm-token-note::before {
+    content: "";
+    display: block;
+    flex-shrink: 0;
+    background-size: contain;
+}
+
+.cbt-confirm-card-simple > .cbt-alert {
+    position: fixed;
+    z-index: 92;
+    align-items: center;
+    animation: cbt-confirm-floating-alert-in 160ms ease-out;
+}
+
+.cbt-confirm-card-simple .cbt-confirm-actions {
+    position: fixed;
+    z-index: 91;
+    display: grid !important;
+    grid-area: auto !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-left: 4px solid #2563eb;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.cbt-confirm-card-simple .cbt-confirm-actions .cbt-button {
+    text-transform: uppercase;
+    font-weight: 800;
+}
+
+/* Primary Button style - sapphire to premium violet gradient */
+.cbt-confirm-card-simple .cbt-confirm-actions .cbt-button-primary {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 50%, #4f46e5 100%);
+    color: #ffffff;
+    border: none;
+    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35), 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.cbt-confirm-card-simple .cbt-confirm-actions .cbt-button-primary:hover {
+    background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 50%, #4f46e5 100%);
+    box-shadow: 0 10px 25px -5px rgba(37, 99, 235, 0.4), 0 8px 20px -6px rgba(79, 70, 229, 0.3), inset 0 1px 1px rgba(255, 255, 255, 0.2);
+}
+
+.cbt-confirm-card-simple .cbt-confirm-actions .cbt-button-primary:active {
+    transform: translateY(0) scale(0.98);
+}
+
+/* Secondary Button style - solid crisp outline */
+.cbt-confirm-card-simple .cbt-confirm-actions .cbt-button-secondary {
+    background: #f1f5f9;
+    border: 1px solid #cbd5e1;
+    color: #334155;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+.cbt-confirm-card-simple .cbt-confirm-actions .cbt-button-secondary:hover {
+    background: #e2e8f0;
+    border-color: #94a3b8;
+    color: #0f172a;
+    box-shadow: 0 8px 20px -8px rgba(15, 23, 42, 0.08);
+}
+
+.cbt-confirm-card-simple .cbt-confirm-actions .cbt-button-secondary:active {
+    transform: translateY(0) scale(0.98);
+}
+
+/* Base styles for dark mode floating layout (applicable to all screen sizes) */
+.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
+.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-actions {
+    border-color: #334155;
+    background: #0f172a;
+    box-shadow: 0 20px 48px -12px rgba(2, 6, 23, 0.6);
+}
+
+.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
+.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-actions {
+    border-left: 4px solid #38bdf8;
+}
+
+.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note {
+    box-shadow: 0 8px 30px rgba(2, 6, 23, 0.3);
+}
+
+.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-token-note {
+    color: #cbd5e1;
+}
+
+.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-token-note::before {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='rgba(56, 189, 248, 0.12)'/%3E%3Ccircle cx='16' cy='11.5' r='1.5' fill='%2338bdf8'/%3E%3Crect x='14.5' y='15' width='3' height='7' rx='1.5' fill='%2338bdf8'/%3E%3C/svg%3E");
+}
+
+.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-actions .cbt-button-primary {
+    background: linear-gradient(135deg, #38bdf8 0%, #2563eb 50%, #4f46e5 100%);
+    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.45);
+}
+
+.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-actions .cbt-button-primary:hover {
+    background: linear-gradient(135deg, #7dd3fc 0%, #3b82f6 50%, #4f46e5 100%);
+    box-shadow: 0 10px 25px -5px rgba(56, 189, 248, 0.5), 0 8px 20px -6px rgba(37, 99, 235, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.2);
+}
+
+.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-actions .cbt-button-secondary {
+    background: #1e293b;
+    border-color: #334155;
+    color: #cbd5e1;
+}
+
+.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-actions .cbt-button-secondary:hover {
+    background: #334155;
+    border-color: #475569;
+    color: #ffffff;
+}
+
+/* Desktop screen adjustments */
 @media (min-width: 621px) {
-    body.cbt-exam-page.cbt-stage-confirm .cbt-container {
-        padding-bottom: 158px;
+    .cbt-stage-confirm .cbt-container {
+        padding-bottom: 208px;
     }
 
-    body.cbt-exam-page.cbt-stage-confirm .cbt-confirm-card-simple {
-        padding-bottom: 22px;
+    .cbt-stage-confirm:has(.cbt-alert) .cbt-container {
+        padding-bottom: 268px;
     }
 
-    body.cbt-exam-page.cbt-stage-confirm .cbt-confirm-card-simple .cbt-confirm-field-note {
-        position: fixed;
+    .cbt-confirm-card-simple .cbt-confirm-field-note {
         left: 50%;
-        bottom: 84px;
-        z-index: 91;
+        bottom: 95px;
         width: min(1240px, calc(100vw - 28px));
-        margin: 0 !important;
-        padding: 10px 14px;
-        border-bottom-color: transparent;
-        border-radius: 16px 16px 0 0;
-        background: rgba(255, 255, 255, 0.96);
-        box-shadow: none;
-        backdrop-filter: blur(14px);
+        padding: 16px 20px;
+        box-shadow: 0 -10px 30px -10px rgba(15, 23, 42, 0.06);
         transform: translateX(-50%);
+        border-radius: 20px 20px 0 0;
+        border-bottom: none;
     }
 
-    body.cbt-exam-page.cbt-stage-confirm .cbt-confirm-card-simple .cbt-confirm-field-note .cbt-confirm-token-note {
-        display: block;
-        overflow: hidden;
-        text-align: left;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+    .cbt-confirm-card-simple .cbt-confirm-token-note {
+        gap: 14px;
+        font-size: 13.5px;
+        line-height: 1.6;
     }
 
-    body.cbt-exam-page.cbt-stage-confirm .cbt-confirm-card-simple > .cbt-alert {
-        position: fixed;
+    .cbt-confirm-card-simple .cbt-confirm-token-note::before {
+        width: 32px;
+        height: 32px;
+    }
+
+    .cbt-confirm-card-simple > .cbt-alert {
         left: 50%;
-        bottom: 124px;
-        z-index: 92;
+        bottom: 196px;
         width: min(1240px, calc(100vw - 28px));
-        min-height: 42px;
-        margin: 0;
-        padding: 10px 14px;
-        align-items: center;
-        border-bottom-color: transparent;
-        border-radius: 16px 16px 0 0;
-        box-shadow: none;
-        backdrop-filter: blur(14px);
-        transform: translateX(-50%);
-        animation: cbt-confirm-floating-alert-in 160ms ease-out;
-    }
-
-    body.cbt-exam-page.cbt-stage-confirm .cbt-confirm-card-simple:has(> .cbt-alert) .cbt-confirm-field-note {
-        border-radius: 0;
-    }
-
-    body.cbt-exam-page.cbt-stage-confirm .cbt-confirm-card-simple .cbt-confirm-actions {
-        position: fixed;
-        left: 50%;
-        bottom: 18px;
-        z-index: 90;
-        display: grid !important;
-        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-        gap: 10px;
-        width: min(1240px, calc(100vw - 28px));
-        margin: 0 !important;
-        padding: 10px;
-        border: 1px solid rgba(191, 216, 244, 0.86);
-        border-top-color: transparent;
-        border-radius: 0 0 16px 16px;
-        background: rgba(255, 255, 255, 0.96);
-        box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
-        backdrop-filter: blur(14px);
-        transform: translateX(-50%);
-    }
-
-    body.cbt-exam-page.cbt-stage-confirm .cbt-confirm-card-simple .cbt-confirm-actions .cbt-button {
         min-height: 44px;
-        border-radius: 10px;
+        margin: 0;
+        padding: 12px 16px;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+        transform: translateX(-50%);
+        border-radius: 12px;
+    }
+
+    .cbt-confirm-card-simple:has(> .cbt-alert) .cbt-confirm-field-note {
+        border-radius: 20px 20px 0 0;
+    }
+
+    .cbt-confirm-card-simple .cbt-confirm-actions {
+        left: 50%;
+        bottom: 24px;
+        gap: 12px;
+        width: min(1240px, calc(100vw - 28px));
+        margin: 0 !important;
+        padding: 12px 14px;
+        border-radius: 0 0 20px 20px;
+        border-top: none;
+        box-shadow: 0 10px 40px -12px rgba(15, 23, 42, 0.12), 0 2px 4px rgba(0, 0, 0, 0.03);
+        transform: translateX(-50%);
+    }
+
+    .cbt-confirm-card-simple .cbt-confirm-actions .cbt-button {
+        min-height: 48px;
+        border-radius: 14px;
+        letter-spacing: 0.06em;
+        font-size: 13.5px;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .cbt-confirm-card-simple .cbt-confirm-actions .cbt-button-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(37, 99, 235, 0.45);
+    }
+
+    .cbt-confirm-card-simple .cbt-confirm-actions .cbt-button-secondary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 14px rgba(0, 0, 0, 0.04);
     }
 }
 
-@media (min-width: 621px) {
-    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
-    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
-    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple > .cbt-alert,
-    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple > .cbt-alert,
-    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-actions,
-    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-actions {
-        border-color: rgba(148, 163, 184, 0.22);
-        background: rgba(15, 23, 42, 0.94);
-        box-shadow: 0 18px 42px rgba(2, 6, 23, 0.38);
-    }
-
-    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
-    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
-    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple > .cbt-alert,
-    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple > .cbt-alert {
-        box-shadow: none;
-    }
-
-    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
-    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
-    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple > .cbt-alert,
-    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple > .cbt-alert,
-    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-actions,
-    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-actions {
-        border-top-color: rgba(148, 163, 184, 0.22);
-        border-bottom-color: rgba(148, 163, 184, 0.22);
-    }
-
-    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
-    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
-    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple > .cbt-alert,
-    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple > .cbt-alert {
-        border-bottom-color: transparent;
-    }
-
-    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-actions,
-    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-actions {
-        border-top-color: transparent;
-    }
-}
-
+/* Mobile screen adjustments */
 @media (max-width: 620px) {
-    body.cbt-exam-page.cbt-stage-confirm .cbt-container {
-        padding-bottom: calc(174px + env(safe-area-inset-bottom, 0px));
+    .cbt-stage-confirm .cbt-container {
+        padding-bottom: calc(188px + env(safe-area-inset-bottom, 0px));
     }
 
-    body.cbt-exam-page.cbt-stage-confirm .cbt-confirm-card-simple {
+    .cbt-stage-confirm:has(.cbt-alert) .cbt-container {
+        padding-bottom: calc(238px + env(safe-area-inset-bottom, 0px));
+    }
+
+    .cbt-confirm-card-simple {
         padding-bottom: 18px;
     }
 
-    body.cbt-exam-page.cbt-stage-confirm .cbt-confirm-card-simple .cbt-confirm-field-note {
-        position: fixed;
-        left: 10px;
-        right: 10px;
-        bottom: calc(107px + env(safe-area-inset-bottom, 0px));
-        z-index: 91;
+    .cbt-confirm-card-simple .cbt-confirm-field-note {
+        left: 12px;
+        right: 12px;
+        bottom: calc(75px + env(safe-area-inset-bottom, 0px));
         max-width: 520px;
         margin: 0 auto !important;
-        padding: 8px 10px;
-        border-bottom-color: transparent;
-        border-radius: 14px 14px 0 0;
-        background: rgba(255, 255, 255, 0.96);
-        box-shadow: none;
-        backdrop-filter: blur(14px);
+        padding: 12px 16px;
+        border-radius: 16px 16px 0 0;
+        border-bottom: none;
+        box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.02);
     }
 
-    body.cbt-exam-page.cbt-stage-confirm .cbt-confirm-card-simple .cbt-confirm-field-note .cbt-confirm-token-note {
-        display: -webkit-box;
-        overflow: hidden;
-        -webkit-box-orient: vertical;
-        -webkit-line-clamp: 2;
-        text-align: left;
-        font-size: 11px;
-        line-height: 1.45;
+    .cbt-confirm-card-simple .cbt-confirm-token-note {
+        gap: 10px;
+        font-size: 12px;
+        line-height: 1.5;
     }
 
-    body.cbt-exam-page.cbt-stage-confirm .cbt-confirm-card-simple > .cbt-alert {
-        position: fixed;
-        left: 10px;
-        right: 10px;
-        bottom: calc(156px + env(safe-area-inset-bottom, 0px));
-        z-index: 92;
+    .cbt-confirm-card-simple .cbt-confirm-token-note::before {
+        width: 26px;
+        height: 26px;
+    }
+
+    .cbt-confirm-card-simple > .cbt-alert {
+        left: 12px;
+        right: 12px;
+        bottom: calc(160px + env(safe-area-inset-bottom, 0px));
         max-width: 520px;
         min-height: 38px;
         margin: 0 auto;
-        padding: 8px 10px;
-        align-items: center;
+        padding: 10px 12px;
         gap: 8px;
-        border-bottom-color: transparent;
-        border-radius: 14px 14px 0 0;
-        box-shadow: none;
-        backdrop-filter: blur(14px);
-        animation: cbt-confirm-floating-alert-in 160ms ease-out;
+        border-radius: 12px;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
     }
 
-    body.cbt-exam-page.cbt-stage-confirm .cbt-confirm-card-simple:has(> .cbt-alert) .cbt-confirm-field-note {
-        border-radius: 0;
+    .cbt-confirm-card-simple:has(> .cbt-alert) .cbt-confirm-field-note {
+        border-radius: 16px 16px 0 0;
     }
 
-    body.cbt-exam-page.cbt-stage-confirm .cbt-confirm-card-simple > .cbt-alert .cbt-alert-copy {
+    .cbt-confirm-card-simple > .cbt-alert .cbt-alert-copy {
         font-size: 11px;
         line-height: 1.3;
     }
 
-    body.cbt-exam-page.cbt-stage-confirm .cbt-confirm-card-simple > .cbt-alert .cbt-alert-dismiss {
+    .cbt-confirm-card-simple > .cbt-alert .cbt-alert-dismiss {
         min-width: 26px;
         min-height: 26px;
         margin: -2px -2px -2px 0;
     }
 
-    body.cbt-exam-page.cbt-stage-confirm .cbt-confirm-card-simple .cbt-confirm-actions {
-        position: fixed;
-        left: 10px;
-        right: 10px;
-        bottom: calc(8px + env(safe-area-inset-bottom, 0px));
-        z-index: 90;
-        display: grid !important;
-        grid-template-columns: minmax(0, 1fr) !important;
-        gap: 7px;
+    .cbt-confirm-card-simple .cbt-confirm-actions {
+        left: 12px;
+        right: 12px;
+        bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+        gap: 8px;
         width: auto;
         max-width: 520px;
         margin: 0 auto !important;
         padding: 8px;
-        border: 1px solid rgba(191, 216, 244, 0.86);
-        border-top-color: transparent;
-        border-radius: 0 0 14px 14px;
-        background: rgba(255, 255, 255, 0.96);
-        box-shadow: 0 14px 32px rgba(15, 23, 42, 0.18);
-        backdrop-filter: blur(14px);
+        border-radius: 0 0 16px 16px;
+        border-top: none;
+        box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08);
     }
 
-    body.cbt-exam-page.cbt-stage-confirm .cbt-confirm-card-simple .cbt-confirm-actions .cbt-button {
-        min-height: 38px;
-        border-radius: 8px;
-        font-size: 10px;
-        line-height: 1;
-    }
-}
-
-@media (max-width: 620px) {
-    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
-    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
-    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple > .cbt-alert,
-    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple > .cbt-alert,
-    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-actions,
-    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-actions {
-        border-color: rgba(148, 163, 184, 0.22);
-        background: rgba(15, 23, 42, 0.94);
-        box-shadow: 0 14px 34px rgba(2, 6, 23, 0.38);
+    .cbt-confirm-card-simple .cbt-confirm-actions .cbt-button {
+        min-height: 44px;
+        border-radius: 11px;
+        font-size: 12px;
+        letter-spacing: 0.05em;
+        transition: all 0.2s ease;
     }
 
-    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
-    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
-    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple > .cbt-alert,
-    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple > .cbt-alert {
-        box-shadow: none;
-    }
-
-    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
-    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
-    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple > .cbt-alert,
-    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple > .cbt-alert,
-    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-actions,
-    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-actions {
-        border-top-color: rgba(148, 163, 184, 0.22);
-        border-bottom-color: rgba(148, 163, 184, 0.22);
-    }
-
-    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
-    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-field-note,
-    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple > .cbt-alert,
-    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple > .cbt-alert {
-        border-bottom-color: transparent;
-    }
-
-    body.cbt-exam-page.cbt-stage-confirm.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-actions,
-    body.cbt-exam-page.cbt-stage-confirm .cbt-web-shell.cbt-theme-dark .cbt-confirm-card-simple .cbt-confirm-actions {
-        border-top-color: transparent;
+    .cbt-confirm-card-simple .cbt-confirm-actions .cbt-button:active {
+        transform: scale(0.97);
     }
 }
 
@@ -1197,12 +1256,19 @@
     }
 
     .cbt-exam-picker-card {
+        position: relative;
         display: flex;
         flex-direction: column;
     }
 
     .cbt-exam-picker-card .cbt-exam-list {
-        flex: 1 1 auto;
+        position: absolute;
+        top: 140px;
+        bottom: 22px;
+        left: 22px;
+        right: 22px;
+        max-height: none;
+        overflow-y: auto;
         align-content: start;
     }
 }

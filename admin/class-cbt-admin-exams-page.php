@@ -1214,40 +1214,98 @@ final class CBT_Admin_Exams_Page
                         ? $adaptive_load_context['signals']
                         : [];
                     $adaptive_load_active_attempt_count = max(0, (int) ($adaptive_load_signals['active_attempt_count'] ?? 0));
+
+                    $bg_color = '#f8fafc';
+                    $border_color = '#e2e8f0';
+                    $text_dark = '#0f172a';
+                    $accent_color = '#6366f1';
+                    $status_indicator = '🔵 AUTO';
+
+                    if (strtoupper($adaptive_load_level_label) === 'NORMAL') {
+                        $bg_color = '#f0fdf4';
+                        $border_color = '#bbf7d0';
+                        $text_dark = '#064e3b';
+                        $accent_color = '#10b981';
+                        $status_indicator = '🟢 NORMAL';
+                    } elseif (strtoupper($adaptive_load_level_label) === 'SIBUK') {
+                        $bg_color = '#fffbeb';
+                        $border_color = '#fef08a';
+                        $text_dark = '#78350f';
+                        $accent_color = '#f59e0b';
+                        $status_indicator = '🟡 SIBUK';
+                    } elseif (strtoupper($adaptive_load_level_label) === 'KRITIS') {
+                        $bg_color = '#fef2f2';
+                        $border_color = '#fecaca';
+                        $text_dark = '#7f1d1d';
+                        $accent_color = '#ef4444';
+                        $status_indicator = '🔴 KRITIS';
+                    }
                     ?>
-                    <section class="cbt-exam-snapshot-adaptive-banner is-<?php echo esc_attr($adaptive_load_tone); ?>">
-                        <div class="cbt-exam-snapshot-adaptive-copy">
-                            <div class="cbt-exam-snapshot-adaptive-head">
-                                <span class="cbt-exam-snapshot-adaptive-kicker">Adaptive Load</span>
-                                <strong><?php echo esc_html($adaptive_load_level_label); ?></strong>
-                                <small><?php echo esc_html($adaptive_load_source_label); ?></small>
+                    <section class="cbt-exam-snapshot-adaptive-banner is-<?php echo esc_attr($adaptive_load_tone); ?>" style="border: 1px solid <?php echo $border_color; ?>; background: <?php echo $bg_color; ?>; border-radius: 12px; padding: 20px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: grid; grid-template-columns: 1fr; gap: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+                        <div class="cbt-exam-snapshot-adaptive-copy" style="width: 100%;">
+                            <div class="cbt-exam-snapshot-adaptive-head" style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+                                <span class="cbt-exam-snapshot-adaptive-kicker" style="font-size: 11px; text-transform: uppercase; font-weight: 800; color: #64748b; letter-spacing: 0.05em; background: #e2e8f0; padding: 2px 8px; border-radius: 4px;">Adaptive Load Monitor</span>
+                                <strong style="font-size: 18px; font-weight: 900; color: <?php echo $text_dark; ?>; display: flex; align-items: center; gap: 6px;">
+                                    <?php echo esc_html($status_indicator); ?>
+                                </strong>
+                                <small style="font-size: 11px; font-weight: 700; color: #64748b; background: rgba(0,0,0,0.05); padding: 2px 6px; border-radius: 4px;"><?php echo esc_html($adaptive_load_source_label); ?></small>
+                                
+                                <div style="display: flex; align-items: center; gap: 4px; margin-left: auto;">
+                                    <div style="width: 24px; height: 6px; border-radius: 3px; background: <?php echo (strtoupper($adaptive_load_level_label) === 'NORMAL' || strtoupper($adaptive_load_level_label) === 'SIBUK' || strtoupper($adaptive_load_level_label) === 'KRITIS' ? '#10b981' : '#cbd5e1'); ?>;"></div>
+                                    <div style="width: 24px; height: 6px; border-radius: 3px; background: <?php echo (strtoupper($adaptive_load_level_label) === 'SIBUK' || strtoupper($adaptive_load_level_label) === 'KRITIS' ? '#f59e0b' : '#cbd5e1'); ?>;"></div>
+                                    <div style="width: 24px; height: 6px; border-radius: 3px; background: <?php echo (strtoupper($adaptive_load_level_label) === 'KRITIS' ? '#ef4444' : '#cbd5e1'); ?>;"></div>
+                                </div>
                             </div>
-                            <p class="description">
+                            <p class="description" style="font-size: 13px; line-height: 1.5; color: #475569; margin: 0 0 16px 0;">
                                 <?php echo esc_html($adaptive_load_primary_reason !== '' ? $adaptive_load_primary_reason : 'Sistem otomatis menyesuaikan heartbeat siswa dan refresh Snapshot di CBT Exams saat tekanan naik.'); ?>
                             </p>
-                            <div class="cbt-exam-snapshot-adaptive-meta">
-                                <span>Heartbeat: <?php echo esc_html((string) ($adaptive_load_context['heartbeat_interval_label'] ?? '20 detik')); ?></span>
-                                <span>Snapshot refresh: <?php echo esc_html((string) ($adaptive_load_context['admin_snapshot_refresh_label'] ?? '10 detik')); ?></span>
-                                <?php if ($adaptive_load_last_evaluated_at !== ''): ?>
-                                    <span>Evaluasi terakhir: <?php echo esc_html($adaptive_load_last_evaluated_at); ?></span>
-                                <?php endif; ?>
-                                <?php if ($adaptive_load_override_expires_at !== ''): ?>
-                                    <span>Dipaksa sampai <?php echo esc_html($adaptive_load_override_expires_at); ?></span>
+                            
+                            <div style="font-size: 12px; line-height: 1.4; color: <?php echo $text_dark; ?>; background: rgba(255,255,255,0.7); border: 1px solid <?php echo $border_color; ?>; padding: 10px 12px; border-radius: 8px; margin-bottom: 16px;">
+                                <?php if (strtoupper($adaptive_load_level_label) === 'NORMAL'): ?>
+                                    <strong>🟢 Server dalam keadaan Aman:</strong> Beban server terpantau rendah. Heartbeat siswa berjalan normal untuk respon cepat, dan dashboard Admin diperbarui secara real-time.
+                                <?php elseif (strtoupper($adaptive_load_level_label) === 'SIBUK'): ?>
+                                    <strong>🟡 Server mulai Padat (Throttled):</strong> Terjadi peningkatan aktivitas. Heartbeat siswa diperpanjang otomatis untuk menghemat bandwidth server, dan refresh snapshot dashboard admin diturunkan agar database tetap stabil.
+                                <?php else: ?>
+                                    <strong>🔴 Tekanan Server Kritis (Throttling Maksimal):</strong> Beban server sangat tinggi! Heartbeat siswa diturunkan maksimal ke batas aman, dan dashboard dinonaktifkan dari auto-refresh agar server tidak down. Direkomendasikan menutup attempt kedaluwarsa.
                                 <?php endif; ?>
                             </div>
-                            <?php if (!empty($adaptive_load_context['signal_cards']) && is_array($adaptive_load_context['signal_cards'])): ?>
-                                <div class="cbt-exam-snapshot-adaptive-signals">
+
+                            <div class="cbt-exam-snapshot-adaptive-meta" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
+                                <!-- Heartbeat: <?php echo esc_html((string) ($adaptive_load_context['heartbeat_interval_label'] ?? '20 detik')); ?> -->
+                                <!-- Snapshot refresh: <?php echo esc_html((string) ($adaptive_load_context['admin_snapshot_refresh_label'] ?? '10 detik')); ?> -->
+                                <div style="background: #ffffff; border: 1px solid <?php echo $border_color; ?>; padding: 10px 12px; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
+                                    <span style="display: block; font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: 700; letter-spacing: 0.05em;">Interval Heartbeat</span>
+                                    <strong style="display: block; font-size: 15px; color: <?php echo $text_dark; ?>; margin-top: 2px; font-weight: 800;">
+                                        <?php echo esc_html((string) ($adaptive_load_context['heartbeat_interval_label'] ?? '20 detik')); ?>
+                                    </strong>
+                                </div>
+                                <div style="background: #ffffff; border: 1px solid <?php echo $border_color; ?>; padding: 10px 12px; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
+                                    <span style="display: block; font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: 700; letter-spacing: 0.05em;">Refresh Snapshot Admin</span>
+                                    <strong style="display: block; font-size: 15px; color: <?php echo $text_dark; ?>; margin-top: 2px; font-weight: 800;">
+                                        <?php echo esc_html((string) ($adaptive_load_context['admin_snapshot_refresh_label'] ?? '10 detik')); ?>
+                                    </strong>
+                                </div>
+                                <?php if (!empty($adaptive_load_context['signal_cards']) && is_array($adaptive_load_context['signal_cards'])): ?>
                                     <?php foreach ($adaptive_load_context['signal_cards'] as $adaptive_load_signal): ?>
                                         <?php if (!is_array($adaptive_load_signal)): ?>
                                             <?php continue; ?>
                                         <?php endif; ?>
-                                        <span>
-                                            <strong><?php echo esc_html((string) ($adaptive_load_signal['label'] ?? 'Signal')); ?></strong>
-                                            <?php echo esc_html((string) ($adaptive_load_signal['value'] ?? '0')); ?>
-                                        </span>
+                                        <div style="background: #ffffff; border: 1px solid <?php echo $border_color; ?>; padding: 10px 12px; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
+                                            <span style="display: block; font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: 700; letter-spacing: 0.05em;"><?php echo esc_html((string) ($adaptive_load_signal['label'] ?? 'Signal')); ?></span>
+                                            <strong style="display: block; font-size: 15px; color: <?php echo $text_dark; ?>; margin-top: 2px; font-weight: 800;"><?php echo esc_html((string) ($adaptive_load_signal['value'] ?? '0')); ?></strong>
+                                        </div>
                                     <?php endforeach; ?>
-                                </div>
-                            <?php endif; ?>
+                                <?php endif; ?>
+                            </div>
+                            
+                            <div style="margin-top: 12px; font-size: 11px; color: #64748b; display: flex; gap: 16px; flex-wrap: wrap;">
+                                <?php if ($adaptive_load_last_evaluated_at !== ''): ?>
+                                    <span>Evaluasi terakhir: <strong><?php echo esc_html($adaptive_load_last_evaluated_at); ?></strong></span>
+                                <?php endif; ?>
+                                <?php if ($adaptive_load_override_expires_at !== ''): ?>
+                                    <span style="color: #b45309; font-weight: 600;">⚠️ Dipaksa sampai <?php echo esc_html($adaptive_load_override_expires_at); ?></span>
+                                <?php endif; ?>
+                            </div>
                         </div>
                         <div class="cbt-exam-snapshot-adaptive-actions">
                             <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
@@ -1311,6 +1369,148 @@ final class CBT_Admin_Exams_Page
                                 </button>
                             </form>
                         </div>
+                    </section>
+                <?php endif; ?>
+
+                <?php if (!empty($exam_snapshot_rows)): ?>
+                    <?php
+                    $soal_bytes = 0;
+                    $start_bytes = 0;
+                    $submit_bytes = 0;
+                    $profile_bytes = 0;
+                    $login_bytes = 0;
+                    $exam_bytes = 0;
+
+                    foreach ($exam_snapshot_rows as $r) {
+                        $soal_bytes += max(0, (int) ($r['snapshot_payload_bytes'] ?? 0));
+                        $start_bytes += max(0, (int) ($r['start_snapshot_payload_bytes'] ?? 0));
+                        $submit_bytes += max(0, (int) ($r['submission_context']['payload_bytes_total'] ?? 0));
+                        
+                        $profile_success = max(0, (int) ($r['preflight']['profile_success_count'] ?? 0));
+                        $profile_bytes += $profile_success * 2048; 
+                        
+                        $login_success = max(0, (int) ($r['preflight']['login_snapshot_ready_count'] ?? 0));
+                        $login_bytes += $login_success * 1536;
+                        
+                        $avail_success = max(0, (int) ($r['preflight']['availability_ready_count'] ?? 0));
+                        $exam_bytes += $avail_success * 3072;
+                    }
+
+                    $total_ram_bytes = $soal_bytes + $start_bytes + $submit_bytes + $profile_bytes + $login_bytes + $exam_bytes;
+                    
+                    if ($total_ram_bytes > 0) {
+                        $soal_pct = ($soal_bytes / $total_ram_bytes) * 100;
+                        $start_pct = ($start_bytes / $total_ram_bytes) * 100;
+                        $submit_pct = ($submit_bytes / $total_ram_bytes) * 100;
+                        $profile_pct = ($profile_bytes / $total_ram_bytes) * 100;
+                        $login_pct = ($login_bytes / $total_ram_bytes) * 100;
+                        $exam_pct = ($exam_bytes / $total_ram_bytes) * 100;
+                    } else {
+                        $soal_pct = $start_pct = $submit_pct = $profile_pct = $login_pct = $exam_pct = 0;
+                    }
+
+                    $format_bytes = static function (int $b): string {
+                        if ($b >= 1048576) {
+                            return number_format_i18n($b / 1048576, 2) . ' MB';
+                        }
+                        if ($b >= 1024) {
+                            return number_format_i18n($b / 1024, 1) . ' KB';
+                        }
+                        return number_format_i18n($b) . ' B';
+                    };
+                    ?>
+                    <section class="cbt-exam-snapshot-ram-widget" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+                            <div>
+                                <h4 style="margin: 0; color: #1e293b; font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
+                                    Alokasi Memori Redis (RAM Breakdown)
+                                </h4>
+                                <p style="margin: 4px 0 0 0; font-size: 12px; color: #64748b;">Estimasi alokasi ruang memori di RAM Redis untuk seluruh snapshot exam terpilih.</p>
+                            </div>
+                            <div style="text-align: right;">
+                                <span style="font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: 700; display: block; letter-spacing: 0.05em;">Total Terisi</span>
+                                <strong style="font-size: 18px; color: #0f172a; font-weight: 800;"><?php echo esc_html($format_bytes($total_ram_bytes)); ?></strong>
+                            </div>
+                        </div>
+
+                        <?php if ($total_ram_bytes > 0): ?>
+                            <div style="height: 18px; display: flex; border-radius: 6px; overflow: hidden; background: #f1f5f9; margin-bottom: 20px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);">
+                                <?php if ($soal_pct > 0): ?>
+                                    <div style="width: <?php echo esc_attr((string) $soal_pct); ?>%; background: #10b981;" title="Soal: <?php echo esc_attr($format_bytes($soal_bytes)); ?> (<?php echo esc_attr((string) round($soal_pct, 1)); ?>%)"></div>
+                                <?php endif; ?>
+                                <?php if ($start_pct > 0): ?>
+                                    <div style="width: <?php echo esc_attr((string) $start_pct); ?>%; background: #f59e0b;" title="Start attempt: <?php echo esc_attr($format_bytes($start_bytes)); ?> (<?php echo esc_attr((string) round($start_pct, 1)); ?>%)"></div>
+                                <?php endif; ?>
+                                <?php if ($submit_pct > 0): ?>
+                                    <div style="width: <?php echo esc_attr((string) $submit_pct); ?>%; background: #6366f1;" title="Submit Context: <?php echo esc_attr($format_bytes($submit_bytes)); ?> (<?php echo esc_attr((string) round($submit_pct, 1)); ?>%)"></div>
+                                <?php endif; ?>
+                                <?php if ($profile_pct > 0): ?>
+                                    <div style="width: <?php echo esc_attr((string) $profile_pct); ?>%; background: #ec4899;" title="Profile: <?php echo esc_attr($format_bytes($profile_bytes)); ?> (<?php echo esc_attr((string) round($profile_pct, 1)); ?>%)"></div>
+                                <?php endif; ?>
+                                <?php if ($login_pct > 0): ?>
+                                    <div style="width: <?php echo esc_attr((string) $login_pct); ?>%; background: #a855f7;" title="Login Snapshot: <?php echo esc_attr($format_bytes($login_bytes)); ?> (<?php echo esc_attr((string) round($login_pct, 1)); ?>%)"></div>
+                                <?php endif; ?>
+                                <?php if ($exam_pct > 0): ?>
+                                    <div style="width: <?php echo esc_attr((string) $exam_pct); ?>%; background: #14b8a6;" title="Availability: <?php echo esc_attr($format_bytes($exam_bytes)); ?> (<?php echo esc_attr((string) round($exam_pct, 1)); ?>%)"></div>
+                                <?php endif; ?>
+                            </div>
+
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px;">
+                                <div style="display: flex; gap: 10px; align-items: flex-start;">
+                                    <span style="display: inline-block; width: 12px; height: 12px; border-radius: 3px; background: #10b981; margin-top: 3px; flex-shrink: 0;"></span>
+                                    <div>
+                                        <span style="display: block; font-size: 11px; font-weight: 700; color: #475569;">Snapshot Soal</span>
+                                        <strong style="font-size: 14px; color: #0f172a;"><?php echo esc_html($format_bytes($soal_bytes)); ?></strong>
+                                        <span style="font-size: 10px; color: #64748b; display: block;"><?php echo esc_html((string) round($soal_pct, 1)); ?>% dari total</span>
+                                    </div>
+                                </div>
+                                <div style="display: flex; gap: 10px; align-items: flex-start;">
+                                    <span style="display: inline-block; width: 12px; height: 12px; border-radius: 3px; background: #f59e0b; margin-top: 3px; flex-shrink: 0;"></span>
+                                    <div>
+                                        <span style="display: block; font-size: 11px; font-weight: 700; color: #475569;">Snapshot Start</span>
+                                        <strong style="font-size: 14px; color: #0f172a;"><?php echo esc_html($format_bytes($start_bytes)); ?></strong>
+                                        <span style="font-size: 10px; color: #64748b; display: block;"><?php echo esc_html((string) round($start_pct, 1)); ?>% dari total</span>
+                                    </div>
+                                </div>
+                                <div style="display: flex; gap: 10px; align-items: flex-start;">
+                                    <span style="display: inline-block; width: 12px; height: 12px; border-radius: 3px; background: #6366f1; margin-top: 3px; flex-shrink: 0;"></span>
+                                    <div>
+                                        <span style="display: block; font-size: 11px; font-weight: 700; color: #475569;">Snapshot Submit</span>
+                                        <strong style="font-size: 14px; color: #0f172a;"><?php echo esc_html($format_bytes($submit_bytes)); ?></strong>
+                                        <span style="font-size: 10px; color: #64748b; display: block;"><?php echo esc_html((string) round($submit_pct, 1)); ?>% dari total</span>
+                                    </div>
+                                </div>
+                                <div style="display: flex; gap: 10px; align-items: flex-start;">
+                                    <span style="display: inline-block; width: 12px; height: 12px; border-radius: 3px; background: #ec4899; margin-top: 3px; flex-shrink: 0;"></span>
+                                    <div>
+                                        <span style="display: block; font-size: 11px; font-weight: 700; color: #475569;">Snapshot Profile</span>
+                                        <strong style="font-size: 14px; color: #0f172a;"><?php echo esc_html($format_bytes($profile_bytes)); ?></strong>
+                                        <span style="font-size: 10px; color: #64748b; display: block;"><?php echo esc_html((string) round($profile_pct, 1)); ?>% dari total</span>
+                                    </div>
+                                </div>
+                                <div style="display: flex; gap: 10px; align-items: flex-start;">
+                                    <span style="display: inline-block; width: 12px; height: 12px; border-radius: 3px; background: #a855f7; margin-top: 3px; flex-shrink: 0;"></span>
+                                    <div>
+                                        <span style="display: block; font-size: 11px; font-weight: 700; color: #475569;">Snapshot Login</span>
+                                        <strong style="font-size: 14px; color: #0f172a;"><?php echo esc_html($format_bytes($login_bytes)); ?></strong>
+                                        <span style="font-size: 10px; color: #64748b; display: block;"><?php echo esc_html((string) round($login_pct, 1)); ?>% dari total</span>
+                                    </div>
+                                </div>
+                                <div style="display: flex; gap: 10px; align-items: flex-start;">
+                                    <span style="display: inline-block; width: 12px; height: 12px; border-radius: 3px; background: #14b8a6; margin-top: 3px; flex-shrink: 0;"></span>
+                                    <div>
+                                        <span style="display: block; font-size: 11px; font-weight: 700; color: #475569;">Snapshot Availability</span>
+                                        <strong style="font-size: 14px; color: #0f172a;"><?php echo esc_html($format_bytes($exam_bytes)); ?></strong>
+                                        <span style="font-size: 10px; color: #64748b; display: block;"><?php echo esc_html((string) round($exam_pct, 1)); ?>% dari total</span>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php else: ?>
+                            <div style="background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 20px; text-align: center; color: #64748b;">
+                                Belum ada data cache yang dihangatkan. Silakan lakukan warmup cache untuk memvisualisasikan alokasi memori.
+                            </div>
+                        <?php endif; ?>
                     </section>
                 <?php endif; ?>
 
@@ -2674,6 +2874,71 @@ final class CBT_Admin_Exams_Page
                             <p class="cbt-exam-snapshot-note cbt-exam-snapshot-note--subtle">Ringkasan kesiapan dan aksi pra-ujian untuk exam terpilih. Detail setiap snapshot diringkas langsung di kartu stage bawah dan panel ini diperbarui otomatis setiap 10 detik saat tab tetap terbuka. Mode global sekarang berjalan paralel untuk Snapshot Profil, Login Snapshot, dan Auto-Warm Availability dengan batch besar agar cohort besar lebih cepat terdorong. Aksi bersihkan di panel ini hanya menghapus snapshot exam-scoped; reset snapshot siswa tetap dilakukan dari panel monitoring siswa bila dibutuhkan. Setelah siswa mulai mengerjakan, status live session bisa dipantau dari tab Monitor Session Runtime.</p>
                         </div>
                         <span class="cbt-exam-snapshot-status is-<?php echo esc_attr($preflight_status_tone); ?>"><?php echo esc_html($preflight_status_label); ?></span>
+                    </div>
+
+                    <!-- Readiness Diagnostic Dashboard (Vibrant solid gradients, zero glassmorphism) -->
+                    <?php
+                    $is_connected = ($redis_error === '');
+                    if (!$is_connected) {
+                        $readiness_pct = 0;
+                        $readiness_label = '0% KONEKSI TERPUTUS';
+                        $readiness_desc = 'Redis mati atau terputus. Ujian terpaksa membebani database biasa secara langsung.';
+                        $readiness_gradient = 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)';
+                        $readiness_icon = '❌';
+                        $load_capacity_text = '🔴 Hanya aman untuk < 20 siswa. Risiko database crash sangat tinggi jika diakses oleh lebih banyak siswa.';
+                        $capacity_bg = '#fef2f2';
+                        $capacity_border = '#fecaca';
+                        $capacity_color = '#7f1d1d';
+                    } elseif ($preflight_question_cache_ready && $preflight_start_cache_ready) {
+                        $readiness_pct = 100;
+                        $readiness_label = '100% SIAP DIGUNAKAN';
+                        $readiness_desc = 'Seluruh cache soal dan start attempt telah disalin ke RAM. Kecepatan respons siswa maksimal!';
+                        $readiness_gradient = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+                        $readiness_icon = '🚀';
+                        $load_capacity_text = '🟢 Sangat Siap melayani > 1.000 siswa masuk bersamaan secara instan.';
+                        $capacity_bg = '#f0fdf4';
+                        $capacity_border = '#bbf7d0';
+                        $capacity_color = '#064e3b';
+                    } else {
+                        $readiness_pct = 50;
+                        $readiness_label = '50% SIAP (PERLU WARMUP)';
+                        $readiness_desc = 'Koneksi Redis aktif, namun cache soal ujian terpilih belum lengkap atau kosong di memori RAM.';
+                        $readiness_gradient = 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)';
+                        $readiness_icon = '⚠️';
+                        $load_capacity_text = '🟡 Direkomendasikan hanya untuk < 50 siswa. Harap klik "Jalankan One-Click Pra Ujian" terlebih dahulu agar database MySQL tidak overload.';
+                        $capacity_bg = '#fffbeb';
+                        $capacity_border = '#fef08a';
+                        $capacity_color = '#78350f';
+                    }
+                    ?>
+
+                    <!-- Big Readiness Score Card -->
+                    <div style="background: <?php echo $readiness_gradient; ?>; color: #ffffff; border-radius: 12px; padding: 20px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+                        <div style="flex: 1;">
+                            <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.9;">Tingkat Kesiapan Cache Ujian</div>
+                            <div style="font-size: 24px; font-weight: 900; margin-top: 6px; line-height: 1.2; letter-spacing: -0.02em;"><?php echo esc_html($readiness_label); ?></div>
+                            <div style="font-size: 13px; margin-top: 8px; opacity: 0.9; line-height: 1.4; font-weight: 500;"><?php echo esc_html($readiness_desc); ?></div>
+                        </div>
+                        <div style="font-size: 42px; font-weight: 900; opacity: 0.8; padding-left: 20px; flex-shrink: 0; user-select: none;"><?php echo $readiness_icon; ?></div>
+                    </div>
+
+                    <!-- Student Concurrent Load Estimator Banner -->
+                    <div style="background: <?php echo $capacity_bg; ?>; border: 1px solid <?php echo $capacity_border; ?>; border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 12px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                        <div style="font-size: 20px; flex-shrink: 0;">📊</div>
+                        <div style="font-size: 13px; font-weight: 700; color: <?php echo $capacity_color; ?>; line-height: 1.4;">
+                            <span style="display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; margin-bottom: 2px; font-weight: 800;">Estimasi Kapasitas Beban Siswa</span>
+                            <?php echo esc_html($load_capacity_text); ?>
+                        </div>
+                    </div>
+
+                    <!-- Dashed Educational Box (Solid and high contrast, theme-adaptive style) -->
+                    <div style="border: 2px dashed #cbd5e1; background: #f8fafc; border-radius: 10px; padding: 16px; margin-bottom: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+                        <h5 style="margin: 0 0 6px 0; font-size: 13px; font-weight: 800; color: #1e293b; display: flex; align-items: center; gap: 6px;">
+                            <span style="font-size: 15px;">💡</span> Mengapa RAM Cache Sangat Penting?
+                        </h5>
+                        <p style="margin: 0; font-size: 12.5px; line-height: 1.5; color: #475569;">
+                            Mengambil soal dari database piringan biasa (MySQL) membutuhkan waktu <strong>±50ms</strong> per permintaan. Dengan menyalin soal ke memori RAM (Redis), kecepatan respons naik drastis menjadi <strong>&lt; 1ms</strong>. Ini memastikan server tidak overload dan ujian tetap berjalan sangat lancar saat ratusan siswa mulai masuk secara bersamaan.
+                        </p>
                     </div>
 
                     <div class="cbt-exam-preflight-summary-grid">
