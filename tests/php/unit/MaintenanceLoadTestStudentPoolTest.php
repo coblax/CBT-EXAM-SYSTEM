@@ -38,7 +38,7 @@ final class MaintenanceLoadTestStudentPoolTest extends TestCase
             'display_name' => 'Bulk Student 01',
             'role' => 'siswa_cbt',
         ]);
-        update_user_meta($readyUserId, 'cbt_plain_password', 'BulkPass01');
+        \CBT_User_Password_Secret::store_user_plain_password((int) $readyUserId, 'BulkPass01');
         update_user_meta($readyUserId, 'kode_kelas', 'KELAS_TEST_02');
 
         $missingPasswordUserId = wp_insert_user([
@@ -61,6 +61,7 @@ final class MaintenanceLoadTestStudentPoolTest extends TestCase
         );
 
         self::assertSame(['bulkstudent01'], array_values($usernames));
+        self::assertSame('BulkPass01', (string) ($pool['rows'][0]['password'] ?? ''));
         self::assertSame(2, (int) ($pool['total_count'] ?? 0));
         self::assertSame(1, (int) ($pool['valid_count'] ?? 0));
         self::assertSame(1, (int) ($pool['missing_password_count'] ?? 0));

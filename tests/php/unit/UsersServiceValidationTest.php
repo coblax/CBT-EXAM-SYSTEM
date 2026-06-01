@@ -144,26 +144,58 @@ final class UsersServiceValidationTest extends TestCase
 
     public function test_build_user_import_lookup_registers_existing_user_by_nisn(): void
     {
-        \cbt_test_register_user([
-            'ID' => 21,
-            'user_login' => 'siswa.lookup',
-            'user_email' => 'lookup@example.test',
-            'display_name' => 'Siswa Lookup',
-            'roles' => ['siswa_cbt'],
-        ]);
-        \update_user_meta(21, 'nisn', '99887766');
-
-        $lookup = \CBT_Admin_Users_Service::build_user_import_lookup([
+        $fakeWpdb = $this->installUserImportLookupFakeWpdb([
             [
-                'name' => 'Siswa Lookup Baru',
-                'email' => '',
+                'ID' => 21,
+                'user_email' => 'lookup@example.test',
+                'user_login' => 'siswa.lookup',
+                'display_name' => 'Siswa Lookup',
                 'nisn' => '99887766',
-                'username' => '',
             ],
-        ], 0, 1);
+        ]);
+
+        try {
+            $lookup = \CBT_Admin_Users_Service::build_user_import_lookup([
+                [
+                    'name' => 'Siswa Lookup Baru',
+                    'email' => '',
+                    'nisn' => '99887766',
+                    'username' => '',
+                ],
+            ], 0, 1);
+        } finally {
+            $this->restoreWpdb($fakeWpdb['previous']);
+        }
 
         self::assertIsArray($lookup);
         self::assertSame(21, (int) ($lookup['nisns']['99887766'] ?? 0));
+        self::assertSame(1, $fakeWpdb['wpdb']->nisnQueryCount);
+        self::assertSame(['nisn', '99887766'], $fakeWpdb['wpdb']->lastNisnArgs);
+    }
+
+    public function test_upsert_user_from_row_stores_import_password_encrypted(): void
+    {
+        $importLookup = [];
+        $photoPackage = [];
+
+        $result = \CBT_Admin_Users_Service::upsert_user_from_row([
+            'name' => 'Siswa Password',
+            'email' => 'siswa.password@example.test',
+            'nisn' => '77889900',
+            'username' => 'siswa.password',
+            'password' => 'ImportSecret77',
+            'role' => 'siswa',
+            'jenis_kelamin' => 'Laki-laki',
+        ], $importLookup, $photoPackage);
+
+        $user = \get_user_by('login', 'siswa.password');
+        self::assertSame('created', $result);
+        self::assertInstanceOf(\WP_User::class, $user);
+
+        $stored = (string) \get_user_meta((int) $user->ID, 'cbt_plain_password', true);
+        self::assertStringStartsWith('cbtenc:v1:', $stored);
+        self::assertNotSame('ImportSecret77', $stored);
+        self::assertSame('ImportSecret77', \CBT_User_Password_Secret::get_user_plain_password((int) $user->ID));
     }
 
     public function test_parse_student_subject_choices_xlsx_reads_mapel_sheet_from_combined_template(): void
@@ -471,6 +503,72 @@ final class UsersServiceValidationTest extends TestCase
         };
 
         return $previous;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $nisnRows
+     * @return array{previous:mixed,wpdb:object}
+     */
+    private function installUserImportLookupFakeWpdb(array $nisnRows): array
+    {
+        if (!class_exists('wpdb', false)) {
+            eval('class wpdb { public $prefix = "wp_"; }');
+        }
+
+        $previous = $GLOBALS['wpdb'] ?? null;
+        $GLOBALS['wpdb'] = new class ($nisnRows) extends \wpdb {
+            public $users = 'wp_users';
+            public $usermeta = 'wp_usermeta';
+            public int $nisnQueryCount = 0;
+            /** @var array<int,mixed> */
+            public array $lastNisnArgs = [];
+            /** @var array<int,array<string,mixed>> */
+            private array $nisnRows;
+
+            /**
+             * @param array<int,array<string,mixed>> $nisnRows
+             */
+            public function __construct(array $nisnRows)
+            {
+                $this->prefix = 'wp_';
+                $this->nisnRows = $nisnRows;
+            }
+
+            public function prepare($query, ...$args)
+            {
+                if (count($args) === 1 && is_array($args[0])) {
+                    $args = $args[0];
+                }
+
+                return [
+                    'query' => (string) $query,
+                    'args' => $args,
+                ];
+            }
+
+            public function get_results($query, $output = null): array
+            {
+                $sql = is_array($query) ? (string) ($query['query'] ?? '') : (string) $query;
+                $args = is_array($query) ? (array) ($query['args'] ?? []) : [];
+
+                if (!str_contains($sql, 'FROM wp_usermeta')) {
+                    return [];
+                }
+
+                $this->nisnQueryCount++;
+                $this->lastNisnArgs = $args;
+                $requestedNisns = array_map('strval', array_slice($args, 1));
+
+                return array_values(array_filter($this->nisnRows, static function (array $row) use ($requestedNisns): bool {
+                    return in_array((string) ($row['nisn'] ?? ''), $requestedNisns, true);
+                }));
+            }
+        };
+
+        return [
+            'previous' => $previous,
+            'wpdb' => $GLOBALS['wpdb'],
+        ];
     }
 
     /**

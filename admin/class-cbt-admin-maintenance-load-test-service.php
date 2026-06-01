@@ -7,6 +7,10 @@ if (!defined('ABSPATH')) {
 require_once CBT_EXAM_SYSTEM_PATH . 'admin/class-cbt-admin-maintenance-common.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'admin/class-cbt-admin-maintenance-seed-service.php';
 
+if (!class_exists('CBT_User_Password_Secret')) {
+    require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-user-password-secret.php';
+}
+
 final class CBT_Admin_Maintenance_Load_Test_Service
 {
     private const USER_META_PLAIN_PASSWORD = 'cbt_plain_password';
@@ -807,7 +811,7 @@ final class CBT_Admin_Maintenance_Load_Test_Service
             }
 
             $total_count++;
-            $plain_password = trim((string) get_user_meta($user->ID, self::USER_META_PLAIN_PASSWORD, true));
+            $plain_password = CBT_User_Password_Secret::get_user_plain_password((int) $user->ID);
             if ($plain_password === '') {
                 $missing_password_count++;
                 continue;

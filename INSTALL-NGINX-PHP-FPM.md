@@ -309,6 +309,17 @@ server {
         access_log off;
     }
 
+    # Lindungi workspace runtime CBT (bukan asset publik)
+    location ~* ^/wp-content/uploads/cbt-runtime/ {
+        deny all;
+        return 403;
+    }
+
+    # Cegah eksekusi PHP dari folder foto hasil import user
+    location ~* ^/wp-content/uploads/cbt-user-import-photos/.*\.php$ {
+        deny all;
+    }
+
     # Cache static asset umum
     location ~* \.(?:css|js|jpg|jpeg|gif|png|webp|svg|ico|woff|woff2|ttf|eot)$ {
         expires 30d;

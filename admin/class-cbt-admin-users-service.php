@@ -8,6 +8,10 @@ if (!class_exists('CBT_Exam_Audience_Service')) {
     require_once dirname(__DIR__) . '/includes/class-cbt-exam-audience-service.php';
 }
 
+if (!class_exists('CBT_User_Password_Secret')) {
+    require_once dirname(__DIR__) . '/includes/class-cbt-user-password-secret.php';
+}
+
 final class CBT_Admin_Users_Service
 {
     private const USER_META_PLAIN_PASSWORD = 'cbt_plain_password';
@@ -412,7 +416,7 @@ final class CBT_Admin_Users_Service
         if ($foto !== '') {
             update_user_meta((int) $user_id, 'foto', $foto);
         }
-        update_user_meta((int) $user_id, self::USER_META_PLAIN_PASSWORD, $password);
+        CBT_User_Password_Secret::store_user_plain_password((int) $user_id, $password);
         if (class_exists('CBT_Exam_Audience_Service')) {
             if (self::is_student_role($role)) {
                 $choice_result = CBT_Exam_Audience_Service::set_student_subject_choices((int) $user_id, (array) $subject_choice_ids);
@@ -528,7 +532,7 @@ final class CBT_Admin_Users_Service
 
         if ($raw_password !== '') {
             wp_set_password($raw_password, $user_id);
-            update_user_meta($user_id, self::USER_META_PLAIN_PASSWORD, $raw_password);
+            CBT_User_Password_Secret::store_user_plain_password($user_id, $raw_password);
         }
 
         if ($kode_kelas !== '') {
@@ -1910,7 +1914,7 @@ final class CBT_Admin_Users_Service
 
             if ($password !== '') {
                 wp_set_password($password, $user_id);
-                update_user_meta($user_id, self::USER_META_PLAIN_PASSWORD, $password);
+                CBT_User_Password_Secret::store_user_plain_password($user_id, $password);
             }
 
             if ($kode_kelas !== '') {
@@ -1994,7 +1998,7 @@ final class CBT_Admin_Users_Service
         if ($foto !== '') {
             update_user_meta((int) $user_id, 'foto', $foto);
         }
-        update_user_meta((int) $user_id, self::USER_META_PLAIN_PASSWORD, $password);
+        CBT_User_Password_Secret::store_user_plain_password((int) $user_id, $password);
 
         self::register_user_import_lookup($import_lookup, (int) $user_id, $email, $username, $nisn, $name !== '' ? $name : $username);
         if (is_array($subject_choice_ids)) {
@@ -2131,21 +2135,40 @@ final class CBT_Admin_Users_Service
             }
         }
 
-        foreach ($nisns as $nisn) {
-            $user_id = self::find_user_id_by_nisn($nisn);
-            if ($user_id <= 0) {
-                continue;
-            }
+        if (
+            !empty($nisns)
+            && class_exists('wpdb', false)
+            && $wpdb instanceof wpdb
+            && method_exists($wpdb, 'prepare')
+            && method_exists($wpdb, 'get_results')
+        ) {
+            $nisn_placeholders = implode(',', array_fill(0, count($nisns), '%s'));
+            $users_table = isset($wpdb->users) ? (string) $wpdb->users : $wpdb->prefix . 'users';
+            $usermeta_table = isset($wpdb->usermeta) ? (string) $wpdb->usermeta : $wpdb->prefix . 'usermeta';
+            $query_sql = "SELECT u.ID, u.user_email, u.user_login, u.display_name, um.meta_value AS nisn
+                          FROM {$usermeta_table} um
+                          INNER JOIN {$users_table} u ON u.ID = um.user_id
+                          WHERE um.meta_key = %s
+                            AND um.meta_value IN ({$nisn_placeholders})
+                          ORDER BY u.ID ASC";
+            $prepared_sql = $wpdb->prepare($query_sql, array_merge(['nisn'], array_values($nisns)));
+            $rows = $wpdb->get_results($prepared_sql, ARRAY_A);
 
-            $user = get_user_by('id', $user_id);
-            self::register_user_import_lookup(
-                $import_lookup,
-                $user_id,
-                $user instanceof WP_User ? (string) $user->user_email : '',
-                $user instanceof WP_User ? (string) $user->user_login : '',
-                $nisn,
-                $user instanceof WP_User ? (string) $user->display_name : ''
-            );
+            foreach ((array) $rows as $row) {
+                $user_id = isset($row['ID']) ? (int) $row['ID'] : 0;
+                if ($user_id <= 0) {
+                    continue;
+                }
+
+                self::register_user_import_lookup(
+                    $import_lookup,
+                    $user_id,
+                    (string) ($row['user_email'] ?? ''),
+                    (string) ($row['user_login'] ?? ''),
+                    self::normalize_user_nisn((string) ($row['nisn'] ?? '')),
+                    (string) ($row['display_name'] ?? '')
+                );
+            }
         }
 
         return $import_lookup;

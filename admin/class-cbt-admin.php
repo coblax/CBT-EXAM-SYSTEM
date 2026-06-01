@@ -4,6 +4,10 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+if (!class_exists('CBT_User_Password_Secret')) {
+    require_once dirname(__DIR__) . '/includes/class-cbt-user-password-secret.php';
+}
+
 class CBT_Admin
 {
     private const USER_META_PLAIN_PASSWORD = 'cbt_plain_password';
@@ -451,7 +455,7 @@ class CBT_Admin
 
             if ($raw_password !== '') {
                 wp_set_password($password, $user_id);
-                update_user_meta($user_id, self::USER_META_PLAIN_PASSWORD, $password);
+                CBT_User_Password_Secret::store_user_plain_password($user_id, $password);
             }
 
             if ($kode_kelas !== '') {
@@ -506,7 +510,7 @@ class CBT_Admin
         if ($nisn !== '') {
             update_user_meta((int) $user_id, 'nisn', $nisn);
         }
-        update_user_meta((int) $user_id, self::USER_META_PLAIN_PASSWORD, $password);
+        CBT_User_Password_Secret::store_user_plain_password((int) $user_id, $password);
         self::register_user_import_lookup($import_lookup, (int) $user_id, $email, $username, $name !== '' ? $name : $username);
 
         return 'created';

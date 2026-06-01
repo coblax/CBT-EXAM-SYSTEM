@@ -6,6 +6,8 @@ if (!defined('ABSPATH')) {
 
 final class CBT_Admin_Questions_Helper
 {
+        private const DELETE_DEPENDENTS_CHUNK_SIZE = 500;
+
         private static function allowed_question_page_slugs(): array
         {
             return [
@@ -1006,7 +1008,7 @@ final class CBT_Admin_Questions_Helper
         /**
          * @param int[] $question_ids
          */
-        public static function delete_question_dependents(array $question_ids, bool $include_answers = true): void
+        public static function delete_question_dependents(array $question_ids, bool $include_answers = true, bool $throw_on_failure = false): void
         {
             global $wpdb;
 
@@ -1017,8 +1019,6 @@ final class CBT_Admin_Questions_Helper
                 return;
             }
 
-            $placeholders = implode(',', array_fill(0, count($question_ids), '%d'));
-            self::delete_nested_question_detail_dependents($question_ids, $placeholders);
             $tables = [
                 $wpdb->prefix . 'cbt_essay_ai_suggestions',
                 $wpdb->prefix . 'cbt_question_table_completion_cell_options',
@@ -1044,13 +1044,24 @@ final class CBT_Admin_Questions_Helper
                 array_splice($tables, 1, 0, [$wpdb->prefix . 'cbt_answers']);
             }
 
-            foreach ($tables as $table) {
-                $wpdb->query(
-                    $wpdb->prepare(
-                        "DELETE FROM {$table} WHERE question_id IN ({$placeholders})",
-                        ...$question_ids
-                    )
-                );
+            foreach (array_chunk($question_ids, self::DELETE_DEPENDENTS_CHUNK_SIZE) as $question_chunk) {
+                $question_chunk = array_values(array_map('absint', $question_chunk));
+                $placeholders = implode(',', array_fill(0, count($question_chunk), '%d'));
+                self::delete_nested_question_detail_dependents($question_chunk, $placeholders, $throw_on_failure);
+
+                foreach ($tables as $table) {
+                    $result = $wpdb->query(
+                        $wpdb->prepare(
+                            "DELETE FROM {$table} WHERE question_id IN ({$placeholders})",
+                            ...$question_chunk
+                        )
+                    );
+                    self::assert_question_dependent_delete_succeeded(
+                        $result,
+                        $throw_on_failure,
+                        'Gagal menghapus dependent soal dari tabel ' . $table . '.'
+                    );
+                }
             }
         }
 
@@ -1059,7 +1070,7 @@ final class CBT_Admin_Questions_Helper
          *
          * @param int[] $question_ids
          */
-        private static function delete_nested_question_detail_dependents(array $question_ids, string $placeholders = ''): void
+        private static function delete_nested_question_detail_dependents(array $question_ids, string $placeholders = '', bool $throw_on_failure = false): void
         {
             global $wpdb;
 
@@ -1094,7 +1105,7 @@ final class CBT_Admin_Questions_Helper
                     continue;
                 }
 
-                $wpdb->query(
+                $result = $wpdb->query(
                     $wpdb->prepare(
                         "DELETE FROM {$child_table}
                          WHERE {$child_key} IN (
@@ -1103,6 +1114,18 @@ final class CBT_Admin_Questions_Helper
                         ...$question_ids
                     )
                 );
+                self::assert_question_dependent_delete_succeeded(
+                    $result,
+                    $throw_on_failure,
+                    'Gagal menghapus dependent nested soal dari tabel ' . $child_table . '.'
+                );
+            }
+        }
+
+        private static function assert_question_dependent_delete_succeeded($result, bool $throw_on_failure, string $message): void
+        {
+            if ($throw_on_failure && $result === false) {
+                throw new RuntimeException($message);
             }
         }
 

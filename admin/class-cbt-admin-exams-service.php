@@ -97,6 +97,7 @@ final class CBT_Admin_Exams_Service
     private const EXAM_READINESS_PROBLEM_PER_PAGE = 10;
     private const EXAM_READINESS_EAGER_DIAGNOSTIC_LIMIT = 250;
     private const HERO_OPERATIONAL_STATS_TTL = 20;
+    private const EXAM_DELETE_ID_CHUNK_SIZE = 500;
     public const EXAM_QUESTION_PRINT_MODE_STUDENT = 'student';
     public const EXAM_QUESTION_PRINT_MODE_TEACHER = 'teacher';
     public const SNAPSHOT_TAB_PREFLIGHT = 'preflight';
@@ -2714,7 +2715,7 @@ final class CBT_Admin_Exams_Service
                 $wpdb->prepare("SELECT title FROM {$wpdb->prefix}cbt_exams WHERE id = %d", $id)
             );
             if (self::is_bank_exam_title($exam_title)) {
-                wp_safe_redirect(add_query_arg(
+                self::redirect_to_url(add_query_arg(
                     self::add_exam_list_state_args(
                         [
                             'page' => 'cbt-exams',
@@ -2725,7 +2726,6 @@ final class CBT_Admin_Exams_Service
                     ),
                     admin_url('admin.php')
                 ));
-                exit;
             }
 
             if (!self::is_admin_scope()) {
@@ -2739,56 +2739,84 @@ final class CBT_Admin_Exams_Service
                 }
             }
 
-            $question_ids = array_values(array_filter(array_map('absint', (array) $wpdb->get_col(
-                $wpdb->prepare(
-                    "SELECT id FROM {$wpdb->prefix}cbt_questions WHERE exam_id = %d",
-                    $id
-                )
-            ))));
-            CBT_Admin_Questions_Helper::delete_question_dependents($question_ids);
-            if (!empty($question_ids)) {
-                $question_placeholders = implode(',', array_fill(0, count($question_ids), '%d'));
-                $wpdb->query(
-                    $wpdb->prepare(
-                        "DELETE FROM {$wpdb->prefix}cbt_questions WHERE exam_id = %d AND id IN ({$question_placeholders})",
-                        $id,
-                        ...$question_ids
-                    )
+            try {
+                self::clear_deleted_exam_runtime_snapshots($id);
+            } catch (Throwable $throwable) {
+                self::redirect_exam_delete_with_error(
+                    'Gagal membersihkan snapshot runtime ujian: ' . $throwable->getMessage(),
+                    $exam_list_state
                 );
             }
 
-            $attempt_ids = array_values(array_filter(array_map('absint', (array) $wpdb->get_col(
-                $wpdb->prepare(
-                    "SELECT id FROM {$wpdb->prefix}cbt_attempts WHERE exam_id = %d",
-                    $id
-                )
-            ))));
-            if (!empty($attempt_ids)) {
-                $attempt_placeholders = implode(',', array_fill(0, count($attempt_ids), '%d'));
-                $wpdb->query(
+            $transaction_started = $wpdb->query('START TRANSACTION');
+            try {
+                self::assert_db_write_succeeded($transaction_started, 'Gagal memulai transaksi hapus ujian.');
+
+                $question_ids = array_values(array_filter(array_map('absint', (array) $wpdb->get_col(
                     $wpdb->prepare(
-                        "DELETE FROM {$wpdb->prefix}cbt_essay_ai_suggestions WHERE attempt_id IN ({$attempt_placeholders})",
-                        ...$attempt_ids
+                        "SELECT id FROM {$wpdb->prefix}cbt_questions WHERE exam_id = %d",
+                        $id
                     )
+                ))));
+                CBT_Admin_Questions_Helper::delete_question_dependents($question_ids, true, true);
+                self::delete_rows_by_ids(
+                    $wpdb->prefix . 'cbt_questions',
+                    'id',
+                    $question_ids,
+                    'Gagal menghapus soal ujian.',
+                    'exam_id = %d',
+                    [$id]
                 );
-                $wpdb->query(
+
+                $attempt_ids = array_values(array_filter(array_map('absint', (array) $wpdb->get_col(
                     $wpdb->prepare(
-                        "DELETE FROM {$wpdb->prefix}cbt_answers WHERE attempt_id IN ({$attempt_placeholders})",
-                        ...$attempt_ids
+                        "SELECT id FROM {$wpdb->prefix}cbt_attempts WHERE exam_id = %d",
+                        $id
                     )
+                ))));
+                self::delete_rows_by_ids(
+                    $wpdb->prefix . 'cbt_essay_ai_suggestions',
+                    'attempt_id',
+                    $attempt_ids,
+                    'Gagal menghapus saran AI essay attempt.'
                 );
-                $wpdb->query(
-                    $wpdb->prepare(
-                        "DELETE FROM {$wpdb->prefix}cbt_security_logs WHERE attempt_id IN ({$attempt_placeholders}) OR exam_id = %d",
-                        ...array_merge($attempt_ids, [$id])
-                    )
+                self::delete_rows_by_ids(
+                    $wpdb->prefix . 'cbt_answers',
+                    'attempt_id',
+                    $attempt_ids,
+                    'Gagal menghapus jawaban attempt.'
                 );
-            } else {
-                $wpdb->delete($wpdb->prefix . 'cbt_security_logs', ['exam_id' => $id], ['%d']);
+                self::delete_rows_by_ids(
+                    $wpdb->prefix . 'cbt_security_logs',
+                    'attempt_id',
+                    $attempt_ids,
+                    'Gagal menghapus log keamanan attempt.'
+                );
+
+                self::assert_db_write_succeeded(
+                    $wpdb->delete($wpdb->prefix . 'cbt_security_logs', ['exam_id' => $id], ['%d']),
+                    'Gagal menghapus log keamanan exam.'
+                );
+                self::assert_db_write_succeeded(
+                    $wpdb->delete($wpdb->prefix . 'cbt_exam_incidents', ['exam_id' => $id], ['%d']),
+                    'Gagal menghapus insiden exam.'
+                );
+                self::assert_db_write_succeeded(
+                    $wpdb->delete($wpdb->prefix . 'cbt_attempts', ['exam_id' => $id], ['%d']),
+                    'Gagal menghapus attempt exam.'
+                );
+                self::assert_db_write_succeeded(
+                    $wpdb->delete($wpdb->prefix . 'cbt_exams', ['id' => $id], ['%d']),
+                    'Gagal menghapus exam.'
+                );
+                self::assert_db_write_succeeded($wpdb->query('COMMIT'), 'Gagal menyelesaikan transaksi hapus ujian.');
+            } catch (Throwable $throwable) {
+                $wpdb->query('ROLLBACK');
+                self::redirect_exam_delete_with_error(
+                    'Gagal menghapus ujian secara aman: ' . $throwable->getMessage(),
+                    $exam_list_state
+                );
             }
-            $wpdb->delete($wpdb->prefix . 'cbt_exam_incidents', ['exam_id' => $id], ['%d']);
-            $wpdb->delete($wpdb->prefix . 'cbt_attempts', ['exam_id' => $id], ['%d']);
-            $wpdb->delete($wpdb->prefix . 'cbt_exams', ['id' => $id], ['%d']);
         }
 
         if ($id > 0) {
@@ -2796,7 +2824,7 @@ final class CBT_Admin_Exams_Service
             CBT_Cache::invalidate_exam($id);
         }
 
-        wp_safe_redirect(add_query_arg(
+        self::redirect_to_url(add_query_arg(
             self::add_exam_list_state_args(
                 [
                     'page' => 'cbt-exams',
@@ -2807,7 +2835,105 @@ final class CBT_Admin_Exams_Service
             ),
             admin_url('admin.php')
         ));
-        exit;
+    }
+
+    /**
+     * @return array{
+     *   question_deleted_keys:int,
+     *   start_deleted_keys:int,
+     *   submission_deleted_keys:int,
+     *   submission_question_count:int
+     * }
+     */
+    private static function clear_deleted_exam_runtime_snapshots(int $exam_id): array
+    {
+        $exam_id = absint($exam_id);
+        $summary = [
+            'question_deleted_keys' => 0,
+            'start_deleted_keys' => 0,
+            'submission_deleted_keys' => 0,
+            'submission_question_count' => 0,
+        ];
+        if ($exam_id <= 0) {
+            return $summary;
+        }
+
+        if (class_exists('CBT_Exam_Question_Delivery_Cache')) {
+            $summary['question_deleted_keys'] = max(0, (int) CBT_Exam_Question_Delivery_Cache::clear_exam_payload($exam_id));
+        }
+        if (class_exists('CBT_Exam_Start_Attempt_Snapshot_Cache')) {
+            $summary['start_deleted_keys'] = max(0, (int) CBT_Exam_Start_Attempt_Snapshot_Cache::clear_exam_snapshot($exam_id));
+        }
+        if (class_exists('CBT_Question_Submission_Context_Cache')) {
+            $submission_result = CBT_Question_Submission_Context_Cache::clear_exam_snapshots($exam_id);
+            $summary['submission_deleted_keys'] = max(0, (int) ($submission_result['deleted_keys'] ?? 0));
+            $summary['submission_question_count'] = max(0, (int) ($submission_result['question_count'] ?? 0));
+        }
+
+        return $summary;
+    }
+
+    /**
+     * @param array<int,int> $ids
+     * @param array<int,mixed> $extra_args
+     */
+    private static function delete_rows_by_ids(
+        string $table,
+        string $id_column,
+        array $ids,
+        string $failure_message,
+        string $extra_where = '',
+        array $extra_args = []
+    ): void {
+        global $wpdb;
+
+        $ids = array_values(array_unique(array_filter(array_map('absint', $ids), static function (int $id): bool {
+            return $id > 0;
+        })));
+        if (empty($ids)) {
+            return;
+        }
+
+        foreach (array_chunk($ids, self::EXAM_DELETE_ID_CHUNK_SIZE) as $id_chunk) {
+            $id_chunk = array_values(array_map('absint', $id_chunk));
+            $placeholders = implode(',', array_fill(0, count($id_chunk), '%d'));
+            $where = "{$id_column} IN ({$placeholders})";
+            $args = $id_chunk;
+            if ($extra_where !== '') {
+                $where = "({$extra_where}) AND {$where}";
+                $args = array_merge($extra_args, $id_chunk);
+            }
+
+            self::assert_db_write_succeeded(
+                $wpdb->query($wpdb->prepare("DELETE FROM {$table} WHERE {$where}", ...$args)),
+                $failure_message
+            );
+        }
+    }
+
+    private static function assert_db_write_succeeded($result, string $message): void
+    {
+        if ($result === false) {
+            throw new RuntimeException($message);
+        }
+    }
+
+    /**
+     * @param array{per_page:int,paged:int,search:string,status:string,subject_id:int,kelas:string} $exam_list_state
+     */
+    private static function redirect_exam_delete_with_error(string $message, array $exam_list_state): void
+    {
+        self::redirect_to_url(add_query_arg(
+            self::add_exam_list_state_args(
+                [
+                    'page' => 'cbt-exams',
+                    'cbt_exam_panel' => 'list',
+                    'cbt_err' => $message,
+                ],
+                $exam_list_state
+            ),
+            admin_url('admin.php')
+        ));
     }
 
     public static function handle_warm_exam_delivery_snapshot(): void

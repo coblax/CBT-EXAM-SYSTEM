@@ -20,6 +20,7 @@ require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-activator.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-deactivator.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-cache.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-runtime.php';
+require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-user-password-secret.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-active-attempt-index.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-student-profile-cache.php';
 require_once CBT_EXAM_SYSTEM_PATH . 'includes/class-cbt-exam-audience-service.php';

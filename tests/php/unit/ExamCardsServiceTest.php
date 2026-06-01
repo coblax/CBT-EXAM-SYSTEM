@@ -127,6 +127,51 @@ final class ExamCardsServiceTest extends TestCase
         self::assertSame('', (string) get_user_meta(32, 'cbt_plain_password', true));
     }
 
+    public function test_participant_cards_decrypt_existing_encrypted_passwords(): void
+    {
+        \CBT_User_Password_Secret::store_user_plain_password(31, 'AndiCardPass');
+        \CBT_User_Password_Secret::store_user_plain_password(32, 'BellaCardPass');
+
+        $context = \CBT_Admin_Exam_Cards_Service::build_print_context([
+            'cbt_card_print_mode' => 'participant',
+            'cbt_card_kelas' => 'XI-A',
+            'cbt_card_ruang' => 'R1',
+            'cbt_card_fields_configured' => '1',
+            'cbt_card_fields' => ['name', 'password'],
+        ]);
+
+        self::assertIsArray($context);
+        $students = (array) ($context['students'] ?? []);
+        self::assertCount(2, $students);
+        self::assertSame('AndiCardPass', (string) ($students[0]['password'] ?? ''));
+        self::assertSame('BellaCardPass', (string) ($students[1]['password'] ?? ''));
+    }
+
+    public function test_participant_cards_generate_missing_passwords_into_encrypted_meta(): void
+    {
+        $context = \CBT_Admin_Exam_Cards_Service::build_print_context([
+            'cbt_card_print_mode' => 'participant',
+            'cbt_card_kelas' => 'XI-A',
+            'cbt_card_ruang' => 'R1',
+            'cbt_card_fields_configured' => '1',
+            'cbt_card_fields' => ['name', 'password'],
+        ]);
+
+        self::assertIsArray($context);
+        $students = (array) ($context['students'] ?? []);
+        self::assertCount(2, $students);
+
+        foreach ($students as $student) {
+            $studentId = (int) ($student['id'] ?? 0);
+            $printedPassword = (string) ($student['password'] ?? '');
+            $stored = (string) get_user_meta($studentId, 'cbt_plain_password', true);
+
+            self::assertNotSame('', $printedPassword);
+            self::assertStringStartsWith('cbtenc:v1:', $stored);
+            self::assertSame($printedPassword, \CBT_User_Password_Secret::get_user_plain_password($studentId));
+        }
+    }
+
     public function test_minutes_mode_accepts_manual_overrides_and_preserves_back_url_state(): void
     {
         $context = \CBT_Admin_Exam_Cards_Service::build_print_context([

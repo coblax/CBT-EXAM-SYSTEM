@@ -4,6 +4,10 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+if (!class_exists('CBT_User_Password_Secret')) {
+    require_once dirname(__DIR__) . '/includes/class-cbt-user-password-secret.php';
+}
+
 final class CBT_Admin_Exam_Cards_Service
 {
     private const USER_META_PLAIN_PASSWORD = 'cbt_plain_password';
@@ -232,7 +236,7 @@ final class CBT_Admin_Exam_Cards_Service
 
             $generated_password = self::generate_exam_card_password();
             wp_set_password($generated_password, $student_id);
-            update_user_meta($student_id, self::USER_META_PLAIN_PASSWORD, $generated_password);
+            CBT_User_Password_Secret::store_user_plain_password($student_id, $generated_password);
             $students[$idx]['password'] = $generated_password;
         }
 
@@ -401,7 +405,7 @@ final class CBT_Admin_Exam_Cards_Service
                 'agama' => trim((string) get_user_meta($user_id, 'agama', true)),
                 'ruang' => trim((string) get_user_meta($user_id, 'kode_ruang', true)),
                 'foto' => $foto,
-                'password' => trim((string) get_user_meta($user_id, self::USER_META_PLAIN_PASSWORD, true)),
+                'password' => CBT_User_Password_Secret::get_user_plain_password($user_id),
             ];
         }
 
