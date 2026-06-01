@@ -1709,6 +1709,74 @@ final class CBT_Admin_Exams_Service
     }
 
     /**
+     * AJAX handler: renders the snapshot panel HTML fragment for seamless polling.
+     * Called via wp_ajax_cbt_snapshot_panel_refresh.
+     */
+    public static function handle_snapshot_panel_refresh_ajax(): void
+    {
+        if (!check_ajax_referer('cbt_snapshot_panel_refresh', '_nonce', false)) {
+            wp_send_json_error(['message' => 'Invalid nonce.'], 403);
+        }
+
+        if (!self::can_manage_exam_snapshots()) {
+            wp_send_json_error(['message' => 'Unauthorized.'], 403);
+        }
+
+        $query = array_map('sanitize_text_field', wp_unslash($_GET));
+        $query['page'] = 'cbt-exams';
+        $query['cbt_exam_panel'] = 'snapshot';
+
+        $context = self::build_page_context($query);
+
+        $snapshot_panel_args = [
+            'subjects' => $context['subjects'] ?? [],
+            'exam_status_labels' => $context['exam_status_labels'] ?? [],
+            'exam_list_state' => $context['exam_list_state'] ?? [],
+            'exam_list_kelas_options' => $context['exam_list_kelas_options'] ?? [],
+            'exam_per_page' => $context['exam_per_page'] ?? 20,
+            'exam_active_filters' => $context['exam_snapshot_active_filters'] ?? ($context['exam_active_filters'] ?? []),
+            'exam_snapshot_tab' => $context['exam_snapshot_tab'] ?? self::SNAPSHOT_TAB_PREFLIGHT,
+            'exam_snapshot_filter_state' => $context['exam_snapshot_filter_state'] ?? ['exam_id' => 0],
+            'exam_snapshot_exam_options' => $context['exam_snapshot_exam_options'] ?? [],
+            'exam_snapshot_total' => $context['exam_snapshot_total'] ?? 0,
+            'exam_snapshot_rows' => $context['exam_snapshot_rows'] ?? [],
+            'exam_snapshot_preview_pages' => $context['exam_snapshot_preview_pages'] ?? [],
+            'exam_readiness_page' => $context['exam_readiness_page'] ?? 1,
+            'exam_readiness_pages' => $context['exam_readiness_pages'] ?? [],
+            'bulk_preflight' => $context['bulk_preflight'] ?? [],
+            'exam_snapshot_reset_url' => $context['exam_snapshot_reset_url'] ?? '',
+            'student_snapshot_filter_state' => $context['student_snapshot_filter_state'] ?? ['search' => '', 'kelas' => '', 'ruang' => '', 'status' => '', 'paged' => 1, 'per_page' => 25],
+            'student_snapshot_kelas_options' => $context['student_snapshot_kelas_options'] ?? [],
+            'student_snapshot_ruang_options' => $context['student_snapshot_ruang_options'] ?? [],
+            'student_snapshot_status_options' => $context['student_snapshot_status_options'] ?? [],
+            'student_snapshot_rows' => $context['student_snapshot_rows'] ?? [],
+            'student_snapshot_total' => $context['student_snapshot_total'] ?? 0,
+            'student_snapshot_total_pages' => $context['student_snapshot_total_pages'] ?? 1,
+            'student_snapshot_current_page' => $context['student_snapshot_current_page'] ?? 1,
+            'student_snapshot_per_page' => $context['student_snapshot_per_page'] ?? 25,
+            'student_snapshot_active_filters' => $context['student_snapshot_active_filters'] ?? [],
+            'student_snapshot_reset_url' => $context['student_snapshot_reset_url'] ?? '',
+            'login_snapshot_health_context' => $context['login_snapshot_health_context'] ?? [],
+            'adaptive_load_context' => $context['adaptive_load_context'] ?? [],
+            'availability_rewarm_queue' => $context['availability_rewarm_queue'] ?? [],
+            'login_readiness_warm_queue_context' => $context['login_readiness_warm_queue_context'] ?? [],
+        ];
+
+        ob_start();
+        CBT_Admin_Exams_Page::render_snapshot_panel($snapshot_panel_args);
+        $html = ob_get_clean();
+
+        $adaptive_load = $context['adaptive_load_context'] ?? [];
+        $refresh_seconds = max(1, (int) ($adaptive_load['admin_snapshot_refresh_seconds'] ?? 10));
+
+        wp_send_json_success([
+            'html' => $html,
+            'refresh_seconds' => $refresh_seconds,
+            'nonce' => wp_create_nonce('cbt_snapshot_panel_refresh'),
+        ]);
+    }
+
+    /**
      * @return array<string,mixed>
      */
     private static function build_exam_operational_stats_context(bool $is_admin_scope, int $current_user_id): array
@@ -8731,8 +8799,9 @@ final class CBT_Admin_Exams_Service
             return new WP_Error('invalid_kkm', 'KKM harus berupa angka persentase.', $id);
         }
         $kkm_percentage = round((float) $kkm_raw, 2);
-        $randomize = isset($request['randomize_questions']) ? 1 : 0;
-        $randomize_options = isset($request['randomize_options']) ? 1 : 0;
+        $is_new_exam = $id <= 0;
+        $randomize = self::normalize_checkbox_payload_value($request, 'randomize_questions', $is_new_exam ? 1 : 0);
+        $randomize_options = self::normalize_checkbox_payload_value($request, 'randomize_options', $is_new_exam ? 1 : 0);
         $show_student_result = isset($request['show_student_result']) ? 1 : 0;
         $enable_calculator = isset($request['enable_calculator']) ? 1 : 0;
         $status = isset($request['status']) ? sanitize_text_field(wp_unslash((string) $request['status'])) : 'draft';
@@ -8792,6 +8861,24 @@ final class CBT_Admin_Exams_Service
             'restrict_to_subject_choice' => $restrict_to_subject_choice,
             'source_question_ids' => $source_question_ids,
         ];
+    }
+
+    /**
+     * @param array<string,mixed> $request
+     */
+    private static function normalize_checkbox_payload_value(array $request, string $key, int $default): int
+    {
+        if (!array_key_exists($key, $request)) {
+            return $default === 1 ? 1 : 0;
+        }
+
+        $raw_value = wp_unslash($request[$key]);
+        if (is_array($raw_value)) {
+            $raw_value = end($raw_value);
+        }
+
+        $normalized = strtolower(trim((string) $raw_value));
+        return in_array($normalized, ['1', 'true', 'yes', 'on'], true) ? 1 : 0;
     }
 
     /**

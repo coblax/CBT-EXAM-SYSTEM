@@ -133,6 +133,8 @@
                             'status' => (string) ($editing_exam['status'] ?? 'draft'),
                             'duration_minutes' => (int) ($editing_exam['duration_minutes'] ?? 60),
                             'kkm_percentage' => (float) ($editing_exam['kkm_percentage'] ?? 75),
+                            'randomize_questions' => 1,
+                            'randomize_options' => 1,
                             'show_student_result' => (int) ($editing_exam['show_student_result'] ?? 1),
                             'enable_calculator' => (int) ($editing_exam['enable_calculator'] ?? 1),
                             'starts_at' => (string) ($editing_exam['starts_at'] ?? ''),
@@ -358,8 +360,9 @@
                                 <tr class="cbt-exam-detail-row cbt-exam-detail-row--toggle">
                                     <th><label for="cbt-exam-randomize">Acak Soal</label></th>
                                     <td>
-                                        <label class="cbt-exam-inline-toggle">
-                                            <input type="checkbox" id="cbt-exam-randomize" name="randomize_questions" value="1" <?php checked((int) ($editing_exam['randomize_questions'] ?? 0), 1); ?> />
+                                        <label class="cbt-exam-inline-toggle cbt-exam-inline-toggle--randomize-default">
+                                            <input type="hidden" name="randomize_questions" value="0" />
+                                            <input type="checkbox" id="cbt-exam-randomize" name="randomize_questions" value="1" checked="checked" autocomplete="off" />
                                             Acak urutan soal untuk siswa
                                         </label>
                                     </td>
@@ -367,8 +370,9 @@
                                 <tr class="cbt-exam-detail-row cbt-exam-detail-row--toggle">
                                     <th><label for="cbt-exam-randomize-options">Acak Opsi Jawaban</label></th>
                                     <td>
-                                        <label class="cbt-exam-inline-toggle">
-                                            <input type="checkbox" id="cbt-exam-randomize-options" name="randomize_options" value="1" <?php checked((int) ($editing_exam['randomize_options'] ?? 0), 1); ?> />
+                                        <label class="cbt-exam-inline-toggle cbt-exam-inline-toggle--randomize-default">
+                                            <input type="hidden" name="randomize_options" value="0" />
+                                            <input type="checkbox" id="cbt-exam-randomize-options" name="randomize_options" value="1" checked="checked" autocomplete="off" />
                                             Acak urutan opsi untuk Multiple Choice, Multiple Answer, dan TF Matrix
                                         </label>
                                     </td>
@@ -1059,6 +1063,8 @@
                     role="tabpanel"
                     data-cbt-snapshot-tab="<?php echo esc_attr((string) ($exam_snapshot_tab ?? CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT)); ?>"
                     data-cbt-snapshot-auto-refresh-seconds="<?php echo esc_attr(((string) ($exam_snapshot_tab ?? CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT)) === CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT ? (string) max(1, (int) (($adaptive_load_context['admin_snapshot_refresh_seconds'] ?? 10))) : '0'); ?>"
+                    data-cbt-snapshot-nonce="<?php echo esc_attr(wp_create_nonce('cbt_snapshot_panel_refresh')); ?>"
+                    data-cbt-snapshot-ajax-url="<?php echo esc_attr(admin_url('admin-ajax.php')); ?>"
                 >
                     <div id="cbt-exam-clean-progress-overlay" class="cbt-exam-save-progress-overlay cbt-exam-clean-progress-overlay" hidden aria-hidden="true" style="display:none;">
                         <div class="cbt-exam-save-progress-card cbt-exam-clean-progress-card">
@@ -1090,6 +1096,7 @@
                             <p class="description cbt-exam-save-progress-help">Bulk One-Click akan memasukkan exam terpilih ke antrean preflight yang sama. Jangan tutup halaman ini selama proses berjalan.</p>
                         </div>
                     </div>
+                    <div id="cbt-exam-snapshot-content" style="transition: opacity 0.2s ease;">
                     <?php CBT_Admin_Exams_Page::render_snapshot_panel([
                         'subjects' => $subjects,
                         'exam_status_labels' => $exam_status_labels,
@@ -1121,6 +1128,7 @@
                         'login_snapshot_health_context' => $login_snapshot_health_context ?? [],
                         'adaptive_load_context' => $adaptive_load_context ?? [],
                     ]); ?>
+                    </div>
                 </div>
             <?php endif; ?>
         </div>
@@ -3044,6 +3052,9 @@
                 }
                 .cbt-exam-inline-toggle input[type="checkbox"] {
                     margin: 0;
+                    width: 16px;
+                    height: 16px;
+                    accent-color: #2563eb;
                 }
                 .cbt-exam-audience-panel {
                     display: grid;
@@ -5058,7 +5069,6 @@
                 const statusInput = form ? form.querySelector('select[name="status"]') : null;
                 const startsAtInput = document.getElementById('cbt-exam-starts-at');
                 const endsAtInput = document.getElementById('cbt-exam-ends-at');
-                const randomizeInput = document.getElementById('cbt-exam-randomize');
                 const descriptionInput = document.getElementById('cbt-exam-description');
                 const builderStateKey = stateKeyInput ? String(stateKeyInput.value || '') : '';
                 const currentBuilderContextFingerprint = builderContextFingerprintInput
@@ -5123,9 +5133,18 @@
                 let pendingSelectionConfirmAction = null;
                 let selectedSidebarSearchTerm = '';
                 const defaultQuestionSubmitHelpText = questionSubmitHelp ? String(questionSubmitHelp.textContent || '').trim() : '';
-                const snapshotAutoRefreshSeconds = snapshotPanel
+                let snapshotAutoRefreshSeconds = snapshotPanel
                     ? Math.max(0, Number(snapshotPanel.getAttribute('data-cbt-snapshot-auto-refresh-seconds') || '0') || 0)
                     : 0;
+                let snapshotAjaxNonce = snapshotPanel
+                    ? String(snapshotPanel.getAttribute('data-cbt-snapshot-nonce') || '')
+                    : '';
+                const snapshotAjaxUrl = snapshotPanel
+                    ? String(snapshotPanel.getAttribute('data-cbt-snapshot-ajax-url') || '')
+                    : '';
+                const snapshotContentContainer = document.getElementById('cbt-exam-snapshot-content');
+                let snapshotAjaxInFlight = false;
+                let snapshotAjaxConsecutiveErrors = 0;
 
                 function clearSnapshotAutoRefreshTimer() {
                     if (snapshotAutoRefreshTimer) {
@@ -5197,9 +5216,86 @@
                             return;
                         }
 
-                        isPageNavigating = true;
-                        window.location.reload();
+                        performSnapshotAjaxRefresh();
                     }, snapshotAutoRefreshSeconds * 1000);
+                }
+
+                function performSnapshotAjaxRefresh() {
+                    if (snapshotAjaxInFlight || !snapshotContentContainer || !snapshotAjaxUrl || !snapshotAjaxNonce) {
+                        scheduleSnapshotAutoRefresh();
+                        return;
+                    }
+
+                    snapshotAjaxInFlight = true;
+
+                    const currentParams = new URLSearchParams(window.location.search);
+                    const ajaxParams = new URLSearchParams();
+                    ajaxParams.set('action', 'cbt_snapshot_panel_refresh');
+                    ajaxParams.set('_nonce', snapshotAjaxNonce);
+                    for (const [key, value] of currentParams.entries()) {
+                        if (key !== 'action' && key !== '_nonce') {
+                            ajaxParams.set(key, value);
+                        }
+                    }
+
+                    const fetchUrl = snapshotAjaxUrl + '?' + ajaxParams.toString();
+
+                    fetch(fetchUrl, {
+                        method: 'GET',
+                        credentials: 'same-origin',
+                        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('HTTP ' + response.status);
+                        }
+                        return response.json();
+                    })
+                    .then(result => {
+                        snapshotAjaxInFlight = false;
+                        snapshotAjaxConsecutiveErrors = 0;
+
+                        if (!result || !result.success || !result.data || typeof result.data.html !== 'string') {
+                            scheduleSnapshotAutoRefresh();
+                            return;
+                        }
+
+                        if (result.data.nonce) {
+                            snapshotAjaxNonce = String(result.data.nonce);
+                            if (snapshotPanel) {
+                                snapshotPanel.setAttribute('data-cbt-snapshot-nonce', snapshotAjaxNonce);
+                            }
+                        }
+
+                        if (result.data.refresh_seconds && Number(result.data.refresh_seconds) > 0) {
+                            snapshotAutoRefreshSeconds = Number(result.data.refresh_seconds);
+                            if (snapshotPanel) {
+                                snapshotPanel.setAttribute('data-cbt-snapshot-auto-refresh-seconds', String(snapshotAutoRefreshSeconds));
+                            }
+                        }
+
+                        snapshotContentContainer.style.opacity = '0.4';
+                        requestAnimationFrame(() => {
+                            snapshotContentContainer.innerHTML = result.data.html;
+                            requestAnimationFrame(() => {
+                                snapshotContentContainer.style.opacity = '1';
+                            });
+                        });
+
+                        scheduleSnapshotAutoRefresh();
+                    })
+                    .catch(() => {
+                        snapshotAjaxInFlight = false;
+                        snapshotAjaxConsecutiveErrors++;
+
+                        if (snapshotAjaxConsecutiveErrors >= 3) {
+                            isPageNavigating = true;
+                            window.location.reload();
+                            return;
+                        }
+
+                        scheduleSnapshotAutoRefresh();
+                    });
                 }
 
                 function handleSnapshotAutoRefreshState() {
@@ -6535,7 +6631,6 @@
                         status: statusInput ? String(statusInput.value || '') : '',
                         startsAt: startsAtInput ? String(startsAtInput.value || '') : '',
                         endsAt: endsAtInput ? String(endsAtInput.value || '') : '',
-                        randomize: !!(randomizeInput && randomizeInput.checked),
                         description: descriptionInput ? String(descriptionInput.value || '') : '',
                         targetKelas: kelasCheckboxes
                             .filter((checkbox) => checkbox.checked)
@@ -6566,9 +6661,6 @@
                     }
                     if (endsAtInput && typeof draft.endsAt === 'string') {
                         endsAtInput.value = draft.endsAt;
-                    }
-                    if (randomizeInput) {
-                        randomizeInput.checked = !!draft.randomize;
                     }
                     if (descriptionInput && typeof draft.description === 'string') {
                         descriptionInput.value = draft.description;
@@ -7538,7 +7630,6 @@
                     statusInput,
                     startsAtInput,
                     endsAtInput,
-                    randomizeInput,
                     descriptionInput,
                 ];
                 draftWatchers.forEach((field) => {

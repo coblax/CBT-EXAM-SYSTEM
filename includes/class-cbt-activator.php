@@ -10,7 +10,7 @@ class CBT_Activator
     private const OPTION_FRONTEND_PAGE_ID = 'cbt_exam_system_frontend_page_id';
     private const OPTION_SUPERVISOR_FRONTEND_PAGE_ID = 'cbt_exam_system_supervisor_page_id';
     private const OPTION_FRONTEND_PAGE_SYNC_PENDING = 'cbt_exam_system_frontend_page_sync_pending';
-    private const DB_VERSION = '1.6.21';
+    private const DB_VERSION = '1.6.23';
 
     public static function activate(): void
     {
@@ -96,10 +96,11 @@ class CBT_Activator
             duration_minutes INT UNSIGNED NOT NULL DEFAULT 60,
             kkm_percentage DECIMAL(5,2) NOT NULL DEFAULT 75.00,
             total_questions INT UNSIGNED NOT NULL DEFAULT 0,
-            randomize_questions TINYINT(1) NOT NULL DEFAULT 0,
-            randomize_options TINYINT(1) NOT NULL DEFAULT 0,
+            randomize_questions TINYINT(1) NOT NULL DEFAULT 1,
+            randomize_options TINYINT(1) NOT NULL DEFAULT 1,
             show_student_result TINYINT(1) NOT NULL DEFAULT 1,
             enable_calculator TINYINT(1) NOT NULL DEFAULT 1,
+            is_bank_exam TINYINT(1) NOT NULL DEFAULT 0,
             status VARCHAR(20) NOT NULL DEFAULT 'draft',
             starts_at DATETIME NULL,
             ends_at DATETIME NULL,
@@ -111,7 +112,8 @@ class CBT_Activator
             KEY idx_status_window (status, starts_at, ends_at),
             KEY idx_created_by (created_by),
             KEY idx_subject_id (subject_id),
-            KEY idx_subject_choice_restrict (restrict_to_subject_choice, subject_id)
+            KEY idx_subject_choice_restrict (restrict_to_subject_choice, subject_id),
+            KEY idx_is_bank_exam (is_bank_exam)
         ) $charset;";
 
         $tables[] = "CREATE TABLE {$wpdb->prefix}cbt_questions (
@@ -121,6 +123,8 @@ class CBT_Activator
             is_active TINYINT(1) NOT NULL DEFAULT 1,
             question_text LONGTEXT NOT NULL,
             question_type VARCHAR(30) NOT NULL,
+            difficulty_level VARCHAR(10) NULL,
+            sort_order INT UNSIGNED NOT NULL DEFAULT 0,
             points DECIMAL(6,2) NOT NULL DEFAULT 1.00,
             correct_text TEXT NULL,
             explanation LONGTEXT NULL,
@@ -131,7 +135,8 @@ class CBT_Activator
             KEY idx_exam_id_id (exam_id, id),
             KEY idx_exam_active_id (exam_id, is_active, id),
             KEY idx_source_question_id (source_question_id),
-            KEY idx_question_type (question_type)
+            KEY idx_question_type (question_type),
+            KEY idx_difficulty_level (difficulty_level)
         ) $charset;";
 
         $tables[] = "CREATE TABLE {$wpdb->prefix}cbt_options (
@@ -394,10 +399,15 @@ class CBT_Activator
         self::ensure_attempt_extra_time_schema($wpdb);
         self::ensure_exam_kkm_schema($wpdb);
         self::ensure_exam_student_result_visibility_schema($wpdb);
+        self::ensure_exam_randomization_defaults_schema($wpdb);
         self::ensure_exam_calculator_schema($wpdb);
         self::ensure_exam_audience_schema($wpdb);
         self::ensure_security_log_ingest_schema($wpdb);
         self::ensure_question_rich_text_storage_schema($wpdb);
+        self::ensure_exam_bank_flag_schema($wpdb);
+        self::ensure_question_difficulty_schema($wpdb);
+        self::ensure_question_sort_order_schema($wpdb);
+        self::ensure_question_revisions_schema($wpdb);
         self::migrate_question_type_details($wpdb);
         self::seed_default_subjects($wpdb);
         self::register_roles();
@@ -683,6 +693,27 @@ class CBT_Activator
         if (!in_array('enable_calculator', $columns, true)) {
             $wpdb->query(
                 "ALTER TABLE {$exam_table} ADD COLUMN enable_calculator TINYINT(1) NOT NULL DEFAULT 1 AFTER show_student_result"
+            );
+        }
+    }
+
+    private static function ensure_exam_randomization_defaults_schema(wpdb $wpdb): void
+    {
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $columns = $wpdb->get_col("SHOW COLUMNS FROM {$exam_table}", 0);
+        if (!is_array($columns)) {
+            $columns = [];
+        }
+
+        if (in_array('randomize_questions', $columns, true)) {
+            $wpdb->query(
+                "ALTER TABLE {$exam_table} MODIFY COLUMN randomize_questions TINYINT(1) NOT NULL DEFAULT 1"
+            );
+        }
+
+        if (in_array('randomize_options', $columns, true)) {
+            $wpdb->query(
+                "ALTER TABLE {$exam_table} MODIFY COLUMN randomize_options TINYINT(1) NOT NULL DEFAULT 1"
             );
         }
     }
@@ -1100,5 +1131,114 @@ class CBT_Activator
                 }
             }
         }
+    }
+
+    private static function ensure_exam_bank_flag_schema(wpdb $wpdb): void
+    {
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $columns = $wpdb->get_col("SHOW COLUMNS FROM {$exam_table}", 0);
+        if (!is_array($columns)) {
+            $columns = [];
+        }
+
+        if (!in_array('is_bank_exam', $columns, true)) {
+            $wpdb->query(
+                "ALTER TABLE {$exam_table} ADD COLUMN is_bank_exam TINYINT(1) NOT NULL DEFAULT 0 AFTER enable_calculator"
+            );
+        }
+
+        $index_rows = $wpdb->get_results("SHOW INDEX FROM {$exam_table}", ARRAY_A);
+        $index_names = [];
+        foreach ((array) $index_rows as $index_row) {
+            $index_name = (string) ($index_row['Key_name'] ?? '');
+            if ($index_name !== '') {
+                $index_names[$index_name] = true;
+            }
+        }
+
+        if (!isset($index_names['idx_is_bank_exam'])) {
+            $wpdb->query(
+                "ALTER TABLE {$exam_table} ADD KEY idx_is_bank_exam (is_bank_exam)"
+            );
+        }
+
+        // Backfill: set is_bank_exam = 1 for existing bank exams.
+        $wpdb->query(
+            $wpdb->prepare(
+                "UPDATE {$exam_table} SET is_bank_exam = 1 WHERE title LIKE %s AND is_bank_exam = 0",
+                'Bank Soal - %'
+            )
+        );
+    }
+
+    private static function ensure_question_difficulty_schema(wpdb $wpdb): void
+    {
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $columns = $wpdb->get_col("SHOW COLUMNS FROM {$question_table}", 0);
+        if (!is_array($columns)) {
+            $columns = [];
+        }
+
+        if (!in_array('difficulty_level', $columns, true)) {
+            $wpdb->query(
+                "ALTER TABLE {$question_table} ADD COLUMN difficulty_level VARCHAR(10) NULL AFTER question_type"
+            );
+        }
+
+        $index_rows = $wpdb->get_results("SHOW INDEX FROM {$question_table}", ARRAY_A);
+        $index_names = [];
+        foreach ((array) $index_rows as $index_row) {
+            $index_name = (string) ($index_row['Key_name'] ?? '');
+            if ($index_name !== '') {
+                $index_names[$index_name] = true;
+            }
+        }
+
+        if (!isset($index_names['idx_difficulty_level'])) {
+            $wpdb->query(
+                "ALTER TABLE {$question_table} ADD KEY idx_difficulty_level (difficulty_level)"
+            );
+        }
+    }
+
+    private static function ensure_question_sort_order_schema(wpdb $wpdb): void
+    {
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $columns = $wpdb->get_col("SHOW COLUMNS FROM {$question_table}", 0);
+        if (!is_array($columns)) {
+            $columns = [];
+        }
+
+        if (!in_array('sort_order', $columns, true)) {
+            $wpdb->query(
+                "ALTER TABLE {$question_table} ADD COLUMN sort_order INT UNSIGNED NOT NULL DEFAULT 0 AFTER difficulty_level"
+            );
+        }
+    }
+
+    private static function ensure_question_revisions_schema(wpdb $wpdb): void
+    {
+        $charset = $wpdb->get_charset_collate();
+        $table = $wpdb->prefix . 'cbt_question_revisions';
+
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+
+        dbDelta("CREATE TABLE {$table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            question_id BIGINT UNSIGNED NOT NULL,
+            user_id BIGINT UNSIGNED NOT NULL,
+            question_text LONGTEXT NULL,
+            question_type VARCHAR(30) NULL,
+            points DECIMAL(6,2) NULL,
+            correct_text TEXT NULL,
+            explanation LONGTEXT NULL,
+            options_snapshot LONGTEXT NULL,
+            revision_type VARCHAR(20) NOT NULL DEFAULT 'update',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY idx_question_id (question_id),
+            KEY idx_user_id (user_id),
+            KEY idx_created_at (created_at)
+        ) $charset;");
     }
 }

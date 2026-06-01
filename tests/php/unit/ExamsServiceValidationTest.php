@@ -139,6 +139,78 @@ final class ExamsServiceValidationTest extends TestCase
         self::assertSame('exam_duplicate', $result->get_error_code());
     }
 
+    #[RunInSeparateProcess]
+    public function test_normalize_exam_save_payload_defaults_randomization_on_create(): void
+    {
+        $payload = $this->invokeExamsService('normalize_exam_save_payload', [[
+            'subject_id' => 3,
+            'title' => 'Exam Baru',
+            'duration_minutes' => 60,
+            'kkm_percentage' => 75,
+            'status' => 'draft',
+            'source_question_ids' => [11],
+        ]]);
+
+        self::assertIsArray($payload);
+        self::assertSame(1, (int) ($payload['randomize'] ?? 0));
+        self::assertSame(1, (int) ($payload['randomize_options'] ?? 0));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_normalize_exam_save_payload_keeps_missing_randomization_off_on_update(): void
+    {
+        $payload = $this->invokeExamsService('normalize_exam_save_payload', [[
+            'id' => 7,
+            'subject_id' => 3,
+            'title' => 'Exam Lama',
+            'duration_minutes' => 60,
+            'kkm_percentage' => 75,
+            'status' => 'draft',
+        ]]);
+
+        self::assertIsArray($payload);
+        self::assertSame(0, (int) ($payload['randomize'] ?? 1));
+        self::assertSame(0, (int) ($payload['randomize_options'] ?? 1));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_normalize_exam_save_payload_allows_explicit_randomization_off_on_create(): void
+    {
+        $payload = $this->invokeExamsService('normalize_exam_save_payload', [[
+            'subject_id' => 3,
+            'title' => 'Exam Baru Manual Off',
+            'duration_minutes' => 60,
+            'kkm_percentage' => 75,
+            'randomize_questions' => '0',
+            'randomize_options' => '0',
+            'status' => 'draft',
+            'source_question_ids' => [11],
+        ]]);
+
+        self::assertIsArray($payload);
+        self::assertSame(0, (int) ($payload['randomize'] ?? 1));
+        self::assertSame(0, (int) ($payload['randomize_options'] ?? 1));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_normalize_exam_save_payload_accepts_checked_randomization_hidden_fallback(): void
+    {
+        $payload = $this->invokeExamsService('normalize_exam_save_payload', [[
+            'subject_id' => 3,
+            'title' => 'Exam Baru Checked',
+            'duration_minutes' => 60,
+            'kkm_percentage' => 75,
+            'randomize_questions' => ['0', '1'],
+            'randomize_options' => ['0', '1'],
+            'status' => 'draft',
+            'source_question_ids' => [11],
+        ]]);
+
+        self::assertIsArray($payload);
+        self::assertSame(1, (int) ($payload['randomize'] ?? 0));
+        self::assertSame(1, (int) ($payload['randomize_options'] ?? 0));
+    }
+
     /**
      * @return array<string,mixed>
      */

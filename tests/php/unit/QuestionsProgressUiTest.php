@@ -52,6 +52,10 @@ final class QuestionsProgressUiTest extends TestCase
             'data-cbt-questions-refresh-areas="notices,overview,import-status,list-panel"',
             'data-cbt-questions-success-tab="list"',
             'data-cbt-questions-success-tab="import"',
+            'name="question_search"',
+            'cbt_bulk_questions_action',
+            'name="bulk_question_action"',
+            'cbt_duplicate_question',
         ] as $needle) {
             self::assertStringContainsString($needle, $this->viewSource);
         }

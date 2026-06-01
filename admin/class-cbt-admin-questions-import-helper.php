@@ -89,6 +89,37 @@ final class CBT_Admin_Questions_Import_Helper
                 self::redirect_question_import_with_error($extension_validation->get_error_message(), $return_page);
             }
 
+            // Security 1.3: Validate file size (max 10MB) and MIME type.
+            $file_size = isset($file['size']) ? (int) $file['size'] : 0;
+            $max_upload_size = 10 * 1024 * 1024; // 10 MB
+            if ($file_size > $max_upload_size) {
+                self::redirect_question_import_with_error(
+                    sprintf('Ukuran file melebihi batas maksimum %d MB.', (int) ($max_upload_size / 1024 / 1024)),
+                    $return_page
+                );
+            }
+            if ($extension === 'docx' && is_string($tmp_path) && $tmp_path !== '') {
+                $finfo_mime = '';
+                if (function_exists('finfo_open')) {
+                    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                    if ($finfo !== false) {
+                        $finfo_mime = (string) finfo_file($finfo, $tmp_path);
+                        finfo_close($finfo);
+                    }
+                }
+                $allowed_mimes = [
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                    'application/zip', // DOCX is a zip archive
+                    'application/octet-stream', // Some servers report this
+                ];
+                if ($finfo_mime !== '' && !in_array($finfo_mime, $allowed_mimes, true)) {
+                    self::redirect_question_import_with_error(
+                        'File bukan DOCX valid. MIME type terdeteksi: ' . sanitize_text_field($finfo_mime),
+                        $return_page
+                    );
+                }
+            }
+
             if ($extension === 'docx' && !in_array($requested_import_type, ['all', 'multiple_choice', 'multiple_answer', 'true_false', 'true_false_matrix', 'short_answer', 'essay', 'ordering', 'matching', 'cloze_dropdown', 'categorization', 'table_completion'], true)) {
                 self::redirect_question_import_with_error('Import DOCX hanya tersedia untuk tab tipe soal resmi CBT yang didukung.', $return_page);
             }
@@ -156,6 +187,7 @@ final class CBT_Admin_Questions_Import_Helper
                 [
                     'page' => $return_page,
                     'cbt_question_import_token' => $token,
+                    '_wpnonce' => wp_create_nonce('cbt_continue_import_questions'),
                 ],
                 admin_url('admin.php')
             ));
@@ -164,6 +196,10 @@ final class CBT_Admin_Questions_Import_Helper
 
         private static function continue_question_import(string $token): void
         {
+            if (!isset($_GET['_wpnonce']) || !wp_verify_nonce(sanitize_key((string) wp_unslash($_GET['_wpnonce'])), 'cbt_continue_import_questions')) {
+                wp_die('Nonce verification failed for import continue.');
+            }
+
             $state = self::get_question_import_state_for_current_user($token);
             if (!is_array($state)) {
                 self::clear_question_import_transients($token);
@@ -296,6 +332,7 @@ final class CBT_Admin_Questions_Import_Helper
                     [
                         'page' => $return_page,
                         'cbt_question_import_token' => $token,
+                        '_wpnonce' => wp_create_nonce('cbt_continue_import_questions'),
                     ],
                     admin_url('admin.php')
                 ));

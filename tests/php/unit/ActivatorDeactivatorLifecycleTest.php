@@ -77,7 +77,7 @@ final class ActivatorDeactivatorLifecycleTest extends TestCase
     {
         $activator = (string) file_get_contents(dirname(__DIR__, 3) . '/includes/class-cbt-activator.php');
 
-        self::assertStringContainsString("private const DB_VERSION = '1.6.21';", $activator);
+        self::assertStringContainsString("private const DB_VERSION = '1.6.23';", $activator);
     }
 
     #[RunInSeparateProcess]

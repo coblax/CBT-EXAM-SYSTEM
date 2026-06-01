@@ -215,4 +215,9 @@ final class CBT_Admin_Exams_Actions
     {
         CBT_Admin_Exams_Service::handle_continue_exam_save_progress();
     }
+
+    public static function handle_snapshot_panel_refresh_ajax(): void
+    {
+        CBT_Admin_Exams_Service::handle_snapshot_panel_refresh_ajax();
+    }
 }

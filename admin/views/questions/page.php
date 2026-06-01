@@ -3955,6 +3955,14 @@ if (!defined('ABSPATH')) {
                     <div class="cbt-questions-list-toolbar">
                         <form method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>" class="cbt-questions-filter-form" data-cbt-questions-tab-submit="list" data-cbt-questions-progress-profile="list">
                             <input type="hidden" name="page" value="<?php echo esc_attr($current_page_slug); ?>" />
+                            <label for="cbt-filter-question-search">Cari</label>
+                            <input
+                                type="search"
+                                id="cbt-filter-question-search"
+                                name="question_search"
+                                value="<?php echo esc_attr($list_filter_search); ?>"
+                                placeholder="Cari soal atau opsi..."
+                            />
                             <label for="cbt-filter-question-type">Type</label>
                             <?php if ($lock_question_type): ?>
                                 <input type="hidden" name="filter_type" value="<?php echo esc_attr($list_filter_type); ?>" />
@@ -4004,19 +4012,23 @@ if (!defined('ABSPATH')) {
                         </form>
                     </div>
                     <div class="cbt-questions-filter-summary">
+                        <?php if ($list_filter_search !== ''): ?>
+                            <span class="cbt-questions-chip"><?php echo esc_html('Cari: ' . $list_filter_search); ?></span>
+                        <?php endif; ?>
                         <span class="cbt-questions-chip"><?php echo esc_html('Type: ' . ($list_filter_type !== '' ? (string) ($question_type_labels[$list_filter_type] ?? $list_filter_type) : 'Semua tipe')); ?></span>
                         <span class="cbt-questions-chip"><?php echo esc_html('Sumber: ' . $list_filter_source_label); ?></span>
                         <span class="cbt-questions-chip"><?php echo esc_html('Subject: ' . $list_filter_subject_label); ?></span>
                     </div>
                     <?php endif; ?>
 
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" data-cbt-questions-tab-submit="list" data-cbt-questions-async-form data-cbt-questions-progress-profile="delete" data-cbt-questions-refresh-areas="notices,overview,list-panel" data-cbt-questions-success-tab="list" onsubmit="return confirm('Hapus semua soal yang dipilih?');">
-                <?php wp_nonce_field('cbt_bulk_delete_questions'); ?>
-                <input type="hidden" name="action" value="cbt_bulk_delete_questions" />
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" data-cbt-questions-tab-submit="list" data-cbt-questions-async-form data-cbt-questions-progress-profile="delete" data-cbt-questions-refresh-areas="notices,overview,list-panel" data-cbt-questions-success-tab="list" onsubmit="var action=this.querySelector('[name=bulk_question_action]'); return !action || action.value !== 'delete' || confirm('Hapus semua soal yang dipilih?');">
+                <?php wp_nonce_field('cbt_bulk_questions_action'); ?>
+                <input type="hidden" name="action" value="cbt_bulk_questions_action" />
                 <input type="hidden" name="return_page" value="<?php echo esc_attr($current_page_slug); ?>" />
                 <input type="hidden" name="redirect_filter_type" value="<?php echo esc_attr($list_filter_type); ?>" />
                 <input type="hidden" name="redirect_filter_source_kind" value="<?php echo esc_attr($list_filter_source_kind); ?>" />
                 <input type="hidden" name="redirect_filter_subject_id" value="<?php echo (int) $list_filter_subject_id; ?>" />
+                <input type="hidden" name="redirect_question_search" value="<?php echo esc_attr($list_filter_search); ?>" />
                 <input type="hidden" name="redirect_question_per_page" value="<?php echo (int) $list_per_page; ?>" />
                 <input type="hidden" name="redirect_question_paged" value="<?php echo (int) $list_current_page; ?>" />
                 <?php if ($question_import_batch_active): ?>
@@ -4026,7 +4038,14 @@ if (!defined('ABSPATH')) {
                 <?php if (!empty($questions)): ?>
                 <p class="cbt-questions-list-actions" style="margin: 0 0 8px;">
                     <button type="button" class="button button-secondary" id="cbt-view-selected-questions">Lihat Selected</button>
-                    <button type="submit" class="button button-secondary cbt-admin-btn--danger">Delete Selected</button>
+                    <select name="bulk_question_action" aria-label="Bulk action soal">
+                        <option value="delete">Delete</option>
+                        <option value="set_points">Set Points</option>
+                        <option value="mark_active">Mark Active</option>
+                        <option value="mark_inactive">Mark Inactive</option>
+                    </select>
+                    <input type="number" name="bulk_points" min="0.01" max="999.99" step="0.01" value="1.00" style="width:96px;" aria-label="Bulk points" />
+                    <button type="submit" class="button button-secondary">Terapkan</button>
                 </p>
                 <?php endif; ?>
                 <div class="cbt-questions-table-wrap">
@@ -4046,7 +4065,7 @@ if (!defined('ABSPATH')) {
                     <tbody>
                     <?php if (!$questions): ?>
                         <?php
-                        $question_has_filters = $list_filter_type !== '' || $list_filter_source_kind !== '' || $list_filter_subject_id > 0 || $question_import_batch_active;
+                        $question_has_filters = $list_filter_type !== '' || $list_filter_source_kind !== '' || $list_filter_subject_id > 0 || $list_filter_search !== '' || $question_import_batch_active;
                         echo CBT_Admin_UI_Helper::render_table_empty_state(8, [
                             'title' => $question_import_batch_active ? 'Belum ada soal sukses dari batch ini' : ($question_has_filters ? 'Tidak ada soal sesuai filter' : 'Belum ada soal'),
                             'message' => $question_import_batch_active
@@ -4099,6 +4118,22 @@ if (!defined('ABSPATH')) {
                                 ? 'Edit Sumber'
                                 : 'Edit';
                             $question_edit_url = add_query_arg(array_merge($question_list_args, ['edit' => $question_edit_target_id]), admin_url('admin.php'));
+                            $question_duplicate_label = $question_is_bank_backed && $question_source_question_id > 0
+                                ? 'Duplikasi Sumber'
+                                : 'Duplikasi';
+                            $question_duplicate_args = [
+                                'action' => 'cbt_duplicate_question',
+                                'id' => (int) $question['id'],
+                                'return_page' => $current_page_slug,
+                                'filter_type' => $list_filter_type,
+                                'filter_source_kind' => $list_filter_source_kind,
+                                'filter_subject_id' => $list_filter_subject_id,
+                                'question_per_page' => $list_per_page,
+                                'question_paged' => $list_current_page,
+                            ];
+                            if ($list_filter_search !== '') {
+                                $question_duplicate_args['question_search'] = $list_filter_search;
+                            }
                             $question_delete_args = [
                                 'action' => 'cbt_delete_question',
                                 'id' => (int) $question['id'],
@@ -4109,6 +4144,9 @@ if (!defined('ABSPATH')) {
                                 'question_per_page' => $list_per_page,
                                 'question_paged' => $list_current_page,
                             ];
+                            if ($list_filter_search !== '') {
+                                $question_delete_args['question_search'] = $list_filter_search;
+                            }
                             if ($question_import_batch_active && $question_import_token !== '' && $question_import_scope !== '') {
                                 $question_delete_args['cbt_question_import_token'] = $question_import_token;
                                 $question_delete_args['cbt_question_import_scope'] = $question_import_scope;
@@ -4151,6 +4189,7 @@ if (!defined('ABSPATH')) {
                                         <a class="cbt-admin-action cbt-admin-action--view cbt-questions-row-action cbt-questions-row-action--view" data-cbt-questions-inline-view="1" href="<?php echo esc_url($question_is_view_open ? $question_hide_view_url : $question_view_url); ?>"><?php echo esc_html($question_is_view_open ? 'Hide' : 'Lihat'); ?></a>
                                         <?php if (!$question_import_batch_active): ?>
                                         <a class="cbt-admin-action cbt-admin-action--edit cbt-questions-row-action cbt-questions-row-action--edit" href="<?php echo esc_url($question_edit_url); ?>"><?php echo esc_html($question_edit_label); ?></a>
+                                        <a class="cbt-admin-action cbt-admin-action--duplicate cbt-questions-row-action cbt-questions-row-action--duplicate" href="<?php echo esc_url(wp_nonce_url(add_query_arg($question_duplicate_args, admin_url('admin-post.php')), 'cbt_duplicate_question_' . (int) $question['id'])); ?>" data-cbt-questions-async-link data-cbt-questions-progress-profile="list" data-cbt-questions-refresh-areas="notices,overview,list-panel" data-cbt-questions-success-tab="form"><?php echo esc_html($question_duplicate_label); ?></a>
                                         <?php endif; ?>
                                         <a class="cbt-admin-action cbt-admin-action--delete cbt-questions-row-action cbt-questions-row-action--delete" href="<?php echo esc_url(wp_nonce_url(add_query_arg($question_delete_args, admin_url('admin-post.php')), 'cbt_delete_question_' . (int) $question['id'])); ?>" data-cbt-questions-async-link data-cbt-questions-progress-profile="delete" data-cbt-questions-refresh-areas="notices,overview,list-panel" data-cbt-questions-success-tab="list" onclick="return confirm('Delete this question?');">Delete</a>
                                     </div>

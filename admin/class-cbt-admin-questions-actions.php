@@ -16,9 +16,19 @@ final class CBT_Admin_Questions_Actions
         CBT_Admin_Questions_Service::handle_delete_question();
     }
 
+    public static function handle_duplicate_question(): void
+    {
+        CBT_Admin_Questions_Service::handle_duplicate_question();
+    }
+
     public static function handle_bulk_delete_questions(): void
     {
         CBT_Admin_Questions_Service::handle_bulk_delete_questions();
+    }
+
+    public static function handle_bulk_questions_action(): void
+    {
+        CBT_Admin_Questions_Service::handle_bulk_questions_action();
     }
 
     public static function handle_delete_all_import_batch_questions(): void

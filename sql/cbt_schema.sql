@@ -24,10 +24,11 @@ CREATE TABLE wp_cbt_exams (
   duration_minutes INT UNSIGNED NOT NULL DEFAULT 60,
   kkm_percentage DECIMAL(5,2) NOT NULL DEFAULT 75.00,
   total_questions INT UNSIGNED NOT NULL DEFAULT 0,
-  randomize_questions TINYINT(1) NOT NULL DEFAULT 0,
-  randomize_options TINYINT(1) NOT NULL DEFAULT 0,
+  randomize_questions TINYINT(1) NOT NULL DEFAULT 1,
+  randomize_options TINYINT(1) NOT NULL DEFAULT 1,
   show_student_result TINYINT(1) NOT NULL DEFAULT 1,
   enable_calculator TINYINT(1) NOT NULL DEFAULT 1,
+  is_bank_exam TINYINT(1) NOT NULL DEFAULT 0,
   status VARCHAR(20) NOT NULL DEFAULT 'draft',
   starts_at DATETIME NULL,
   ends_at DATETIME NULL,
@@ -39,6 +40,7 @@ CREATE TABLE wp_cbt_exams (
   KEY idx_status_window (status, starts_at, ends_at),
   KEY idx_created_by (created_by),
   KEY idx_subject_id (subject_id),
+  KEY idx_is_bank_exam (is_bank_exam),
   CONSTRAINT fk_cbt_exams_subject FOREIGN KEY (subject_id) REFERENCES wp_cbt_subjects(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci;
 

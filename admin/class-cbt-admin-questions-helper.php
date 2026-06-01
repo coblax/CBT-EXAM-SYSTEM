@@ -969,12 +969,13 @@ final class CBT_Admin_Questions_Helper
                     'duration_minutes' => 60,
                     'total_questions' => 0,
                     'randomize_questions' => 0,
+                    'is_bank_exam' => 1,
                     'status' => 'draft',
                     'created_by' => $creator_id,
                     'created_at' => current_time('mysql'),
                     'updated_at' => current_time('mysql'),
                 ],
-                ['%d', '%s', '%s', '%d', '%d', '%d', '%s', '%d', '%s', '%s']
+                ['%d', '%s', '%s', '%d', '%d', '%d', '%d', '%s', '%d', '%s', '%s']
             );
     
             if ($inserted === false) {

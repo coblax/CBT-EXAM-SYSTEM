@@ -534,7 +534,7 @@
     ]
   },
   "src/frontend/main.js": {
-    "file": "assets/frontend-core-CI-WDm1l.js",
+    "file": "assets/frontend-core-CbV0OGwn.js",
     "name": "frontend",
     "src": "src/frontend/main.js",
     "isEntry": true,
@@ -547,7 +547,7 @@
       "src/frontend/app/runtime.js"
     ],
     "css": [
-      "assets/frontend-DWiLZhKf.css"
+      "assets/frontend-BpOBtG5x.css"
     ],
     "assets": [
       "assets/lexend-latin-600-normal-DdvlkEkX.woff2",

@@ -102,6 +102,7 @@ class CBT_Admin
         add_action('wp_ajax_cbt_start_exam_save_progress', [CBT_Admin_Exams_Actions::class, 'handle_start_exam_save_progress']);
         add_action('wp_ajax_cbt_continue_exam_save_progress', [CBT_Admin_Exams_Actions::class, 'handle_continue_exam_save_progress']);
         add_action('wp_ajax_cbt_exam_preflight_operation', [CBT_Admin_Exams_Actions::class, 'handle_preflight_operation_ajax']);
+        add_action('wp_ajax_cbt_snapshot_panel_refresh', [CBT_Admin_Exams_Actions::class, 'handle_snapshot_panel_refresh_ajax']);
         add_action('admin_post_cbt_cache_action', [CBT_Admin_Cache_Actions::class, 'handle_cache_action']);
         add_action('admin_post_cbt_check_update_now', [CBT_Admin_Update_Actions::class, 'handle_check_update_now']);
         add_action('admin_post_cbt_install_update_now', [CBT_Admin_Update_Actions::class, 'handle_install_update_now']);
@@ -127,7 +128,9 @@ class CBT_Admin
         add_action('wp_ajax_cbt_load_test_jobs', [CBT_Admin_Maintenance_Actions::class, 'handle_load_test_jobs_ajax']);
         add_action('admin_post_cbt_save_question', [CBT_Admin_Questions_Actions::class, 'handle_save_question']);
         add_action('admin_post_cbt_delete_question', [CBT_Admin_Questions_Actions::class, 'handle_delete_question']);
+        add_action('admin_post_cbt_duplicate_question', [CBT_Admin_Questions_Actions::class, 'handle_duplicate_question']);
         add_action('admin_post_cbt_bulk_delete_questions', [CBT_Admin_Questions_Actions::class, 'handle_bulk_delete_questions']);
+        add_action('admin_post_cbt_bulk_questions_action', [CBT_Admin_Questions_Actions::class, 'handle_bulk_questions_action']);
         add_action('admin_post_cbt_delete_all_import_batch_questions', [CBT_Admin_Questions_Actions::class, 'handle_delete_all_import_batch_questions']);
         add_action('admin_post_cbt_import_questions', [CBT_Admin_Questions_Actions::class, 'handle_import_questions']);
         add_action('admin_post_cbt_download_question_template_word', [CBT_Admin_Questions_Actions::class, 'handle_download_question_template_word']);
