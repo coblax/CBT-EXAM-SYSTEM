@@ -127,6 +127,26 @@ export function createExamSecurityManager(deps) {
         return String(value || '').trim().toLowerCase();
     }
 
+    function isChromeOsPlatformHint(value) {
+        var normalized = normalizeKeyboardValue(value).replace(/[\s_-]+/g, '');
+        return normalized.indexOf('chromeos') >= 0 || normalized.indexOf('cros') >= 0;
+    }
+
+    function isChromeOsShowWindowsKey(key, code) {
+        return key === 'f5'
+            || code === 'f5'
+            || key === 'launchapplication1'
+            || code === 'launchapplication1'
+            || key === 'browserrefresh'
+            || code === 'browserrefresh'
+            || key === 'overview'
+            || code === 'overview'
+            || key === 'showwindows'
+            || code === 'showwindows'
+            || key === 'switchwindow'
+            || code === 'switchwindow';
+    }
+
     function resolveScreenshotKeySignal(event) {
         var key = normalizeKeyboardValue(event && event.key);
         var code = normalizeKeyboardValue(event && event.code);
@@ -151,6 +171,19 @@ export function createExamSecurityManager(deps) {
 
         if (event && event.metaKey && event.shiftKey && isMacShortcutDigit) {
             return 'macos_screenshot_shortcut';
+        }
+
+        if (
+            event
+            && event.ctrlKey
+            && !event.altKey
+            && !event.metaKey
+            && isChromeOsPlatformHint(getPlatformHint())
+            && isChromeOsShowWindowsKey(key, code)
+        ) {
+            return event.shiftKey
+                ? 'chromeos_partial_screenshot_shortcut'
+                : 'chromeos_screenshot_shortcut';
         }
 
         return '';

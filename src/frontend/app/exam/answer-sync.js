@@ -425,6 +425,10 @@ export function createAnswerSyncManager(deps) {
         return '';
     }
 
+    function isBrowserOfflineForAnswerSync() {
+        return getNavigatorConnectionStatus() === 'offline' || state.connectionStatus === 'offline';
+    }
+
     function renderSyncUi(reason, meta) {
         if (state.stage === 'exam' && renderExamPartial) {
             if (renderExamPartial({
@@ -1395,6 +1399,31 @@ export function createAnswerSyncManager(deps) {
                 accepted_count: 0,
                 buffered: getPendingAnswerBatchCount(),
                 flushed: 0,
+                pending_count: pendingAnswerBatchOrder.length,
+                items: []
+            };
+        }
+
+        if (options.allowOfflineFlush !== true && isBrowserOfflineForAnswerSync() && getPendingAnswerBatchCount() > 0) {
+            state.connectionStatus = 'offline';
+            syncPendingAnswerRuntimeState({
+                persist: true,
+                clearLastSyncError: false,
+                render: !!options.render,
+                reason: 'flush-offline'
+            });
+            publishSyncSnapshot('flush-offline-skipped');
+            recordTimelineEntry('sync:flush:offline-skip', 'Flush sync ditunda karena browser offline.', {
+                attemptId: Number(state.attemptId) || 0,
+                stage: String(state.stage || ''),
+                pendingSyncCount: getPendingAnswerBatchCount()
+            });
+            return {
+                attempt_id: state.attemptId,
+                accepted_count: 0,
+                buffered: getPendingAnswerBatchCount(),
+                flushed: 0,
+                offline: true,
                 pending_count: pendingAnswerBatchOrder.length,
                 items: []
             };

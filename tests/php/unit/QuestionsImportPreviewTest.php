@@ -191,6 +191,110 @@ final class QuestionsImportPreviewTest extends TestCase
         );
     }
 
+    public function test_question_import_transient_ttl_is_two_hours_and_gc_removes_only_expired_import_transients(): void
+    {
+        unset($GLOBALS['wpdb']);
+
+        $reflection = new ReflectionClass(\CBT_Admin_Questions_Import_Helper::class);
+        self::assertSame(2 * HOUR_IN_SECONDS, $reflection->getConstant('QUESTION_IMPORT_TRANSIENT_TTL'));
+
+        $GLOBALS['cbt_test_wp_options']['_transient_timeout_cbt_question_import_expired'] = 100;
+        $GLOBALS['cbt_test_wp_options']['_transient_cbt_question_import_expired'] = ['state' => 'old'];
+        $GLOBALS['cbt_test_wp_options']['_transient_timeout_cbt_question_import_rows_expired'] = 100;
+        $GLOBALS['cbt_test_wp_options']['_transient_cbt_question_import_rows_expired'] = ['rows' => ['old']];
+        $GLOBALS['cbt_test_wp_options']['_transient_timeout_cbt_question_import_active'] = 999999;
+        $GLOBALS['cbt_test_wp_options']['_transient_cbt_question_import_active'] = ['state' => 'active'];
+        $GLOBALS['cbt_test_wp_options']['_transient_timeout_unrelated'] = 100;
+        $GLOBALS['cbt_test_wp_options']['_transient_unrelated'] = 'keep';
+
+        $deleted = \CBT_Admin_Questions_Import_Helper::cleanup_expired_question_import_transients(500);
+
+        self::assertSame(4, $deleted);
+        self::assertArrayNotHasKey('_transient_timeout_cbt_question_import_expired', $GLOBALS['cbt_test_wp_options']);
+        self::assertArrayNotHasKey('_transient_cbt_question_import_expired', $GLOBALS['cbt_test_wp_options']);
+        self::assertArrayNotHasKey('_transient_timeout_cbt_question_import_rows_expired', $GLOBALS['cbt_test_wp_options']);
+        self::assertArrayNotHasKey('_transient_cbt_question_import_rows_expired', $GLOBALS['cbt_test_wp_options']);
+        self::assertArrayHasKey('_transient_timeout_cbt_question_import_active', $GLOBALS['cbt_test_wp_options']);
+        self::assertArrayHasKey('_transient_cbt_question_import_active', $GLOBALS['cbt_test_wp_options']);
+        self::assertArrayHasKey('_transient_timeout_unrelated', $GLOBALS['cbt_test_wp_options']);
+        self::assertArrayHasKey('_transient_unrelated', $GLOBALS['cbt_test_wp_options']);
+    }
+
+    public function test_import_single_question_row_rejects_incomplete_matching_pairs(): void
+    {
+        global $wpdb;
+        $wpdb = new QuestionsImportPreviewFakeWpdb();
+        $affectedExamIds = [];
+
+        $leftOnly = $this->invokeImportHelper('import_single_question_row', [[
+            'question_type' => 'matching',
+            'question_text' => 'Cocokkan pasangan berikut.',
+            'kiri_1' => 'Indonesia',
+            'kanan_1' => 'Jakarta',
+            'kiri_2' => 'Jepang',
+        ], 1, true, 1, &$affectedExamIds]);
+
+        self::assertSame('failed', $leftOnly['status'] ?? '');
+        self::assertStringContainsString('Pasangan Matching nomor 2 belum lengkap', (string) ($leftOnly['message'] ?? ''));
+
+        $rightOnly = $this->invokeImportHelper('import_single_question_row', [[
+            'question_type' => 'matching',
+            'question_text' => 'Cocokkan pasangan berikut.',
+            'kiri_1' => 'Indonesia',
+            'kanan_1' => 'Jakarta',
+            'kanan_2' => 'Tokyo',
+        ], 1, true, 1, &$affectedExamIds]);
+
+        self::assertSame('failed', $rightOnly['status'] ?? '');
+        self::assertStringContainsString('Pasangan Matching nomor 2 belum lengkap', (string) ($rightOnly['message'] ?? ''));
+        self::assertSame(0, $wpdb->insertCalls);
+    }
+
+    public function test_import_single_question_row_accepts_complete_matching_pairs(): void
+    {
+        global $wpdb;
+        $wpdb = new QuestionsImportPreviewFakeWpdb();
+        $affectedExamIds = [];
+
+        $result = $this->invokeImportHelper('import_single_question_row', [[
+            'question_type' => 'matching',
+            'question_text' => 'Cocokkan pasangan berikut.',
+            'kiri_1' => 'Indonesia',
+            'kanan_1' => 'Jakarta',
+            'kiri_2' => 'Jepang',
+            'kanan_2' => 'Tokyo',
+        ], 1, true, 1, &$affectedExamIds]);
+
+        self::assertSame('created', $result['status'] ?? '');
+        self::assertGreaterThan(0, (int) ($result['question_id'] ?? 0));
+    }
+
+    public function test_import_single_question_row_rejects_ordering_keyed_gaps_but_accepts_freeform(): void
+    {
+        global $wpdb;
+        $wpdb = new QuestionsImportPreviewFakeWpdb();
+        $affectedExamIds = [];
+
+        $gap = $this->invokeImportHelper('import_single_question_row', [[
+            'question_type' => 'ordering',
+            'question_text' => 'Urutkan langkah berikut.',
+            'item_1' => 'Langkah pertama',
+            'item_3' => 'Langkah ketiga',
+            'options' => "Langkah pertama\nLangkah ketiga",
+        ], 1, true, 1, &$affectedExamIds]);
+
+        self::assertSame('failed', $gap['status'] ?? '');
+        self::assertStringContainsString('ITEM_2 masih kosong', (string) ($gap['message'] ?? ''));
+
+        $freeform = $this->invokeImportHelper('import_single_question_row', [[
+            'question_type' => 'ordering',
+            'question_text' => 'Urutkan langkah berikut.',
+            'options' => "Langkah pertama\nLangkah kedua",
+        ], 1, true, 1, &$affectedExamIds]);
+
+        self::assertSame('created', $freeform['status'] ?? '');
+    }
+
     public function test_parse_docx_block_maps_diagnostic_markers_to_active_fields(): void
     {
         $questionDiagnostic = $this->invokeImportHelper('create_docx_diagnostic_marker', [[
@@ -2634,5 +2738,62 @@ XML;
         $reflectionMethod->setAccessible(true);
 
         return $reflectionMethod->invokeArgs(null, $args);
+    }
+}
+
+final class QuestionsImportPreviewFakeWpdb
+{
+    public string $prefix = 'wp_';
+    public int $insert_id = 100;
+    public int $insertCalls = 0;
+
+    public function prepare(string $query, ...$args): array
+    {
+        if (count($args) === 1 && is_array($args[0])) {
+            $args = $args[0];
+        }
+
+        return [
+            'query' => $query,
+            'args' => $args,
+        ];
+    }
+
+    public function get_var($prepared)
+    {
+        return 1;
+    }
+
+    public function get_row($prepared, $output = null): array
+    {
+        return ['question_id' => 101];
+    }
+
+    public function get_results($prepared, $output = null): array
+    {
+        return [];
+    }
+
+    public function get_col($prepared, $column = 0): array
+    {
+        return [];
+    }
+
+    public function insert($table, $data, $format = null): int
+    {
+        $this->insertCalls++;
+        $this->insert_id++;
+
+        return 1;
+    }
+
+    public function delete($table, $where, $whereFormat = null): int
+    {
+        return 1;
+    }
+
+    public function query($prepared): int
+    {
+        return 1;
     }
 }

@@ -1129,6 +1129,13 @@ final class CBT_Admin_Questions_Helper
             }
         }
 
+        private static function assert_question_detail_write_succeeded($result, bool $throw_on_failure, string $message): void
+        {
+            if ($throw_on_failure && $result === false) {
+                throw new RuntimeException($message);
+            }
+        }
+
         public static function save_question_type_detail(int $question_id, string $question_type, string $correct_text, array $context = []): void
         {
             global $wpdb;
@@ -1145,22 +1152,29 @@ final class CBT_Admin_Questions_Helper
             $categorization_item_table = $wpdb->prefix . 'cbt_question_categorization_items';
             $table_option_table = $wpdb->prefix . 'cbt_question_table_completion_cell_options';
             $table_cell_table = $wpdb->prefix . 'cbt_question_table_completion_cells';
-            self::delete_nested_question_detail_dependents([$question_id]);
-            $wpdb->delete($table_option_table, ['question_id' => $question_id], ['%d']);
-            $wpdb->delete($table_cell_table, ['question_id' => $question_id], ['%d']);
-            $wpdb->delete($categorization_item_table, ['question_id' => $question_id], ['%d']);
-            $wpdb->delete($cloze_option_table, ['question_id' => $question_id], ['%d']);
-            $wpdb->delete($cloze_blank_table, ['question_id' => $question_id], ['%d']);
-            $wpdb->delete($matching_item_table, ['question_id' => $question_id], ['%d']);
-            $wpdb->delete($ordering_item_table, ['question_id' => $question_id], ['%d']);
+            $throw_on_failure = !empty($context['throw_on_failure']);
+            self::delete_nested_question_detail_dependents([$question_id], '', $throw_on_failure);
+            foreach ([
+                $table_option_table,
+                $table_cell_table,
+                $categorization_item_table,
+                $cloze_option_table,
+                $cloze_blank_table,
+                $matching_item_table,
+                $ordering_item_table,
+            ] as $detail_table) {
+                $deleted = $wpdb->delete($detail_table, ['question_id' => $question_id], ['%d']);
+                self::assert_question_detail_write_succeeded($deleted, $throw_on_failure, 'Gagal membersihkan detail soal pada tabel ' . $detail_table . '.');
+            }
             foreach ($tables as $table) {
-                $wpdb->delete($table, ['question_id' => $question_id], ['%d']);
+                $deleted = $wpdb->delete($table, ['question_id' => $question_id], ['%d']);
+                self::assert_question_detail_write_succeeded($deleted, $throw_on_failure, 'Gagal membersihkan detail soal pada tabel ' . $table . '.');
             }
     
             $now = current_time('mysql');
     
             if ($question_type === 'multiple_choice' && isset($tables['multiple_choice'])) {
-                $wpdb->insert(
+                $inserted = $wpdb->insert(
                     $tables['multiple_choice'],
                     [
                         'question_id' => $question_id,
@@ -1169,11 +1183,12 @@ final class CBT_Admin_Questions_Helper
                     ],
                     ['%d', '%s', '%s']
                 );
+                self::assert_question_detail_write_succeeded($inserted, $throw_on_failure, 'Gagal menyimpan detail Multiple Choice.');
                 return;
             }
     
             if ($question_type === 'multiple_answer' && isset($tables['multiple_answer'])) {
-                $wpdb->insert(
+                $inserted = $wpdb->insert(
                     $tables['multiple_answer'],
                     [
                         'question_id' => $question_id,
@@ -1182,11 +1197,12 @@ final class CBT_Admin_Questions_Helper
                     ],
                     ['%d', '%s', '%s']
                 );
+                self::assert_question_detail_write_succeeded($inserted, $throw_on_failure, 'Gagal menyimpan detail Multiple Answer.');
                 return;
             }
     
             if ($question_type === 'true_false' && isset($tables['true_false'])) {
-                $wpdb->insert(
+                $inserted = $wpdb->insert(
                     $tables['true_false'],
                     [
                         'question_id' => $question_id,
@@ -1196,12 +1212,13 @@ final class CBT_Admin_Questions_Helper
                     ],
                     ['%d', '%d', '%s', '%s']
                 );
+                self::assert_question_detail_write_succeeded($inserted, $throw_on_failure, 'Gagal menyimpan detail True/False.');
                 return;
             }
     
             if ($question_type === 'short_answer' && isset($tables['short_answer'])) {
                 $normalized = self::normalize_short_answer_payload($correct_text);
-                $wpdb->insert(
+                $inserted = $wpdb->insert(
                     $tables['short_answer'],
                     [
                         'question_id' => $question_id,
@@ -1211,12 +1228,13 @@ final class CBT_Admin_Questions_Helper
                     ],
                     ['%d', '%s', '%s', '%s']
                 );
+                self::assert_question_detail_write_succeeded($inserted, $throw_on_failure, 'Gagal menyimpan detail Short Answer.');
                 return;
             }
     
             if ($question_type === 'essay' && isset($tables['essay'])) {
                 $normalized = trim($correct_text);
-                $wpdb->insert(
+                $inserted = $wpdb->insert(
                     $tables['essay'],
                     [
                         'question_id' => $question_id,
@@ -1226,11 +1244,12 @@ final class CBT_Admin_Questions_Helper
                     ],
                     ['%d', '%s', '%s', '%s']
                 );
+                self::assert_question_detail_write_succeeded($inserted, $throw_on_failure, 'Gagal menyimpan detail Essay.');
                 return;
             }
 
             if ($question_type === 'ordering' && isset($tables['ordering'])) {
-                $wpdb->insert(
+                $inserted = $wpdb->insert(
                     $tables['ordering'],
                     [
                         'question_id' => $question_id,
@@ -1241,16 +1260,17 @@ final class CBT_Admin_Questions_Helper
                     ],
                     ['%d', '%s', '%d', '%s', '%s']
                 );
+                self::assert_question_detail_write_succeeded($inserted, $throw_on_failure, 'Gagal menyimpan detail Ordering.');
 
                 $ordered_option_ids = isset($context['ordered_option_ids']) && is_array($context['ordered_option_ids'])
                     ? array_values($context['ordered_option_ids'])
                     : [];
-                self::save_ordering_item_positions($question_id, $ordered_option_ids);
+                self::save_ordering_item_positions($question_id, $ordered_option_ids, $throw_on_failure);
                 return;
             }
 
             if ($question_type === 'matching' && isset($tables['matching'])) {
-                $wpdb->insert(
+                $inserted = $wpdb->insert(
                     $tables['matching'],
                     [
                         'question_id' => $question_id,
@@ -1261,16 +1281,17 @@ final class CBT_Admin_Questions_Helper
                     ],
                     ['%d', '%s', '%d', '%s', '%s']
                 );
+                self::assert_question_detail_write_succeeded($inserted, $throw_on_failure, 'Gagal menyimpan detail Matching.');
 
                 $matching_items = isset($context['matching_items']) && is_array($context['matching_items'])
                     ? array_values($context['matching_items'])
                     : [];
-                self::save_matching_items($question_id, $matching_items);
+                self::save_matching_items($question_id, $matching_items, $throw_on_failure);
                 return;
             }
 
             if ($question_type === 'cloze_dropdown' && isset($tables['cloze_dropdown'])) {
-                $wpdb->insert(
+                $inserted = $wpdb->insert(
                     $tables['cloze_dropdown'],
                     [
                         'question_id' => $question_id,
@@ -1280,16 +1301,17 @@ final class CBT_Admin_Questions_Helper
                     ],
                     ['%d', '%s', '%s', '%s']
                 );
+                self::assert_question_detail_write_succeeded($inserted, $throw_on_failure, 'Gagal menyimpan detail Cloze Dropdown.');
 
                 $cloze_blanks = isset($context['cloze_blanks']) && is_array($context['cloze_blanks'])
                     ? array_values($context['cloze_blanks'])
                     : [];
-                self::save_cloze_dropdown_blanks($question_id, $cloze_blanks);
+                self::save_cloze_dropdown_blanks($question_id, $cloze_blanks, $throw_on_failure);
                 return;
             }
 
             if ($question_type === 'categorization' && isset($tables['categorization'])) {
-                $wpdb->insert(
+                $inserted = $wpdb->insert(
                     $tables['categorization'],
                     [
                         'question_id' => $question_id,
@@ -1300,11 +1322,12 @@ final class CBT_Admin_Questions_Helper
                     ],
                     ['%d', '%s', '%d', '%s', '%s']
                 );
+                self::assert_question_detail_write_succeeded($inserted, $throw_on_failure, 'Gagal menyimpan detail Categorization.');
 
                 $categorization_items = isset($context['categorization_items']) && is_array($context['categorization_items'])
                     ? array_values($context['categorization_items'])
                     : [];
-                self::save_categorization_items($question_id, $categorization_items);
+                self::save_categorization_items($question_id, $categorization_items, $throw_on_failure);
                 return;
             }
 
@@ -1312,7 +1335,7 @@ final class CBT_Admin_Questions_Helper
                 $table_definition = isset($context['table_completion']) && is_array($context['table_completion'])
                     ? self::normalize_table_completion_definition($context['table_completion'])
                     : self::normalize_table_completion_definition([]);
-                $wpdb->insert(
+                $inserted = $wpdb->insert(
                     $tables['table_completion'],
                     [
                         'question_id' => $question_id,
@@ -1324,15 +1347,16 @@ final class CBT_Admin_Questions_Helper
                     ],
                     ['%d', '%s', '%d', '%d', '%s', '%s']
                 );
+                self::assert_question_detail_write_succeeded($inserted, $throw_on_failure, 'Gagal menyimpan detail Table Completion.');
 
-                self::save_table_completion_cells($question_id, $table_definition);
+                self::save_table_completion_cells($question_id, $table_definition, $throw_on_failure);
             }
         }
 
         /**
          * @param array<int,mixed> $ordered_option_ids
          */
-        public static function save_ordering_item_positions(int $question_id, array $ordered_option_ids): void
+        public static function save_ordering_item_positions(int $question_id, array $ordered_option_ids, bool $throw_on_failure = false): void
         {
             global $wpdb;
 
@@ -1341,7 +1365,8 @@ final class CBT_Admin_Questions_Helper
             }
 
             $table = $wpdb->prefix . 'cbt_question_ordering_items';
-            $wpdb->delete($table, ['question_id' => $question_id], ['%d']);
+            $deleted = $wpdb->delete($table, ['question_id' => $question_id], ['%d']);
+            self::assert_question_detail_write_succeeded($deleted, $throw_on_failure, 'Gagal membersihkan item Ordering.');
 
             $seen = [];
             $position = 1;
@@ -1353,7 +1378,7 @@ final class CBT_Admin_Questions_Helper
                 }
 
                 $seen[$option_id] = true;
-                $wpdb->insert(
+                $inserted = $wpdb->insert(
                     $table,
                     [
                         'question_id' => $question_id,
@@ -1363,6 +1388,7 @@ final class CBT_Admin_Questions_Helper
                     ],
                     ['%d', '%d', '%d', '%s']
                 );
+                self::assert_question_detail_write_succeeded($inserted, $throw_on_failure, 'Gagal menyimpan item Ordering.');
                 $position++;
             }
         }
@@ -1414,7 +1440,7 @@ final class CBT_Admin_Questions_Helper
         /**
          * @param array<int,array<string,mixed>> $items
          */
-        public static function save_matching_items(int $question_id, array $items): void
+        public static function save_matching_items(int $question_id, array $items, bool $throw_on_failure = false): void
         {
             global $wpdb;
 
@@ -1423,7 +1449,8 @@ final class CBT_Admin_Questions_Helper
             }
 
             $table = $wpdb->prefix . 'cbt_question_matching_items';
-            $wpdb->delete($table, ['question_id' => $question_id], ['%d']);
+            $deleted = $wpdb->delete($table, ['question_id' => $question_id], ['%d']);
+            self::assert_question_detail_write_succeeded($deleted, $throw_on_failure, 'Gagal membersihkan item Matching.');
 
             $now = current_time('mysql');
             foreach ($items as $index => $item) {
@@ -1445,7 +1472,7 @@ final class CBT_Admin_Questions_Helper
                     $item_key = (string) $position;
                 }
 
-                $wpdb->insert(
+                $inserted = $wpdb->insert(
                     $table,
                     [
                         'question_id' => $question_id,
@@ -1458,6 +1485,7 @@ final class CBT_Admin_Questions_Helper
                     ],
                     ['%d', '%s', '%d', '%s', '%d', '%s', '%s']
                 );
+                self::assert_question_detail_write_succeeded($inserted, $throw_on_failure, 'Gagal menyimpan item Matching.');
             }
         }
 
@@ -1493,7 +1521,7 @@ final class CBT_Admin_Questions_Helper
         /**
          * @param array<int,array<string,mixed>> $blanks
          */
-        public static function save_cloze_dropdown_blanks(int $question_id, array $blanks): void
+        public static function save_cloze_dropdown_blanks(int $question_id, array $blanks, bool $throw_on_failure = false): void
         {
             global $wpdb;
 
@@ -1503,8 +1531,10 @@ final class CBT_Admin_Questions_Helper
 
             $blank_table = $wpdb->prefix . 'cbt_question_cloze_dropdown_blanks';
             $option_table = $wpdb->prefix . 'cbt_question_cloze_dropdown_options';
-            $wpdb->delete($option_table, ['question_id' => $question_id], ['%d']);
-            $wpdb->delete($blank_table, ['question_id' => $question_id], ['%d']);
+            $deleted_options = $wpdb->delete($option_table, ['question_id' => $question_id], ['%d']);
+            self::assert_question_detail_write_succeeded($deleted_options, $throw_on_failure, 'Gagal membersihkan opsi Cloze Dropdown.');
+            $deleted_blanks = $wpdb->delete($blank_table, ['question_id' => $question_id], ['%d']);
+            self::assert_question_detail_write_succeeded($deleted_blanks, $throw_on_failure, 'Gagal membersihkan blank Cloze Dropdown.');
 
             $now = current_time('mysql');
             foreach ($blanks as $index => $blank) {
@@ -1532,6 +1562,7 @@ final class CBT_Admin_Questions_Helper
                     ['%d', '%s', '%d', '%s', '%s']
                 );
                 if ($inserted === false) {
+                    self::assert_question_detail_write_succeeded($inserted, $throw_on_failure, 'Gagal menyimpan blank Cloze Dropdown.');
                     continue;
                 }
 
@@ -1553,7 +1584,7 @@ final class CBT_Admin_Questions_Helper
                         $option_order = $option_index + 1;
                     }
 
-                    $wpdb->insert(
+                    $option_inserted = $wpdb->insert(
                         $option_table,
                         [
                             'question_id' => $question_id,
@@ -1566,6 +1597,7 @@ final class CBT_Admin_Questions_Helper
                         ],
                         ['%d', '%d', '%s', '%s', '%d', '%d', '%s']
                     );
+                    self::assert_question_detail_write_succeeded($option_inserted, $throw_on_failure, 'Gagal menyimpan opsi Cloze Dropdown.');
                 }
             }
         }
@@ -1806,7 +1838,7 @@ final class CBT_Admin_Questions_Helper
         /**
          * @param array<int,array<string,mixed>> $items
          */
-        public static function save_categorization_items(int $question_id, array $items): void
+        public static function save_categorization_items(int $question_id, array $items, bool $throw_on_failure = false): void
         {
             global $wpdb;
 
@@ -1815,7 +1847,8 @@ final class CBT_Admin_Questions_Helper
             }
 
             $table = $wpdb->prefix . 'cbt_question_categorization_items';
-            $wpdb->delete($table, ['question_id' => $question_id], ['%d']);
+            $deleted = $wpdb->delete($table, ['question_id' => $question_id], ['%d']);
+            self::assert_question_detail_write_succeeded($deleted, $throw_on_failure, 'Gagal membersihkan item Categorization.');
 
             $now = current_time('mysql');
             foreach ($items as $index => $item) {
@@ -1838,7 +1871,7 @@ final class CBT_Admin_Questions_Helper
                     $item_key = (string) $position;
                 }
 
-                $wpdb->insert(
+                $inserted = $wpdb->insert(
                     $table,
                     [
                         'question_id' => $question_id,
@@ -1851,6 +1884,7 @@ final class CBT_Admin_Questions_Helper
                     ],
                     ['%d', '%s', '%d', '%s', '%d', '%s', '%s']
                 );
+                self::assert_question_detail_write_succeeded($inserted, $throw_on_failure, 'Gagal menyimpan item Categorization.');
             }
         }
 
@@ -2077,7 +2111,7 @@ final class CBT_Admin_Questions_Helper
         /**
          * @param array<string,mixed> $definition
          */
-        public static function save_table_completion_cells(int $question_id, array $definition): void
+        public static function save_table_completion_cells(int $question_id, array $definition, bool $throw_on_failure = false): void
         {
             global $wpdb;
 
@@ -2087,8 +2121,10 @@ final class CBT_Admin_Questions_Helper
 
             $cell_table = $wpdb->prefix . 'cbt_question_table_completion_cells';
             $option_table = $wpdb->prefix . 'cbt_question_table_completion_cell_options';
-            $wpdb->delete($option_table, ['question_id' => $question_id], ['%d']);
-            $wpdb->delete($cell_table, ['question_id' => $question_id], ['%d']);
+            $deleted_options = $wpdb->delete($option_table, ['question_id' => $question_id], ['%d']);
+            self::assert_question_detail_write_succeeded($deleted_options, $throw_on_failure, 'Gagal membersihkan opsi Table Completion.');
+            $deleted_cells = $wpdb->delete($cell_table, ['question_id' => $question_id], ['%d']);
+            self::assert_question_detail_write_succeeded($deleted_cells, $throw_on_failure, 'Gagal membersihkan sel Table Completion.');
 
             $definition = self::normalize_table_completion_definition($definition);
             $now = current_time('mysql');
@@ -2120,6 +2156,7 @@ final class CBT_Admin_Questions_Helper
                     ['%d', '%s', '%d', '%d', '%s', '%s', '%s', '%s', '%s']
                 );
                 if ($inserted === false) {
+                    self::assert_question_detail_write_succeeded($inserted, $throw_on_failure, 'Gagal menyimpan sel Table Completion.');
                     continue;
                 }
 
@@ -2145,7 +2182,7 @@ final class CBT_Admin_Questions_Helper
                         $option_order = $option_index + 1;
                     }
 
-                    $wpdb->insert(
+                    $option_inserted = $wpdb->insert(
                         $option_table,
                         [
                             'question_id' => $question_id,
@@ -2158,6 +2195,7 @@ final class CBT_Admin_Questions_Helper
                         ],
                         ['%d', '%d', '%s', '%s', '%d', '%d', '%s']
                     );
+                    self::assert_question_detail_write_succeeded($option_inserted, $throw_on_failure, 'Gagal menyimpan opsi Table Completion.');
                 }
             }
         }

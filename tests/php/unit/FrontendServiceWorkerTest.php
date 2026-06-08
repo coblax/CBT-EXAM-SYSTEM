@@ -108,6 +108,21 @@ final class FrontendServiceWorkerTest extends TestCase
         self::assertStringNotContainsString('finish_exam', $script);
     }
 
+    public function test_service_worker_script_supports_same_origin_media_precache(): void
+    {
+        $script = $this->invokeFrontendMethod('render_service_worker_script', [
+            $this->sampleManifest(),
+        ]);
+
+        self::assertStringContainsString("var MEDIA_CACHE = CACHE_PREFIX + 'media-' + BUILD_ID;", $script);
+        self::assertStringContainsString('CBT_PRECACHE_MEDIA_URLS', $script);
+        self::assertStringContainsString('function isPrecacheMediaUrl(url)', $script);
+        self::assertStringContainsString('isSameOrigin(url)', $script);
+        self::assertStringContainsString('MEDIA_PRECACHE_LIMIT = 200', $script);
+        self::assertStringContainsString('function cacheFirstMedia(request)', $script);
+        self::assertStringNotContainsString("PRECACHE_URLS = [\"http://localhost/uploads/q1.png\"]", $script);
+    }
+
     /**
      * @param array<int,mixed> $arguments
      */

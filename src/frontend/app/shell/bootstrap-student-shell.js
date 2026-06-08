@@ -39,6 +39,9 @@ export function bootstrapStudentShell() {
 
     var browserStorage = createBrowserStorageAccess(window);
     var state = createInitialState(window);
+    if (typeof browserStorage.getStorageHealth === 'function') {
+        state.storageHealth = browserStorage.getStorageHealth();
+    }
     var authSession = createAuthSessionManager({
         getSessionStorage: browserStorage.getSessionStorage,
         state: state,

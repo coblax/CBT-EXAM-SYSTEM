@@ -11,6 +11,10 @@ final class CBT_Admin_Questions_Import_Helper
     private const DOCX_HTML_MARKER_PREFIX = '__HTML__:';
     private const DOCX_DIAGNOSTIC_MARKER_PREFIX = '__DIAG__:';
     private const QUESTION_IMPORT_DIAGNOSTIC_ENTRY_LIMIT = 200;
+    private const QUESTION_IMPORT_TRANSIENT_TTL = 2 * HOUR_IN_SECONDS;
+    private const QUESTION_IMPORT_GC_THROTTLE_SECONDS = 30 * MINUTE_IN_SECONDS;
+    private const QUESTION_IMPORT_GC_BATCH_LIMIT = 500;
+    private const QUESTION_IMPORT_GC_LAST_RUN_OPTION = 'cbt_question_import_gc_last_run';
     private const DOCX_IMAGE_MIME_BY_EXTENSION = [
         'jpg' => 'image/jpeg',
         'jpeg' => 'image/jpeg',
@@ -38,6 +42,7 @@ final class CBT_Admin_Questions_Import_Helper
             }
 
             self::prepare_runtime_for_bulk_user_import();
+            self::maybe_cleanup_expired_question_import_transients();
 
             $token = isset($_GET['cbt_question_import_token']) ? sanitize_key((string) wp_unslash($_GET['cbt_question_import_token'])) : '';
             if ($token !== '') {
@@ -176,8 +181,8 @@ final class CBT_Admin_Questions_Import_Helper
                 'diagnostic_truncated' => !empty($diagnostic_summary['diagnostic_truncated']) ? 1 : 0,
             ];
 
-            $rows_saved = set_transient(self::get_question_import_rows_key($token), array_values($parsed), 12 * HOUR_IN_SECONDS);
-            $state_saved = set_transient(self::get_question_import_state_key($token), $state, 12 * HOUR_IN_SECONDS);
+            $rows_saved = set_transient(self::get_question_import_rows_key($token), array_values($parsed), self::QUESTION_IMPORT_TRANSIENT_TTL);
+            $state_saved = set_transient(self::get_question_import_state_key($token), $state, self::QUESTION_IMPORT_TRANSIENT_TTL);
             if (!$rows_saved || !$state_saved) {
                 self::clear_question_import_transients($token);
                 self::redirect_question_import_with_error('Gagal menyiapkan sesi import soal. Coba file lebih kecil atau ulangi import.', $return_page);
@@ -199,6 +204,7 @@ final class CBT_Admin_Questions_Import_Helper
             if (!isset($_GET['_wpnonce']) || !wp_verify_nonce(sanitize_key((string) wp_unslash($_GET['_wpnonce'])), 'cbt_continue_import_questions')) {
                 wp_die('Nonce verification failed for import continue.');
             }
+            self::maybe_cleanup_expired_question_import_transients();
 
             $state = self::get_question_import_state_for_current_user($token);
             if (!is_array($state)) {
@@ -323,7 +329,7 @@ final class CBT_Admin_Questions_Import_Helper
             $state['affected_exam_ids'] = array_values($affected_exam_ids);
 
             if ((int) $state['offset'] < $total) {
-                $state_saved = set_transient(self::get_question_import_state_key($token), $state, 12 * HOUR_IN_SECONDS);
+                $state_saved = set_transient(self::get_question_import_state_key($token), $state, self::QUESTION_IMPORT_TRANSIENT_TTL);
                 if (!$state_saved) {
                     self::clear_question_import_transients($token);
                     self::redirect_question_import_with_error('Gagal menyimpan progres import soal.', $return_page);
@@ -342,7 +348,8 @@ final class CBT_Admin_Questions_Import_Helper
             $state['offset'] = $total;
             $state['completed_at'] = time();
             $state['is_complete'] = true;
-            $final_state_saved = set_transient(self::get_question_import_state_key($token), $state, 12 * HOUR_IN_SECONDS);
+            $final_state_saved = set_transient(self::get_question_import_state_key($token), $state, self::QUESTION_IMPORT_TRANSIENT_TTL);
+            delete_transient(self::get_question_import_rows_key($token));
 
             if ($created > 0) {
                 CBT_Cache::invalidate_catalog();
@@ -3299,6 +3306,10 @@ final class CBT_Admin_Questions_Import_Helper
                 }
                 $options_raw = '';
             } elseif ($question_type === 'ordering') {
+                $ordering_keyed_error = self::validate_ordering_keyed_item_sequence($row);
+                if ($ordering_keyed_error !== '') {
+                    return self::failed_import_result($row, $ordering_keyed_error);
+                }
                 $ordering_source = $options_input !== ''
                     ? $options_input
                     : ($correct_text !== '' ? $correct_text : $correct_answer);
@@ -3309,6 +3320,12 @@ final class CBT_Admin_Questions_Import_Helper
                 $options_raw = $built;
                 $correct_text = '';
             } elseif ($question_type === 'matching') {
+                $matching_structure_error = isset($row['matching_items']) && is_array($row['matching_items'])
+                    ? self::validate_matching_items_raw_structure($row['matching_items'])
+                    : self::validate_matching_row_pair_structure($row);
+                if ($matching_structure_error !== '') {
+                    return self::failed_import_result($row, $matching_structure_error);
+                }
                 $matching_items = isset($row['matching_items']) && is_array($row['matching_items'])
                     ? CBT_Admin_Questions_Helper::normalize_matching_items($row['matching_items'])
                     : self::build_matching_items_from_import_row($row);
@@ -3799,6 +3816,103 @@ final class CBT_Admin_Questions_Import_Helper
             return CBT_Admin_Questions_Helper::normalize_matching_items($items);
         }
 
+        private static function validate_matching_row_pair_structure(array $row): string
+        {
+            $complete_pairs = 0;
+            for ($idx = 1; $idx <= 12; $idx++) {
+                $left = (string) ($row['kiri_' . $idx] ?? ($row['left_' . $idx] ?? ($row['prompt_' . $idx] ?? '')));
+                $right = (string) ($row['kanan_' . $idx] ?? ($row['right_' . $idx] ?? ($row['match_' . $idx] ?? '')));
+                $has_left = self::import_value_has_content($left);
+                $has_right = self::import_value_has_content($right);
+                if (!$has_left && !$has_right) {
+                    continue;
+                }
+                if (!$has_left || !$has_right) {
+                    return sprintf('Pasangan Matching nomor %d belum lengkap. Sisi kiri dan kanan wajib diisi.', $idx);
+                }
+                $complete_pairs++;
+            }
+
+            return $complete_pairs >= 2 ? '' : 'Matching minimal harus punya 2 pasangan lengkap.';
+        }
+
+        /**
+         * @param array<int,array<string,mixed>> $items
+         */
+        private static function validate_matching_items_raw_structure(array $items): string
+        {
+            $complete_pairs = 0;
+            foreach ($items as $index => $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+
+                $pair_number = (int) ($item['position'] ?? ($index + 1));
+                if ($pair_number <= 0) {
+                    $pair_number = $index + 1;
+                }
+                $left = (string) ($item['prompt_text'] ?? ($item['left'] ?? ($item['kiri'] ?? '')));
+                $right = (string) ($item['option_text'] ?? ($item['right'] ?? ($item['kanan'] ?? '')));
+                $has_left = self::import_value_has_content($left);
+                $has_right = self::import_value_has_content($right);
+                if (!$has_left && !$has_right) {
+                    continue;
+                }
+                if (!$has_left || !$has_right) {
+                    return sprintf('Pasangan Matching nomor %d belum lengkap. Sisi kiri dan kanan wajib diisi.', $pair_number);
+                }
+                $complete_pairs++;
+            }
+
+            return $complete_pairs >= 2 ? '' : 'Matching minimal harus punya 2 pasangan lengkap.';
+        }
+
+        private static function validate_ordering_keyed_item_sequence(array $row): string
+        {
+            $item_numbers = [];
+            for ($idx = 1; $idx <= 12; $idx++) {
+                $value = '';
+                foreach (['item_', 'urutan_', 'sequence_', 'ordering_'] as $prefix) {
+                    if (array_key_exists($prefix . $idx, $row)) {
+                        $value = (string) $row[$prefix . $idx];
+                        break;
+                    }
+                }
+
+                if (self::import_value_has_content($value)) {
+                    $item_numbers[$idx] = true;
+                }
+            }
+
+            if (empty($item_numbers)) {
+                return '';
+            }
+
+            $max_item_number = max(array_keys($item_numbers));
+            for ($idx = 1; $idx <= $max_item_number; $idx++) {
+                if (!isset($item_numbers[$idx])) {
+                    return sprintf('ITEM Ordering harus diisi berurutan tanpa nomor yang loncat. ITEM_%d masih kosong.', $idx);
+                }
+            }
+
+            return '';
+        }
+
+        private static function import_value_has_content(string $value): bool
+        {
+            $value = trim($value);
+            if ($value === '') {
+                return false;
+            }
+            if (preg_match('/<img\b/i', $value)) {
+                return true;
+            }
+
+            $text = str_replace('&nbsp;', ' ', $value);
+            $text = wp_strip_all_tags($text);
+            return trim($text) !== '';
+        }
+
         /**
          * @return array<int,array<string,mixed>>
          */
@@ -4186,6 +4300,105 @@ final class CBT_Admin_Questions_Import_Helper
         {
             delete_transient(self::get_question_import_state_key($token));
             delete_transient(self::get_question_import_rows_key($token));
+        }
+
+        private static function maybe_cleanup_expired_question_import_transients(): void
+        {
+            if (function_exists('wp_using_ext_object_cache') && wp_using_ext_object_cache()) {
+                return;
+            }
+
+            $now = (int) current_time('timestamp');
+            $last_run = (int) get_option(self::QUESTION_IMPORT_GC_LAST_RUN_OPTION, 0);
+            if ($last_run > 0 && ($now - $last_run) < self::QUESTION_IMPORT_GC_THROTTLE_SECONDS) {
+                return;
+            }
+
+            update_option(self::QUESTION_IMPORT_GC_LAST_RUN_OPTION, $now, false);
+            self::cleanup_expired_question_import_transients($now);
+        }
+
+        public static function cleanup_expired_question_import_transients(int $now = 0): int
+        {
+            if (function_exists('wp_using_ext_object_cache') && wp_using_ext_object_cache()) {
+                return 0;
+            }
+
+            $now = $now > 0 ? $now : (int) current_time('timestamp');
+            $timeout_option_names = self::find_expired_question_import_timeout_options($now);
+            $deleted = 0;
+
+            foreach ($timeout_option_names as $timeout_option_name) {
+                $timeout_option_name = (string) $timeout_option_name;
+                if ($timeout_option_name === '' || strpos($timeout_option_name, '_transient_timeout_cbt_question_import_') !== 0) {
+                    continue;
+                }
+
+                $value_option_name = str_replace('_transient_timeout_', '_transient_', $timeout_option_name);
+                if (delete_option($timeout_option_name)) {
+                    $deleted++;
+                }
+                if (delete_option($value_option_name)) {
+                    $deleted++;
+                }
+            }
+
+            return $deleted;
+        }
+
+        /**
+         * @return string[]
+         */
+        private static function find_expired_question_import_timeout_options(int $now): array
+        {
+            global $wpdb;
+
+            $option_names = [];
+            if (
+                is_object($wpdb)
+                && method_exists($wpdb, 'prepare')
+                && method_exists($wpdb, 'get_col')
+            ) {
+                $options_table = isset($wpdb->options) ? (string) $wpdb->options : $wpdb->prefix . 'options';
+                $rows = $wpdb->get_col(
+                    $wpdb->prepare(
+                        "SELECT option_name
+                         FROM {$options_table}
+                         WHERE option_name LIKE %s
+                           AND CAST(option_value AS UNSIGNED) > 0
+                           AND CAST(option_value AS UNSIGNED) < %d
+                         ORDER BY option_name ASC
+                         LIMIT %d",
+                        '_transient_timeout_cbt_question_import_%',
+                        $now,
+                        self::QUESTION_IMPORT_GC_BATCH_LIMIT
+                    )
+                );
+                foreach ((array) $rows as $row) {
+                    if (is_scalar($row)) {
+                        $option_names[] = (string) $row;
+                    }
+                }
+
+                return array_values(array_unique($option_names));
+            }
+
+            if (isset($GLOBALS['cbt_test_wp_options']) && is_array($GLOBALS['cbt_test_wp_options'])) {
+                foreach ($GLOBALS['cbt_test_wp_options'] as $option_name => $option_value) {
+                    if (!is_string($option_name) || strpos($option_name, '_transient_timeout_cbt_question_import_') !== 0) {
+                        continue;
+                    }
+                    $timeout = (int) $option_value;
+                    if ($timeout > 0 && $timeout < $now) {
+                        $option_names[] = $option_name;
+                    }
+                    if (count($option_names) >= self::QUESTION_IMPORT_GC_BATCH_LIMIT) {
+                        break;
+                    }
+                }
+            }
+
+            return array_values(array_unique($option_names));
         }
 
         private static function map_docx_active_context_to_diagnostic_field($active_context): string
@@ -4672,7 +4885,7 @@ final class CBT_Admin_Questions_Import_Helper
             $state['created_question_ids'] = $remaining_ids;
             $state['created_question_items'] = $remaining_items;
             $state['created'] = count($remaining_ids);
-            $state_saved = set_transient(self::get_question_import_state_key($token), $state, 12 * HOUR_IN_SECONDS);
+            $state_saved = set_transient(self::get_question_import_state_key($token), $state, self::QUESTION_IMPORT_TRANSIENT_TTL);
             if (!$state_saved) {
                 return null;
             }

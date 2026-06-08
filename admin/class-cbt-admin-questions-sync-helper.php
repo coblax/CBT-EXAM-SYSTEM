@@ -277,33 +277,79 @@ final class CBT_Admin_Questions_Sync_Helper
                 return [];
             }
 
+            global $wpdb;
+
+            $target_question_ids = self::collect_descendant_question_ids_for_source($source_question_id, $before_snapshot);
+            if (empty($target_question_ids)) {
+                return [];
+            }
+
             $targets = [];
-            foreach (self::collect_descendant_question_ids_for_source($source_question_id, $before_snapshot) as $target_question_id) {
-                $target_question_id = (int) $target_question_id;
-                if ($target_question_id <= 0) {
-                    continue;
+            $transaction_started = false;
+            try {
+                $transaction_started = self::start_sync_transaction();
+
+                foreach ($target_question_ids as $target_question_id) {
+                    $target_question_id = (int) $target_question_id;
+                    if ($target_question_id <= 0) {
+                        continue;
+                    }
+
+                    $target_snapshot = self::get_question_sync_snapshot($target_question_id);
+                    if (empty($target_snapshot)) {
+                        continue;
+                    }
+
+                    $affected_exam_id = self::apply_source_snapshot_to_question(
+                        $target_question_id,
+                        $source_question_id,
+                        $after_snapshot,
+                        $target_snapshot,
+                        true
+                    );
+                    if ($affected_exam_id > 0) {
+                        $targets[] = [
+                            'exam_id' => $affected_exam_id,
+                            'question_id' => $target_question_id,
+                        ];
+                    }
                 }
 
-                $target_snapshot = self::get_question_sync_snapshot($target_question_id);
-                if (empty($target_snapshot)) {
-                    continue;
+                if ($transaction_started) {
+                    self::assert_sync_write_succeeded($wpdb->query('COMMIT'), 'Gagal commit transaksi sinkronisasi Bank Soal.');
+                }
+            } catch (Throwable $throwable) {
+                if ($transaction_started) {
+                    $wpdb->query('ROLLBACK');
                 }
 
-                $affected_exam_id = self::apply_source_snapshot_to_question(
-                    $target_question_id,
-                    $source_question_id,
-                    $after_snapshot,
-                    $target_snapshot
-                );
-                if ($affected_exam_id > 0) {
-                    $targets[] = [
-                        'exam_id' => $affected_exam_id,
-                        'question_id' => $target_question_id,
-                    ];
-                }
+                throw $throwable;
             }
 
             return $targets;
+        }
+
+        private static function start_sync_transaction(): bool
+        {
+            global $wpdb;
+
+            if (!is_object($wpdb) || !method_exists($wpdb, 'query')) {
+                return false;
+            }
+
+            self::assert_sync_write_succeeded(
+                $wpdb->query('START TRANSACTION'),
+                'Gagal memulai transaksi sinkronisasi Bank Soal.'
+            );
+
+            return true;
+        }
+
+        private static function assert_sync_write_succeeded($result, string $message, bool $throw_on_failure = true): void
+        {
+            if ($throw_on_failure && $result === false) {
+                throw new RuntimeException($message);
+            }
         }
 
         public static function run_question_source_backfill(): array
@@ -465,7 +511,8 @@ final class CBT_Admin_Questions_Sync_Helper
             int $target_question_id,
             int $source_question_id,
             array $source_snapshot,
-            array $target_snapshot = []
+            array $target_snapshot = [],
+            bool $throw_on_failure = false
         ): int {
             global $wpdb;
     
@@ -505,13 +552,15 @@ final class CBT_Admin_Questions_Sync_Helper
                 ['%d']
             );
             if ($updated === false) {
+                self::assert_sync_write_succeeded($updated, 'Gagal memperbarui soal turunan Bank Soal.', $throw_on_failure);
                 return 0;
             }
     
             $option_id_map = self::sync_question_options_from_snapshot(
                 $target_question_id,
                 (array) ($source_snapshot['options'] ?? []),
-                (array) ($target_snapshot['options'] ?? [])
+                (array) ($target_snapshot['options'] ?? []),
+                $throw_on_failure
             );
     
             $detail_context = [];
@@ -591,6 +640,7 @@ final class CBT_Admin_Questions_Sync_Helper
                     'cells' => (array) (($source_snapshot['question_detail']['cells'] ?? []) ?: []),
                 ];
             }
+            $detail_context['throw_on_failure'] = $throw_on_failure;
 
             CBT_Admin_Questions_Helper::save_question_type_detail(
                 $target_question_id,
@@ -600,23 +650,23 @@ final class CBT_Admin_Questions_Sync_Helper
             );
     
             if ($old_question_type !== $question_type) {
-                self::clear_question_answer_records($target_question_id, true);
+                self::clear_question_answer_records($target_question_id, true, $throw_on_failure);
                 if (class_exists('CBT_Runtime')) {
                     CBT_Runtime::remap_active_attempt_answers_for_question($target_question_id, [], true);
                 }
             } elseif (self::question_type_uses_choice_options($question_type)) {
                 $preserve_option_order = $question_type === 'ordering';
-                self::remap_question_answer_option_ids($target_question_id, $option_id_map, $preserve_option_order);
+                self::remap_question_answer_option_ids($target_question_id, $option_id_map, $preserve_option_order, $throw_on_failure);
                 if (class_exists('CBT_Runtime')) {
                     CBT_Runtime::remap_active_attempt_answers_for_question($target_question_id, $option_id_map, false, $preserve_option_order);
                 }
             } elseif (self::question_type_uses_external_object_option_answer_map($question_type) && $answer_contract_changed) {
-                self::remap_question_answer_object_option_ids($target_question_id, $option_id_map, true);
+                self::remap_question_answer_object_option_ids($target_question_id, $option_id_map, true, $throw_on_failure);
                 if (class_exists('CBT_Runtime')) {
                     CBT_Runtime::remap_active_attempt_answers_for_question($target_question_id, [], true);
                 }
             } elseif (self::question_type_uses_embedded_object_option_answer_map($question_type) && $answer_contract_changed) {
-                self::clear_question_answer_records($target_question_id, true);
+                self::clear_question_answer_records($target_question_id, true, $throw_on_failure);
                 if (class_exists('CBT_Runtime')) {
                     CBT_Runtime::remap_active_attempt_answers_for_question($target_question_id, [], true);
                 }
@@ -625,7 +675,7 @@ final class CBT_Admin_Questions_Sync_Helper
             return (int) ($target_snapshot['exam_id'] ?? 0);
         }
 
-        private static function sync_question_options_from_snapshot(int $question_id, array $desired_options, array $existing_options = []): array
+        private static function sync_question_options_from_snapshot(int $question_id, array $desired_options, array $existing_options = [], bool $throw_on_failure = false): array
         {
             global $wpdb;
     
@@ -672,7 +722,7 @@ final class CBT_Admin_Questions_Sync_Helper
                     : 0;
     
                 if ($existing_id > 0) {
-                    $wpdb->update(
+                    $updated = $wpdb->update(
                         $option_table,
                         [
                             'option_key' => (string) ($desired_option['option_key'] ?? ''),
@@ -683,6 +733,7 @@ final class CBT_Admin_Questions_Sync_Helper
                         ['%s', '%s', '%d'],
                         ['%d']
                     );
+                    self::assert_sync_write_succeeded($updated, 'Gagal memperbarui opsi soal turunan Bank Soal.', $throw_on_failure);
                     $used_existing_ids[$existing_id] = true;
                     $new_ids_by_match_key[$match_key] = $existing_id;
                     continue;
@@ -700,6 +751,7 @@ final class CBT_Admin_Questions_Sync_Helper
                     ['%d', '%s', '%s', '%d', '%s']
                 );
                 if (!$inserted) {
+                    self::assert_sync_write_succeeded($inserted, 'Gagal menambah opsi soal turunan Bank Soal.', $throw_on_failure);
                     continue;
                 }
     
@@ -715,7 +767,8 @@ final class CBT_Admin_Questions_Sync_Helper
                 if ($existing_id <= 0 || isset($used_existing_ids[$existing_id])) {
                     continue;
                 }
-                $wpdb->delete($option_table, ['id' => $existing_id], ['%d']);
+                $deleted = $wpdb->delete($option_table, ['id' => $existing_id], ['%d']);
+                self::assert_sync_write_succeeded($deleted, 'Gagal menghapus opsi lama soal turunan Bank Soal.', $throw_on_failure);
             }
     
             $old_to_new = [];
@@ -794,7 +847,7 @@ final class CBT_Admin_Questions_Sync_Helper
             return array_values(array_unique($ordered_ids));
         }
 
-        private static function remap_question_answer_option_ids(int $question_id, array $option_id_map, bool $preserve_order = false): void
+        private static function remap_question_answer_option_ids(int $question_id, array $option_id_map, bool $preserve_order = false, bool $throw_on_failure = false): void
         {
             global $wpdb;
     
@@ -853,7 +906,7 @@ final class CBT_Admin_Questions_Sync_Helper
                 }
                 $selected_option_ids = !empty($remapped_option_ids) ? wp_json_encode($remapped_option_ids) : null;
     
-                $wpdb->update(
+                $updated = $wpdb->update(
                     $answer_table,
                     [
                         'selected_option_ids' => $selected_option_ids,
@@ -863,6 +916,7 @@ final class CBT_Admin_Questions_Sync_Helper
                     ['%s', '%s'],
                     ['%d']
                 );
+                self::assert_sync_write_succeeded($updated, 'Gagal me-remap jawaban pilihan saat sinkronisasi Bank Soal.', $throw_on_failure);
                 $attempt_id = (int) ($answer_row['attempt_id'] ?? 0);
                 if ($attempt_id > 0) {
                     $affected_attempt_ids[$attempt_id] = $attempt_id;
@@ -874,7 +928,7 @@ final class CBT_Admin_Questions_Sync_Helper
             }
         }
 
-        private static function remap_question_answer_object_option_ids(int $question_id, array $option_id_map, bool $force_regrade = false): void
+        private static function remap_question_answer_object_option_ids(int $question_id, array $option_id_map, bool $force_regrade = false, bool $throw_on_failure = false): void
         {
             global $wpdb;
 
@@ -933,7 +987,7 @@ final class CBT_Admin_Questions_Sync_Helper
                     continue;
                 }
 
-                $wpdb->update(
+                $updated = $wpdb->update(
                     $answer_table,
                     [
                         'answer_text' => $next_answer_text,
@@ -945,6 +999,7 @@ final class CBT_Admin_Questions_Sync_Helper
                     ['%s', '%d', '%f', '%s'],
                     ['%d']
                 );
+                self::assert_sync_write_succeeded($updated, 'Gagal me-remap jawaban object saat sinkronisasi Bank Soal.', $throw_on_failure);
 
                 $attempt_id = (int) ($answer_row['attempt_id'] ?? 0);
                 if ($attempt_id > 0) {
@@ -957,7 +1012,7 @@ final class CBT_Admin_Questions_Sync_Helper
             }
         }
 
-        private static function clear_question_answer_records(int $question_id, bool $clear_answer_text): void
+        private static function clear_question_answer_records(int $question_id, bool $clear_answer_text, bool $throw_on_failure = false): void
         {
             global $wpdb;
     
@@ -987,13 +1042,14 @@ final class CBT_Admin_Questions_Sync_Helper
                 array_splice($formats, 1, 0, ['%s']);
             }
     
-            $wpdb->update(
+            $updated = $wpdb->update(
                 $answer_table,
                 $fields,
                 ['question_id' => $question_id],
                 $formats,
                 ['%d']
             );
+            self::assert_sync_write_succeeded($updated, 'Gagal mengosongkan jawaban saat sinkronisasi Bank Soal.', $throw_on_failure);
     
             if (!empty($affected_attempt_ids)) {
                 CBT_Cache::invalidate_attempts(array_map('intval', (array) $affected_attempt_ids));

@@ -527,6 +527,29 @@ export function createExamStageRenderer(deps) {
             parts.push(alertMarkup);
         }
 
+        var storageHealth = state.storageHealth && typeof state.storageHealth === 'object'
+            ? state.storageHealth
+            : null;
+        if (storageHealth && state.stage === 'exam' && Number(state.attemptId) > 0) {
+            var storageWarningLevel = String(storageHealth.warningLevel || '').toLowerCase();
+            var storageMode = String(storageHealth.mode || '').toLowerCase();
+            var storageWarningMessage = '';
+            if (storageWarningLevel === 'unsafe' || storageMode === 'memory_only') {
+                storageWarningMessage = 'Penyimpanan offline perangkat tidak tersedia. Jangan putus koneksi atau tutup browser selama ujian.';
+            } else if (storageWarningLevel === 'fallback' || storageMode === 'fallback') {
+                storageWarningMessage = 'Penyimpanan offline memakai mode cadangan. Tetap kerjakan, jangan tutup browser sebelum sinkron selesai.';
+            }
+
+            if (storageWarningMessage !== '') {
+                parts.push(
+                    '<div class="cbt-exam-revision-notice is-sticky is-warning" role="status" aria-live="polite">'
+                    + '<span class="cbt-exam-revision-notice-dot" aria-hidden="true"></span>'
+                    + '<div class="cbt-exam-revision-notice-copy">' + escapeHtml(storageWarningMessage) + '</div>'
+                    + '</div>'
+                );
+            }
+        }
+
         var revisionNotice = state.questionRevisionNotice && typeof state.questionRevisionNotice === 'object'
             ? state.questionRevisionNotice
             : null;

@@ -656,6 +656,8 @@ final class SecurityLogObservabilityTest extends TestCase
         self::assertSame('Shortcut print', $sourceLabelMethod->invoke(null, 'print_shortcut', 'print_attempt'));
         self::assertSame('Tombol PrintScreen', $sourceLabelMethod->invoke(null, 'printscreen_key', 'screenshot_key_detected'));
         self::assertSame('Shortcut screenshot macOS', $sourceLabelMethod->invoke(null, 'macos_screenshot_shortcut', 'screenshot_key_detected'));
+        self::assertSame('Shortcut screenshot ChromeOS', $sourceLabelMethod->invoke(null, 'chromeos_screenshot_shortcut', 'screenshot_key_detected'));
+        self::assertSame('Shortcut screenshot parsial ChromeOS', $sourceLabelMethod->invoke(null, 'chromeos_partial_screenshot_shortcut', 'screenshot_key_detected'));
         self::assertSame('Klik kanan / context menu', $sourceLabelMethod->invoke(null, 'contextmenu', 'context_menu_blocked'));
         self::assertSame('Shortcut buka/tutup DevTools', $sourceLabelMethod->invoke(null, 'devtools_toggle_shortcut', 'devtools_shortcut_blocked'));
         self::assertSame('Shortcut View Source', $sourceLabelMethod->invoke(null, 'view_source_shortcut', 'view_source_blocked'));

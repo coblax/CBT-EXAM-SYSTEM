@@ -91,6 +91,49 @@ final class CBT_Admin_Questions_Service
 
     /**
      * @param array<int,int> $exam_ids
+     */
+    private static function clear_exam_runtime_snapshots_for_question_delete(array $exam_ids): void
+    {
+        $exam_ids = array_values(array_unique(array_filter(array_map('intval', $exam_ids), static function (int $exam_id): bool {
+            return $exam_id > 0;
+        })));
+        if (empty($exam_ids)) {
+            return;
+        }
+
+        foreach ($exam_ids as $exam_id) {
+            if (class_exists('CBT_Exam_Question_Delivery_Cache') && method_exists('CBT_Exam_Question_Delivery_Cache', 'clear_exam_payload')) {
+                CBT_Exam_Question_Delivery_Cache::clear_exam_payload($exam_id);
+            }
+            if (class_exists('CBT_Exam_Start_Attempt_Snapshot_Cache') && method_exists('CBT_Exam_Start_Attempt_Snapshot_Cache', 'clear_exam_snapshot')) {
+                CBT_Exam_Start_Attempt_Snapshot_Cache::clear_exam_snapshot($exam_id);
+            }
+            if (class_exists('CBT_Question_Submission_Context_Cache') && method_exists('CBT_Question_Submission_Context_Cache', 'clear_exam_snapshots')) {
+                CBT_Question_Submission_Context_Cache::clear_exam_snapshots($exam_id);
+            }
+        }
+    }
+
+    /**
+     * @param array<int,int> $exam_ids
+     */
+    private static function refresh_exam_question_delivery_snapshots_after_question_delete(array $exam_ids): void
+    {
+        $exam_ids = array_values(array_unique(array_filter(array_map('intval', $exam_ids), static function (int $exam_id): bool {
+            return $exam_id > 0;
+        })));
+        if (empty($exam_ids)) {
+            return;
+        }
+
+        CBT_Cache::invalidate_catalog();
+        CBT_Cache::invalidate_exams($exam_ids);
+        self::clear_exam_runtime_snapshots_for_question_delete($exam_ids);
+        self::warm_exam_question_delivery_snapshots($exam_ids);
+    }
+
+    /**
+     * @param array<int,int> $exam_ids
      * @param array<int,array<int,int>> $partial_question_ids_by_exam
      */
     private static function refresh_exam_question_delivery_snapshots_after_question_updates(array $exam_ids, array $partial_question_ids_by_exam): void
@@ -2119,7 +2162,22 @@ final class CBT_Admin_Questions_Service
                     CBT_Admin_Questions_Sync_Helper::is_bank_question_snapshot($previous_question_snapshot) &&
                     !empty($current_question_snapshot)
                 ) {
-                    $bank_update_targets = CBT_Admin_Questions_Sync_Helper::propagate_bank_question_update_with_targets($question_id, $previous_question_snapshot, $current_question_snapshot);
+                    try {
+                        $bank_update_targets = CBT_Admin_Questions_Sync_Helper::propagate_bank_question_update_with_targets($question_id, $previous_question_snapshot, $current_question_snapshot);
+                    } catch (Throwable $throwable) {
+                        CBT_Cache::invalidate_catalog();
+                        if (!empty($affected_exam_ids)) {
+                            CBT_Cache::invalidate_exams(array_values($affected_exam_ids));
+                        }
+                        wp_safe_redirect(add_query_arg(
+                            [
+                                'page' => $return_page,
+                                'cbt_err' => 'Sinkronisasi Bank Soal gagal. Perubahan soal utama tersimpan, tetapi soal turunan tidak diterapkan sebagian. Silakan coba simpan ulang.',
+                            ],
+                            admin_url('admin.php')
+                        ));
+                        exit;
+                    }
                     foreach ($bank_update_targets as $bank_update_target) {
                         $affected_exam_id = (int) ($bank_update_target['exam_id'] ?? 0);
                         $affected_question_id = (int) ($bank_update_target['question_id'] ?? 0);
@@ -2239,9 +2297,7 @@ final class CBT_Admin_Questions_Service
                     CBT_Admin_Questions_Import_Helper::remove_question_import_created_question_ids_for_current_user($question_import_token, [$id]);
                 }
                 if (!empty($affected_exam_ids)) {
-                    CBT_Cache::invalidate_catalog();
-                    CBT_Cache::invalidate_exams($affected_exam_ids);
-                    self::warm_exam_question_delivery_snapshots($affected_exam_ids);
+                    self::refresh_exam_question_delivery_snapshots_after_question_delete($affected_exam_ids);
                 }
             }
     
@@ -2641,7 +2697,12 @@ final class CBT_Admin_Questions_Service
                     if (empty($after_snapshot)) {
                         continue;
                     }
-                    $bank_update_targets = CBT_Admin_Questions_Sync_Helper::propagate_bank_question_update_with_targets((int) $source_question_id, $before_snapshot, $after_snapshot);
+                    try {
+                        $bank_update_targets = CBT_Admin_Questions_Sync_Helper::propagate_bank_question_update_with_targets((int) $source_question_id, $before_snapshot, $after_snapshot);
+                    } catch (Throwable $throwable) {
+                        $redirect_args['cbt_err'] = 'Sinkronisasi Bank Soal gagal. Bulk update soal utama tersimpan, tetapi soal turunan tidak diterapkan sebagian. Silakan coba ulangi bulk update.';
+                        self::dispatch_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
+                    }
                     foreach ((array) $bank_update_targets as $bank_update_target) {
                         $affected_exam_id = (int) ($bank_update_target['exam_id'] ?? 0);
                         $affected_question_id = (int) ($bank_update_target['question_id'] ?? 0);
@@ -3164,9 +3225,7 @@ final class CBT_Admin_Questions_Service
     
             self::clear_question_delete_transients($token);
             if ($deleted > 0) {
-                CBT_Cache::invalidate_catalog();
-                CBT_Cache::invalidate_exams(array_values($affected_exam_ids));
-                self::warm_exam_question_delivery_snapshots(array_values($affected_exam_ids));
+                self::refresh_exam_question_delivery_snapshots_after_question_delete(array_values($affected_exam_ids));
                 $redirect_args['cbt_msg'] = sprintf('Hapus soal selesai. Total: %d, Deleted: %d, Failed: %d', $total, $deleted, $failed);
             } else {
                 $redirect_args['cbt_err'] = 'Tidak ada soal yang berhasil dihapus.';

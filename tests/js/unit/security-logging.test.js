@@ -42,7 +42,7 @@ function createFixture(overrides = {}) {
         setTimeout: setTimeout
     };
     var documentRef = {
-        hasFocus: function () {
+        hasFocus: overrides.hasFocus || function () {
             return true;
         },
         visibilityState: 'visible'
@@ -125,5 +125,34 @@ describe('createSecurityLoggingManager', function () {
             }
         });
         expect(sharedSessionStorage.getItem('cbt_exam_frontend_pending_page_leave_v1')).toBe(null);
+    });
+
+    it('aggregates repeated window blur logs into one burst context', function () {
+        var hasFocus = false;
+        var fixture = createFixture({
+            hasFocus: function () {
+                return hasFocus;
+            }
+        });
+
+        fixture.manager.scheduleWindowBlurSecurityLog('blur');
+        vi.advanceTimersByTime(300);
+        fixture.manager.scheduleWindowBlurSecurityLog('blur');
+        vi.advanceTimersByTime(800);
+
+        expect(fixture.fetchCalls).toHaveLength(1);
+        expect(JSON.parse(String(fixture.fetchCalls[0].options.body))).toMatchObject({
+            attempt_id: 44,
+            event_type: 'window_blur',
+            context: {
+                source: 'blur',
+                blur_burst_count: 2,
+                blur_burst_window_ms: 300,
+                has_focus: 0,
+                visibility_state: 'visible'
+            }
+        });
+
+        hasFocus = true;
     });
 });

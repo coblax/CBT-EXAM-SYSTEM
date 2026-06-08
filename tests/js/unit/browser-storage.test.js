@@ -37,6 +37,21 @@ describe('browser-storage', () => {
             expect(idb).not.toBeNull();
         });
 
+        it('reports durable storage health when IndexedDB is available', () => {
+            var health = access.getStorageHealth();
+
+            expect(health).toMatchObject({
+                cacheApiAvailable: false,
+                indexedDbAvailable: true,
+                localAnswerStorageAvailable: true,
+                localStorageAvailable: true,
+                mode: 'durable',
+                serviceWorkerControlled: false,
+                sessionStorageAvailable: true,
+                warningLevel: 'ok'
+            });
+        });
+
         it('caches sessionStorage result', () => {
             var first = access.getSessionStorage();
             var second = access.getSessionStorage();
@@ -56,6 +71,11 @@ describe('browser-storage', () => {
             expect(access.getSessionStorage()).toBeNull();
             expect(access.getLocalStorage()).toBeNull();
             expect(access.getIndexedDb()).toBeNull();
+            expect(access.getStorageHealth()).toMatchObject({
+                localAnswerStorageAvailable: false,
+                mode: 'memory_only',
+                warningLevel: 'unsafe'
+            });
         });
     });
 
@@ -79,6 +99,24 @@ describe('browser-storage', () => {
             });
             expect(access.getLocalStorage()).toBeNull();
         });
+
+        it('reports fallback health when only sessionStorage is usable', () => {
+            var access = createBrowserStorageAccess({
+                sessionStorage: {
+                    setItem: () => {},
+                    removeItem: () => {}
+                }
+            });
+
+            expect(access.getStorageHealth()).toMatchObject({
+                indexedDbAvailable: false,
+                localAnswerStorageAvailable: true,
+                localStorageAvailable: false,
+                mode: 'fallback',
+                sessionStorageAvailable: true,
+                warningLevel: 'fallback'
+            });
+        });
     });
 
     describe('with no storage properties', () => {
@@ -95,6 +133,24 @@ describe('browser-storage', () => {
         it('returns null for missing indexedDB', () => {
             var access = createBrowserStorageAccess({});
             expect(access.getIndexedDb()).toBeNull();
+        });
+
+        it('reports Cache API and Service Worker controller availability', () => {
+            var access = createBrowserStorageAccess({
+                caches: {
+                    open: () => Promise.resolve({})
+                },
+                navigator: {
+                    serviceWorker: {
+                        controller: {}
+                    }
+                }
+            });
+
+            expect(access.getStorageHealth()).toMatchObject({
+                cacheApiAvailable: true,
+                serviceWorkerControlled: true
+            });
         });
     });
 });

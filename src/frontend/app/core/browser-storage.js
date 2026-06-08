@@ -54,9 +54,64 @@ export function createBrowserStorageAccess(windowRef) {
         }
     }
 
+    function getCacheApi() {
+        try {
+            return windowRef && windowRef.caches && typeof windowRef.caches.open === 'function'
+                ? windowRef.caches
+                : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function hasServiceWorkerController() {
+        try {
+            return !!(
+                windowRef
+                && windowRef.navigator
+                && windowRef.navigator.serviceWorker
+                && windowRef.navigator.serviceWorker.controller
+            );
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function getStorageHealth() {
+        var indexedDbAvailable = !!getIndexedDb();
+        var localStorageAvailable = !!getLocalStorage();
+        var sessionStorageAvailable = !!getSessionStorage();
+        var cacheApiAvailable = !!getCacheApi();
+        var serviceWorkerControlled = hasServiceWorkerController();
+        var localAnswerStorageAvailable = indexedDbAvailable || localStorageAvailable || sessionStorageAvailable;
+        var mode = 'memory_only';
+        var warningLevel = 'unsafe';
+
+        if (indexedDbAvailable) {
+            mode = 'durable';
+            warningLevel = 'ok';
+        } else if (localStorageAvailable || sessionStorageAvailable) {
+            mode = 'fallback';
+            warningLevel = 'fallback';
+        }
+
+        return {
+            cacheApiAvailable: cacheApiAvailable,
+            indexedDbAvailable: indexedDbAvailable,
+            localAnswerStorageAvailable: localAnswerStorageAvailable,
+            localStorageAvailable: localStorageAvailable,
+            mode: mode,
+            serviceWorkerControlled: serviceWorkerControlled,
+            sessionStorageAvailable: sessionStorageAvailable,
+            warningLevel: warningLevel
+        };
+    }
+
     return {
+        getCacheApi: getCacheApi,
         getIndexedDb: getIndexedDb,
         getLocalStorage: getLocalStorage,
+        getStorageHealth: getStorageHealth,
         getSessionStorage: getSessionStorage
     };
 }

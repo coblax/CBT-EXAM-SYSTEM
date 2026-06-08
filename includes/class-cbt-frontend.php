@@ -798,6 +798,7 @@ class CBT_Frontend
     var CACHE_PREFIX = {$cache_prefix_json};
     var STATIC_CACHE = CACHE_PREFIX + 'static-' + BUILD_ID;
     var SHELL_CACHE = CACHE_PREFIX + 'shell-' + BUILD_ID;
+    var MEDIA_CACHE = CACHE_PREFIX + 'media-' + BUILD_ID;
     var PRECACHE_URLS = {$asset_urls_json};
     var SHELL_URL = {$shell_url_json};
     var SCOPE_PATH = {$scope_path_json};
@@ -809,6 +810,7 @@ class CBT_Frontend
     var AUTH_GRANT_STORE = 'auth_grants';
     var ANSWER_SYNC_TAG = 'cbt-answer-sync';
     var ANSWER_SYNC_LEASE_MS = 30000;
+    var MEDIA_PRECACHE_LIMIT = 200;
     var PRECACHE_LOOKUP = Object.create(null);
 
     PRECACHE_URLS.forEach(function (url) {
@@ -869,6 +871,12 @@ class CBT_Frontend
             || PRECACHE_LOOKUP[url.pathname] === true;
     }
 
+    function isPrecacheMediaUrl(url) {
+        return isSameOrigin(url)
+            && url.pathname.indexOf(REST_BASE_PATH) !== 0
+            && /\.(?:avif|bmp|gif|jpe?g|m4a|m4v|mov|mp3|mp4|oga|ogg|png|svg|wav|webm|webp)$/i.test(url.pathname);
+    }
+
     function cacheFirstStatic(request) {
         return caches.match(request).then(function (cached) {
             if (cached) {
@@ -877,6 +885,46 @@ class CBT_Frontend
             return caches.open(STATIC_CACHE).then(function (cache) {
                 return cacheRequest(cache, request);
             });
+        });
+    }
+
+    function cacheFirstMedia(request) {
+        return caches.open(MEDIA_CACHE).then(function (cache) {
+            return cache.match(request).then(function (cached) {
+                if (cached) {
+                    return cached;
+                }
+                return cacheRequest(cache, request);
+            });
+        });
+    }
+
+    function precacheMediaUrls(urls) {
+        var normalizedUrls = [];
+        (Array.isArray(urls) ? urls : []).forEach(function (rawUrl) {
+            if (normalizedUrls.length >= MEDIA_PRECACHE_LIMIT) {
+                return;
+            }
+            try {
+                var url = new URL(String(rawUrl || ''), self.location.href);
+                if (isPrecacheMediaUrl(url) && normalizedUrls.indexOf(url.href) < 0) {
+                    normalizedUrls.push(url.href);
+                }
+            } catch (error) {}
+        });
+
+        if (!normalizedUrls.length) {
+            return Promise.resolve(0);
+        }
+
+        return caches.open(MEDIA_CACHE).then(function (cache) {
+            return Promise.all(normalizedUrls.map(function (url) {
+                return cachePrecacheUrl(cache, url);
+            }));
+        }).then(function (responses) {
+            return responses.filter(Boolean).length;
+        }).catch(function () {
+            return 0;
         });
     }
 
@@ -1205,12 +1253,21 @@ class CBT_Frontend
 
     self.addEventListener('message', function (event) {
         var data = event && event.data && typeof event.data === 'object' ? event.data : null;
-        if (!data || String(data.type || '') !== 'CBT_FLUSH_ANSWER_QUEUE') {
+        if (!data) {
             return;
         }
-        var flushPromise = flushQueuedAnswers();
-        if (event && typeof event.waitUntil === 'function') {
-            event.waitUntil(flushPromise);
+        if (String(data.type || '') === 'CBT_PRECACHE_MEDIA_URLS') {
+            var mediaPromise = precacheMediaUrls(data.urls);
+            if (event && typeof event.waitUntil === 'function') {
+                event.waitUntil(mediaPromise);
+            }
+            return;
+        }
+        if (String(data.type || '') === 'CBT_FLUSH_ANSWER_QUEUE') {
+            var flushPromise = flushQueuedAnswers();
+            if (event && typeof event.waitUntil === 'function') {
+                event.waitUntil(flushPromise);
+            }
         }
     });
 
@@ -1233,6 +1290,11 @@ class CBT_Frontend
 
         if (isStaticBuildAsset(url)) {
             event.respondWith(cacheFirstStatic(request));
+            return;
+        }
+
+        if (isPrecacheMediaUrl(url)) {
+            event.respondWith(cacheFirstMedia(request));
             return;
         }
 

@@ -94,6 +94,9 @@ export function bootstrapFrontendApp() {
     }
     var browserStorage = createBrowserStorageAccess(window);
     var state = createInitialState(window);
+    if (typeof browserStorage.getStorageHealth === 'function') {
+        state.storageHealth = browserStorage.getStorageHealth();
+    }
     var debugManager = createFrontendDebugManagerBridge();
     var diagnosticsManager = createFrontendDiagnosticsManager({
         config: config,

@@ -325,6 +325,71 @@ describe('createExamSecurityManager', function () {
         });
     });
 
+    it('logs ChromeOS screenshot shortcuts without blocking input', function () {
+        var setup = createManager({
+            screenshotKeyDetection: true,
+            navigator: {
+                platform: 'ChromeOS'
+            }
+        });
+        var event = {
+            key: 'F5',
+            code: 'F5',
+            altKey: false,
+            ctrlKey: true,
+            metaKey: false,
+            shiftKey: true,
+            defaultPrevented: false,
+            propagationStopped: false,
+            preventDefault: function () {
+                this.defaultPrevented = true;
+            },
+            stopPropagation: function () {
+                this.propagationStopped = true;
+            }
+        };
+
+        setup.manager.mountSecurityListeners();
+        setup.documentRef.dispatchEvent('keydown', event);
+
+        expect(event.defaultPrevented).toBe(false);
+        expect(event.propagationStopped).toBe(false);
+        expect(setup.calls).toHaveLength(1);
+        expect(setup.calls[0]).toMatchObject({
+            eventType: 'screenshot_key_detected',
+            context: {
+                source: 'chromeos_partial_screenshot_shortcut',
+                key: 'F5',
+                code: 'F5',
+                ctrl_key: 1,
+                shift_key: 1,
+                platform_hint: 'ChromeOS',
+                blocked: 0
+            }
+        });
+    });
+
+    it('does not treat Ctrl+F5 as screenshot on non-ChromeOS platforms', function () {
+        var setup = createManager({
+            screenshotKeyDetection: true,
+            navigator: {
+                platform: 'Win32'
+            }
+        });
+
+        setup.manager.mountSecurityListeners();
+        setup.documentRef.dispatchEvent('keydown', {
+            key: 'F5',
+            code: 'F5',
+            altKey: false,
+            ctrlKey: true,
+            metaKey: false,
+            shiftKey: false
+        });
+
+        expect(setup.calls).toHaveLength(0);
+    });
+
     it('does not log screenshot keys outside exam, without logging, without attempt, or when disabled', function () {
         [
             createManager({ screenshotKeyDetection: false }),

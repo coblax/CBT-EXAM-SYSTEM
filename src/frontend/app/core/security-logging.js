@@ -18,6 +18,9 @@ export function createSecurityLoggingManager(deps) {
     var tabHiddenLogScheduledAttemptId = 0;
     var windowBlurLogTimer = 0;
     var windowBlurLogScheduledAttemptId = 0;
+    var windowBlurBurstStartedAt = 0;
+    var windowBlurBurstCount = 0;
+    var WINDOW_BLUR_BURST_WINDOW_MS = 10000;
 
     function clearRuntimeState() {
         if (tabHiddenLogTimer) {
@@ -30,6 +33,8 @@ export function createSecurityLoggingManager(deps) {
         tabHiddenLogScheduledAttemptId = 0;
         windowBlurLogTimer = 0;
         windowBlurLogScheduledAttemptId = 0;
+        windowBlurBurstStartedAt = 0;
+        windowBlurBurstCount = 0;
         pageLeaveLoggedAttemptId = 0;
         securityEventLastSentAtByKey = {};
     }
@@ -232,6 +237,21 @@ export function createSecurityLoggingManager(deps) {
         return isSecurityLoggingActiveForAttempt() && !state.isFinishing;
     }
 
+    function noteWindowBlurBurst() {
+        var now = Date.now();
+        if (windowBlurBurstStartedAt <= 0 || (windowBlurBurstStartedAt + WINDOW_BLUR_BURST_WINDOW_MS) < now) {
+            windowBlurBurstStartedAt = now;
+            windowBlurBurstCount = 0;
+        }
+
+        windowBlurBurstCount += 1;
+
+        return {
+            count: windowBlurBurstCount,
+            windowMs: Math.max(0, now - windowBlurBurstStartedAt)
+        };
+    }
+
     function scheduleTabHiddenSecurityLog() {
         if (!isSecurityLoggingActiveForAttempt()) {
             return;
@@ -280,6 +300,7 @@ export function createSecurityLoggingManager(deps) {
         }
 
         cancelScheduledWindowBlurSecurityLog();
+        var blurBurstMeta = noteWindowBlurBurst();
         windowBlurLogScheduledAttemptId = attemptId;
         windowBlurLogTimer = windowRef.setTimeout(function () {
             var hasFocus = typeof documentRef.hasFocus === 'function' ? documentRef.hasFocus() : true;
@@ -301,6 +322,8 @@ export function createSecurityLoggingManager(deps) {
 
             sendSecurityEventSilently('window_blur', {
                 source: String(source || 'blur'),
+                blur_burst_count: Number(blurBurstMeta.count) || 1,
+                blur_burst_window_ms: Number(blurBurstMeta.windowMs) || 0,
                 visibility_state: String(documentRef.visibilityState || ''),
                 has_focus: hasFocus ? 1 : 0
             }, {

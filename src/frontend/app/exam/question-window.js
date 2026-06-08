@@ -7,7 +7,13 @@ export function createQuestionWindowManager(deps) {
     var questionPrefetchIdleDelayMs = Math.max(0, Number(deps.questionPrefetchIdleDelayMs) || 0);
     var escapeHtml = deps.escapeHtml;
     var getLoadQuestionWindow = deps.getLoadQuestionWindow;
+    var getNavigatorConnectionStatus = typeof deps.getNavigatorConnectionStatus === 'function'
+        ? deps.getNavigatorConnectionStatus
+        : function () { return 'online'; };
     var isQuestionRevisionRefreshActive = deps.isQuestionRevisionRefreshActive;
+    var prewarmQuestionMedia = typeof deps.prewarmQuestionMedia === 'function'
+        ? deps.prewarmQuestionMedia
+        : function () { return []; };
 
     var questionPrefetchIdleTimer = 0;
     var questionPrefetchInFlightByOffset = {};
@@ -125,6 +131,25 @@ export function createQuestionWindowManager(deps) {
         return !!(state.loadedQuestionWindowOffsets && state.loadedQuestionWindowOffsets[safeOffset]);
     }
 
+    function isQuestionWindowFullyLoaded(offset, limit) {
+        var totalQuestions = getQuestionCount();
+        var safeOffset = Math.max(0, Number(offset) || 0);
+        var safeLimit = Math.max(1, Number(limit) || questionWindowSize);
+        var endIndex = Math.min(totalQuestions, safeOffset + safeLimit);
+
+        if (totalQuestions <= 0 || safeOffset >= totalQuestions || endIndex <= safeOffset) {
+            return false;
+        }
+
+        for (var index = safeOffset; index < endIndex; index++) {
+            if (!isQuestionPayloadLoaded(getQuestionIdAtIndex(index))) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     function markQuestionWindowLoaded(offset) {
         var safeOffset = Math.max(0, Number(offset) || 0);
         if (!state.loadedQuestionWindowOffsets || typeof state.loadedQuestionWindowOffsets !== 'object') {
@@ -174,6 +199,21 @@ export function createQuestionWindowManager(deps) {
         return items;
     }
 
+    function prewarmQuestionMediaForWindow(offset, limit, reason) {
+        var items = buildQuestionWindowItems(offset, limit);
+        if (!items.length) {
+            return [];
+        }
+
+        return prewarmQuestionMedia(items, {
+            attemptId: Number(state.attemptId) || 0,
+            examId: Number(state.selectedExamId) || 0,
+            limit: Math.max(1, Number(limit) || questionWindowSize),
+            offset: Math.max(0, Number(offset) || 0),
+            reason: String(reason || 'question-window')
+        });
+    }
+
     function setQuestionWindowFromLoadedPayloads(offset, limit) {
         var safeOffset = Math.max(0, Number(offset) || 0);
         var safeLimit = Math.max(1, Number(limit) || questionWindowSize);
@@ -186,6 +226,7 @@ export function createQuestionWindowManager(deps) {
         state.windowLimit = safeLimit;
         state.questions = items;
         markQuestionWindowLoaded(safeOffset);
+        prewarmQuestionMediaForWindow(safeOffset, safeLimit, 'active-window');
         return true;
     }
 
@@ -332,7 +373,14 @@ export function createQuestionWindowManager(deps) {
     function resetQuestionPrefetchIdleTimer() {
         clearQuestionPrefetchIdleTimer();
 
-        if (state.stage !== 'exam' || state.attemptId <= 0 || state.isFinishing || isQuestionRevisionRefreshActive()) {
+        if (
+            state.stage !== 'exam'
+            || state.attemptId <= 0
+            || state.isFinishing
+            || getNavigatorConnectionStatus() === 'offline'
+            || state.connectionStatus === 'offline'
+            || isQuestionRevisionRefreshActive()
+        ) {
             return;
         }
 
@@ -349,50 +397,114 @@ export function createQuestionWindowManager(deps) {
     }
 
     function noteQuestionPrefetchActivity() {
-        if (state.stage !== 'exam' || state.attemptId <= 0 || state.isFinishing || isQuestionRevisionRefreshActive()) {
+        if (
+            state.stage !== 'exam'
+            || state.attemptId <= 0
+            || state.isFinishing
+            || getNavigatorConnectionStatus() === 'offline'
+            || state.connectionStatus === 'offline'
+            || isQuestionRevisionRefreshActive()
+        ) {
             return;
         }
 
         resetQuestionPrefetchIdleTimer();
     }
 
-    function prefetchNextQuestionBatch() {
-        if (state.stage !== 'exam' || state.attemptId <= 0 || state.isFinishing || isQuestionRevisionRefreshActive()) {
+    function isQuestionPrefetchPaused() {
+        return state.stage !== 'exam'
+            || state.attemptId <= 0
+            || state.isFinishing
+            || getNavigatorConnectionStatus() === 'offline'
+            || state.connectionStatus === 'offline'
+            || isQuestionRevisionRefreshActive();
+    }
+
+    function prefetchQuestionWindowAtOffset(offset, limit, reason) {
+        var totalQuestions = getQuestionCount();
+        var safeOffset = Math.max(0, Math.floor(Number(offset) || 0));
+        var safeLimit;
+        var loader;
+        var request;
+
+        if (isQuestionPrefetchPaused() || totalQuestions <= 0 || safeOffset >= totalQuestions) {
             return Promise.resolve(null);
         }
 
+        safeLimit = Math.min(Math.max(1, Math.floor(Number(limit) || questionPrefetchBatchSize)), totalQuestions - safeOffset);
+        if (safeLimit <= 0) {
+            return Promise.resolve(null);
+        }
+
+        if (isQuestionWindowFullyLoaded(safeOffset, safeLimit)) {
+            markQuestionWindowLoaded(safeOffset);
+            prewarmQuestionMediaForWindow(safeOffset, safeLimit, reason || 'prefetch-loaded');
+            updateQuestionPrefetchIndicator();
+            return Promise.resolve(null);
+        }
+
+        if (questionPrefetchInFlightByOffset[safeOffset]) {
+            return questionPrefetchInFlightByOffset[safeOffset];
+        }
+
+        loader = getLoadQuestionWindow();
+        if (typeof loader !== 'function') {
+            return Promise.resolve(null);
+        }
+
+        request = Promise.resolve().then(function () {
+            return loader(safeOffset, {
+                examId: state.selectedExamId,
+                attemptId: state.attemptId,
+                includeExisting: 1,
+                limit: safeLimit,
+                scenarioTarget: 'prefetch',
+                preserveActiveWindow: true
+            });
+        }).then(function (result) {
+            prewarmQuestionMediaForWindow(safeOffset, safeLimit, reason || 'prefetch');
+            return result;
+        }).catch(function () {
+            return null;
+        }).finally(function () {
+            delete questionPrefetchInFlightByOffset[safeOffset];
+            updateQuestionPrefetchIndicator();
+        });
+
+        questionPrefetchInFlightByOffset[safeOffset] = request;
+        updateQuestionPrefetchIndicator();
+        return request;
+    }
+
+    function prefetchNextQuestionBatch() {
         var offset = getNextQuestionPrefetchOffset();
         if (offset < 0) {
             return Promise.resolve(null);
         }
 
-        if (questionPrefetchInFlightByOffset[offset]) {
-            return questionPrefetchInFlightByOffset[offset];
-        }
-
         var totalQuestions = getQuestionCount();
         var limit = Math.min(questionPrefetchBatchSize, Math.max(0, totalQuestions - offset));
-        if (limit <= 0) {
+        return prefetchQuestionWindowAtOffset(offset, limit, 'idle-prefetch');
+    }
+
+    function prefetchNextQuestionWindow() {
+        var totalQuestions = getQuestionCount();
+        var currentIndex = clampQuestionIndex(state.currentIndex);
+        var currentWindowOffset = questionWindowOffsetForIndex(currentIndex, questionWindowSize);
+        var indexInWindow = currentIndex - currentWindowOffset;
+        var nextWindowOffset = currentWindowOffset + questionWindowSize;
+        var limit;
+
+        if (totalQuestions <= 0 || nextWindowOffset >= totalQuestions) {
             return Promise.resolve(null);
         }
 
-        var request = getLoadQuestionWindow()(offset, {
-            examId: state.selectedExamId,
-            attemptId: state.attemptId,
-            includeExisting: 1,
-            limit: limit,
-            scenarioTarget: 'prefetch',
-            preserveActiveWindow: true
-        }).catch(function () {
-            return null;
-        }).finally(function () {
-            delete questionPrefetchInFlightByOffset[offset];
-            updateQuestionPrefetchIndicator();
-        });
+        if (indexInWindow < Math.max(0, questionWindowSize - 3)) {
+            return Promise.resolve(null);
+        }
 
-        questionPrefetchInFlightByOffset[offset] = request;
-        updateQuestionPrefetchIndicator();
-        return request;
+        limit = Math.min(questionWindowSize, Math.max(0, totalQuestions - nextWindowOffset));
+        return prefetchQuestionWindowAtOffset(nextWindowOffset, limit, 'boundary-prefetch');
     }
 
     function validAttemptQuestionIds() {
@@ -426,9 +538,11 @@ export function createQuestionWindowManager(deps) {
         getQuestionPrefetchMeta: getQuestionPrefetchMeta,
         isIndexInCurrentWindow: isIndexInCurrentWindow,
         isQuestionPayloadLoaded: isQuestionPayloadLoaded,
+        isQuestionWindowFullyLoaded: isQuestionWindowFullyLoaded,
         isQuestionWindowLoaded: isQuestionWindowLoaded,
         markQuestionWindowLoaded: markQuestionWindowLoaded,
         noteQuestionPrefetchActivity: noteQuestionPrefetchActivity,
+        prefetchNextQuestionWindow: prefetchNextQuestionWindow,
         prefetchNextQuestionBatch: prefetchNextQuestionBatch,
         questionWindowOffsetForIndex: questionWindowOffsetForIndex,
         renderQuestionPrefetchIndicator: renderQuestionPrefetchIndicator,

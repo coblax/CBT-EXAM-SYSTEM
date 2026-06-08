@@ -351,6 +351,53 @@ describe('createExamSecurityManager', function () {
             expect(sendSpy).toHaveBeenCalledWith('screenshot_key_detected', expect.objectContaining({ source: 'macos_screenshot_shortcut' }), expect.any(Object));
         });
 
+        it('detects ChromeOS full and partial screenshot shortcuts on ChromeOS only', function () {
+            var state = createState();
+            var sendSpy = vi.fn().mockReturnValue(true);
+            var manager = createExamSecurityManager(createDeps(state, {
+                sendSecurityEventSilently: sendSpy,
+                windowRef: {
+                    navigator: {
+                        platform: 'ChromeOS'
+                    },
+                    setInterval: vi.fn(),
+                    clearInterval: vi.fn(),
+                    setTimeout: setTimeout,
+                    clearTimeout: clearTimeout
+                }
+            }));
+
+            var fullResult = manager.handleScreenshotKeySignal({ key: 'F5', code: 'F5', ctrlKey: true, shiftKey: false, metaKey: false, altKey: false });
+            var partialResult = manager.handleScreenshotKeySignal({ key: 'F5', code: 'F5', ctrlKey: true, shiftKey: true, metaKey: false, altKey: false });
+
+            expect(fullResult).toBe(true);
+            expect(partialResult).toBe(true);
+            expect(sendSpy).toHaveBeenNthCalledWith(1, 'screenshot_key_detected', expect.objectContaining({ source: 'chromeos_screenshot_shortcut' }), expect.any(Object));
+            expect(sendSpy).toHaveBeenNthCalledWith(2, 'screenshot_key_detected', expect.objectContaining({ source: 'chromeos_partial_screenshot_shortcut' }), expect.any(Object));
+        });
+
+        it('ignores Ctrl+F5 screenshot fallback outside ChromeOS', function () {
+            var state = createState();
+            var sendSpy = vi.fn();
+            var manager = createExamSecurityManager(createDeps(state, {
+                sendSecurityEventSilently: sendSpy,
+                windowRef: {
+                    navigator: {
+                        platform: 'Win32'
+                    },
+                    setInterval: vi.fn(),
+                    clearInterval: vi.fn(),
+                    setTimeout: setTimeout,
+                    clearTimeout: clearTimeout
+                }
+            }));
+
+            var result = manager.handleScreenshotKeySignal({ key: 'F5', code: 'F5', ctrlKey: true, shiftKey: false, metaKey: false, altKey: false });
+
+            expect(result).toBe(false);
+            expect(sendSpy).not.toHaveBeenCalled();
+        });
+
         it('ignores regular keys', function () {
             var state = createState();
             var sendSpy = vi.fn();

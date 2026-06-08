@@ -167,6 +167,39 @@ final class AdminQuestionDeleteGuardTest extends TestCase
         self::assertStringContainsString('cbt_msg=Question+deleted', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
     }
 
+    #[RunInSeparateProcess]
+    public function test_handle_delete_question_clears_runtime_snapshots_before_warming_exam_again(): void
+    {
+        $this->bootstrapQuestionsDeleteGuardScaffold();
+        $this->bootstrapRuntimeSnapshotCacheStubs();
+        $this->setRosterRedisUnavailable();
+
+        global $wpdb;
+        $wpdb = new AdminQuestionDeleteGuardFakeWpdb([
+            ['id' => 601, 'exam_id' => 72, 'source_question_id' => 0],
+        ]);
+
+        $_GET = [
+            'id' => 601,
+            'return_page' => 'cbt-question-bank',
+        ];
+
+        try {
+            CBT_Admin_Questions_Service::handle_delete_question();
+            self::fail('Expected redirect signal was not thrown.');
+        } catch (RuntimeException $runtimeException) {
+            self::assertSame('__cbt_admin_questions_redirect__', $runtimeException->getMessage());
+        }
+
+        self::assertSame([72], CBT_Exam_Question_Delivery_Cache::$clearedExamIds);
+        self::assertSame([72], CBT_Exam_Start_Attempt_Snapshot_Cache::$clearedExamIds);
+        self::assertSame([72], CBT_Question_Submission_Context_Cache::$clearedExamIds);
+        self::assertSame([72], CBT_REST::$warmedDeliveryExamIds);
+        self::assertSame([72], CBT_REST::$warmedStartAttemptExamIds);
+        self::assertSame(1, $wpdb->deleteCalls);
+        self::assertStringContainsString('cbt_msg=Question+deleted', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+    }
+
     private function bootstrapQuestionsDeleteGuardScaffold(): void
     {
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-cache.php';
@@ -207,6 +240,80 @@ final class AdminQuestionDeleteGuardTest extends TestCase
         $errorProperty = $reflection->getProperty('roster_redis_last_connection_error');
         $errorProperty->setAccessible(true);
         $errorProperty->setValue(null, 'disabled in test');
+    }
+
+    private function bootstrapRuntimeSnapshotCacheStubs(): void
+    {
+        if (!class_exists('CBT_Exam_Question_Delivery_Cache')) {
+            eval(<<<'PHP'
+class CBT_Exam_Question_Delivery_Cache
+{
+    /** @var int[] */
+    public static array $clearedExamIds = [];
+
+    public static function clear_exam_payload(int $exam_id): int
+    {
+        self::$clearedExamIds[] = $exam_id;
+        return 1;
+    }
+}
+PHP);
+        }
+
+        if (!class_exists('CBT_Exam_Start_Attempt_Snapshot_Cache')) {
+            eval(<<<'PHP'
+class CBT_Exam_Start_Attempt_Snapshot_Cache
+{
+    /** @var int[] */
+    public static array $clearedExamIds = [];
+
+    public static function clear_exam_snapshot(int $exam_id): int
+    {
+        self::$clearedExamIds[] = $exam_id;
+        return 1;
+    }
+}
+PHP);
+        }
+
+        if (!class_exists('CBT_Question_Submission_Context_Cache')) {
+            eval(<<<'PHP'
+class CBT_Question_Submission_Context_Cache
+{
+    /** @var int[] */
+    public static array $clearedExamIds = [];
+
+    /** @return array<string,int> */
+    public static function clear_exam_snapshots(int $exam_id): array
+    {
+        self::$clearedExamIds[] = $exam_id;
+        return ['deleted_keys' => 1];
+    }
+}
+PHP);
+        }
+
+        if (!class_exists('CBT_REST')) {
+            eval(<<<'PHP'
+class CBT_REST
+{
+    /** @var int[] */
+    public static array $warmedDeliveryExamIds = [];
+    /** @var int[] */
+    public static array $warmedStartAttemptExamIds = [];
+
+    public static function warm_exam_question_delivery_snapshot(int $exam_id): void
+    {
+        self::$warmedDeliveryExamIds[] = $exam_id;
+    }
+
+    public static function warm_exam_start_attempt_snapshot(int $exam_id): void
+    {
+        self::$warmedStartAttemptExamIds[] = $exam_id;
+    }
+}
+PHP);
+        }
     }
 }
 

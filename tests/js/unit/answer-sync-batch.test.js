@@ -490,6 +490,33 @@ describe('createAnswerSyncManager', function () {
             expect(state.lastSyncError).toContain('Failed to fetch');
         });
 
+        it('skips HTTP flush while offline and keeps pending answers queued', async function () {
+            var state = createState({
+                connectionStatus: 'offline'
+            });
+            var apiRequest = vi.fn();
+            var manager = createAnswerSyncManager(createDeps(state, {
+                apiRequest: apiRequest,
+                getNavigatorConnectionStatus: vi.fn().mockReturnValue('offline'),
+                questionAnswerPayload: function (q) { return q.answer; },
+                payloadSignature: function (payload) { return 'sig-' + payload; }
+            }));
+
+            manager.queueQuestionAnswer({ id: 100, answer: 'A' });
+            var result = await manager.flushPendingAnswerBatch({ flushAll: true });
+
+            expect(apiRequest).not.toHaveBeenCalled();
+            expect(result).toMatchObject({
+                attempt_id: 42,
+                buffered: 1,
+                flushed: 0,
+                offline: true
+            });
+            expect(manager.getPendingSyncQuestionIds()).toEqual([100]);
+            expect(state.pendingSyncCount).toBe(1);
+            expect(state.syncBlockingReason).toBe('offline_pending_sync');
+        });
+
         it('recovers partial legacy fallback success and requeues only remaining answers', async function () {
             var state = createState();
             var apiRequest = vi.fn().mockImplementation(function (path, options) {

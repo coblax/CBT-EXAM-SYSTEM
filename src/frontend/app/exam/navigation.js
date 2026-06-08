@@ -40,7 +40,8 @@ export function createExamNavigationManager(deps) {
     var normalizeTableCompletionAnswer = typeof deps.normalizeTableCompletionAnswer === 'function' ? deps.normalizeTableCompletionAnswer : function () { return {}; };
     var normalizeTrueFalseMatrixAnswer = deps.normalizeTrueFalseMatrixAnswer;
     var persistCurrentAttemptUiStateLocally = deps.persistCurrentAttemptUiStateLocally;
-    var prefetchNextQuestionBatch = deps.prefetchNextQuestionBatch;
+    var prefetchNextQuestionBatch = typeof deps.prefetchNextQuestionBatch === 'function' ? deps.prefetchNextQuestionBatch : function () { return Promise.resolve(null); };
+    var prefetchNextQuestionWindow = typeof deps.prefetchNextQuestionWindow === 'function' ? deps.prefetchNextQuestionWindow : function () { return Promise.resolve(null); };
     var questionOptionKey = deps.questionOptionKey;
     var questionWindowSize = deps.questionWindowSize;
     var queueQuestionAnswer = deps.queueQuestionAnswer;
@@ -86,6 +87,12 @@ export function createExamNavigationManager(deps) {
                 });
             });
         });
+    }
+
+    function scheduleQuestionPrefetchAfterNavigation() {
+        prefetchNextQuestionWindow();
+        prefetchNextQuestionBatch();
+        resetQuestionPrefetchIdleTimer();
     }
 
     function isQuestionDoubtful(question) {
@@ -667,8 +674,7 @@ export function createExamNavigationManager(deps) {
                 nextIndex: safeIndex,
                 requiresWindowLoad: false
             });
-            prefetchNextQuestionBatch();
-            resetQuestionPrefetchIdleTimer();
+            scheduleQuestionPrefetchAfterNavigation();
             return;
         }
 
@@ -701,8 +707,7 @@ export function createExamNavigationManager(deps) {
             requiresWindowLoad: requiresWindowLoad,
             revisionMarkerAcknowledged: didAcknowledgeRevisionMarker
         });
-        prefetchNextQuestionBatch();
-        resetQuestionPrefetchIdleTimer();
+        scheduleQuestionPrefetchAfterNavigation();
     }
 
     function focusFinishReviewIssue(action) {
@@ -752,8 +757,7 @@ export function createExamNavigationManager(deps) {
             }, {
                 immediate: true
             });
-            prefetchNextQuestionBatch();
-            resetQuestionPrefetchIdleTimer();
+            scheduleQuestionPrefetchAfterNavigation();
             return;
         }
 

@@ -31,6 +31,7 @@ function createFixture(overrides = {}) {
         operationOrder: [],
         persistCurrentAttemptUiStateLocally: 0,
         prefetchNextQuestionBatch: 0,
+        prefetchNextQuestionWindow: 0,
         queueQuestionAnswer: [],
         render: [],
         renderExamPartial: [],
@@ -184,6 +185,9 @@ function createFixture(overrides = {}) {
         },
         prefetchNextQuestionBatch: function () {
             calls.prefetchNextQuestionBatch += 1;
+        },
+        prefetchNextQuestionWindow: function () {
+            calls.prefetchNextQuestionWindow += 1;
         },
         questionOptionKey: questionOptionKey,
         questionWindowSize: 2,
@@ -819,6 +823,8 @@ describe('createExamNavigationManager', function () {
 
         expect(fixture.state.currentIndex).toBe(1);
         expect(fixture.state.navigationRefreshing).toBe(false);
+        expect(fixture.calls.prefetchNextQuestionWindow).toBe(1);
+        expect(fixture.calls.prefetchNextQuestionBatch).toBe(1);
         expect(fixture.calls.operationOrder.indexOf('render:navigation:question-transition')).toBeGreaterThanOrEqual(0);
         expect(fixture.calls.operationOrder.indexOf('queueQuestionAnswer:101')).toBeGreaterThanOrEqual(0);
         expect(fixture.calls.operationOrder.indexOf('render:navigation:question-transition')).toBeLessThan(

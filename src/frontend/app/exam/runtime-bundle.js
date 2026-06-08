@@ -21,6 +21,7 @@ import {
 import { createQuestionRuntimeManager } from './question-runtime';
 import { createQuestionStateManager } from './question-state';
 import { createQuestionWindowManager } from './question-window';
+import { createQuestionMediaPrewarmManager } from './media-prewarm';
 
 export function createExamRuntimeBundle(deps) {
     var state = deps.state;
@@ -29,6 +30,11 @@ export function createExamRuntimeBundle(deps) {
     var finishFlowManager = null;
     var navigationManager = null;
     var questionCacheStorage = null;
+    var questionMediaPrewarmManager = createQuestionMediaPrewarmManager({
+        diagnosticsManager: deps.diagnosticsManager,
+        recordTimeline: deps.recordTimeline,
+        windowRef: windowRef
+    });
     var durableAnswerQueue = createDurableAnswerQueueStorage({
         getIndexedDb: deps.getIndexedDb,
         getLocalStorage: deps.getLocalStorage,
@@ -43,6 +49,8 @@ export function createExamRuntimeBundle(deps) {
         isQuestionRevisionRefreshActive: function () {
             return questionRuntimeManager ? questionRuntimeManager.isQuestionRevisionRefreshActive() : false;
         },
+        getNavigatorConnectionStatus: deps.getNavigatorConnectionStatus,
+        prewarmQuestionMedia: questionMediaPrewarmManager.prewarmQuestionMedia,
         questionPrefetchBatchSize: deps.questionPrefetchBatchSize,
         questionPrefetchIdleDelayMs: deps.questionPrefetchIdleDelayMs,
         questionWindowSize: deps.questionWindowSize,
@@ -260,6 +268,7 @@ export function createExamRuntimeBundle(deps) {
         normalizeTrueFalseMatrixAnswer: normalizeTrueFalseMatrixAnswer,
         persistCurrentAttemptUiStateLocally: attemptUiStateStorage.persistCurrentAttemptUiStateLocally,
         prefetchNextQuestionBatch: questionWindowManager.prefetchNextQuestionBatch,
+        prefetchNextQuestionWindow: questionWindowManager.prefetchNextQuestionWindow,
         questionOptionKey: questionOptionKey,
         questionWindowSize: deps.questionWindowSize,
         queueQuestionAnswer: answerSyncManager.queueQuestionAnswer,
@@ -331,6 +340,7 @@ export function createExamRuntimeBundle(deps) {
         finishFlowManager: finishFlowManager,
         navigationManager: navigationManager,
         questionCacheStorage: questionCacheStorage,
+        questionMediaPrewarmManager: questionMediaPrewarmManager,
         questionFlags: questionFlags,
         questionRuntimeManager: questionRuntimeManager,
         questionStateManager: questionStateManager,

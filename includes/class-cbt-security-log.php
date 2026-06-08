@@ -2540,6 +2540,8 @@ class CBT_Security_Log
             'printscreen_key' => 'Tombol PrintScreen',
             'screenshot_key' => 'Shortcut screenshot',
             'macos_screenshot_shortcut' => 'Shortcut screenshot macOS',
+            'chromeos_screenshot_shortcut' => 'Shortcut screenshot ChromeOS',
+            'chromeos_partial_screenshot_shortcut' => 'Shortcut screenshot parsial ChromeOS',
             'contextmenu' => 'Klik kanan / context menu',
             'devtools_toggle_shortcut' => 'Shortcut buka/tutup DevTools',
             'devtools_console_shortcut' => 'Shortcut Console DevTools',

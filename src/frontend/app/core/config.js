@@ -242,6 +242,16 @@ export function createInitialState(win) {
         calculatorError: '',
         isFullscreenActive: false,
         connectionStatus: (win && win.navigator && win.navigator.onLine === false) ? 'offline' : 'online',
+        storageHealth: {
+            cacheApiAvailable: false,
+            indexedDbAvailable: false,
+            localAnswerStorageAvailable: false,
+            localStorageAvailable: false,
+            mode: 'unknown',
+            serviceWorkerControlled: false,
+            sessionStorageAvailable: false,
+            warningLevel: 'unknown'
+        },
         adaptiveLoadLevel: 'normal',
         adaptiveLoadSource: 'auto',
         adaptiveLoadReasons: [],
