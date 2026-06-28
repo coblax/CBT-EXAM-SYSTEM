@@ -1047,6 +1047,7 @@ final class MaintenanceModularizationTest extends TestCase
         self::assertStringContainsString("formData.set('cbt_maintenance_async', '1');", $html);
         self::assertStringContainsString('maintenanceRequestSeq', $html);
         self::assertStringContainsString('requestSeq !== maintenanceRequestSeq', $html);
+        self::assertStringContainsString("loadMaintenanceUrl(continueUrl, 'Memproses batch...', { loadingAreas: [] });", $html);
         self::assertStringContainsString('jobsRequestSeq', $html);
         self::assertStringContainsString('jobsRequestInFlight', $html);
         self::assertStringContainsString('replaceMaintenanceAreas(html)', $html);

@@ -1758,8 +1758,11 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
                 }
             };
 
-            const setLoading = function (isLoading, label) {
-                ['live', 'banners', 'tabs', 'panel'].forEach(function (areaName) {
+            const setLoading = function (isLoading, label, areaNames) {
+                const targetAreaNames = Array.isArray(areaNames)
+                    ? areaNames
+                    : ['live', 'banners', 'tabs', 'panel'];
+                targetAreaNames.forEach(function (areaName) {
                     setAreaLoading(areaName, isLoading, label || 'Memuat...');
                 });
             };
@@ -1852,17 +1855,18 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
                 bindAll();
             };
 
-            const loadMaintenanceUrl = function (rawUrl, label) {
+            const loadMaintenanceUrl = function (rawUrl, label, options) {
                 if (!window.fetch || !window.DOMParser) {
                     return;
                 }
 
                 const url = buildMaintenanceUrl(rawUrl);
+                const loadingAreas = options && Array.isArray(options.loadingAreas) ? options.loadingAreas : null;
                 const requestSeq = maintenanceRequestSeq + 1;
                 maintenanceRequestSeq = requestSeq;
                 url.searchParams.set('page', 'cbt-maintenance');
                 url.searchParams.set('cbt_maintenance_async', '1');
-                setLoading(true, label || 'Memuat area...');
+                setLoading(true, label || 'Memuat area...', loadingAreas);
                 requestPageHtml(url.toString()).then(function (html) {
                     if (requestSeq !== maintenanceRequestSeq) {
                         return;
@@ -1979,7 +1983,7 @@ $active_tab_markup = isset($active_tab_markup) ? (string) $active_tab_markup : '
                 }
 
                 autoContinueTimer = window.setTimeout(function () {
-                    loadMaintenanceUrl(continueUrl, 'Memproses batch...');
+                    loadMaintenanceUrl(continueUrl, 'Memproses batch...', { loadingAreas: [] });
                 }, 350);
             };
 

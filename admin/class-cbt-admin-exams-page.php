@@ -4,6 +4,10 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+if (!class_exists('CBT_Admin_UI_Helper')) {
+    require_once __DIR__ . '/class-cbt-admin-ui-helper.php';
+}
+
 final class CBT_Admin_Exams_Page
 {
     /**

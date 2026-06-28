@@ -133,8 +133,8 @@
                             'status' => (string) ($editing_exam['status'] ?? 'draft'),
                             'duration_minutes' => (int) ($editing_exam['duration_minutes'] ?? 60),
                             'kkm_percentage' => (float) ($editing_exam['kkm_percentage'] ?? 75),
-                            'randomize_questions' => 1,
-                            'randomize_options' => 1,
+                            'randomize_questions' => (int) ($editing_exam['randomize_questions'] ?? 1),
+                            'randomize_options' => (int) ($editing_exam['randomize_options'] ?? 1),
                             'show_student_result' => (int) ($editing_exam['show_student_result'] ?? 1),
                             'enable_calculator' => (int) ($editing_exam['enable_calculator'] ?? 1),
                             'starts_at' => (string) ($editing_exam['starts_at'] ?? ''),
@@ -362,7 +362,7 @@
                                     <td>
                                         <label class="cbt-exam-inline-toggle cbt-exam-inline-toggle--randomize-default">
                                             <input type="hidden" name="randomize_questions" value="0" />
-                                            <input type="checkbox" id="cbt-exam-randomize" name="randomize_questions" value="1" checked="checked" autocomplete="off" />
+                                            <input type="checkbox" id="cbt-exam-randomize" name="randomize_questions" value="1" <?php checked((int) ($editing_exam['randomize_questions'] ?? 1), 1); ?> autocomplete="off" />
                                             Acak urutan soal untuk siswa
                                         </label>
                                     </td>
@@ -372,7 +372,7 @@
                                     <td>
                                         <label class="cbt-exam-inline-toggle cbt-exam-inline-toggle--randomize-default">
                                             <input type="hidden" name="randomize_options" value="0" />
-                                            <input type="checkbox" id="cbt-exam-randomize-options" name="randomize_options" value="1" checked="checked" autocomplete="off" />
+                                            <input type="checkbox" id="cbt-exam-randomize-options" name="randomize_options" value="1" <?php checked((int) ($editing_exam['randomize_options'] ?? 1), 1); ?> autocomplete="off" />
                                             Acak urutan opsi untuk Multiple Choice, Multiple Answer, dan TF Matrix
                                         </label>
                                     </td>
@@ -947,7 +947,6 @@
                                                 <?php echo esc_html((string) ($exam['topology_label'] ?? 'Belum Ada Soal')); ?>
                                             </span>
                                             <small><?php echo esc_html((string) ($exam['topology_summary_text'] ?? 'Belum ada soal aktif')); ?></small>
-                                        </div>
                                         </div>
                                     </div>
                                 </td>
