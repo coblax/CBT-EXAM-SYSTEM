@@ -562,6 +562,13 @@ describe('createSessionHeartbeatManager', function () {
                 }
             }
         ]);
+        // Heartbeat yang memicu refresh soal tetap menyinkronkan sisa waktu dari server.
+        expect(fixture.calls.applyAttemptTimerPayload).toEqual([
+            {
+                attempt_id: 55,
+                remaining_seconds: 150
+            }
+        ]);
     });
 
     it('disables calculator runtime from heartbeat and publishes a notice consistently', async function () {

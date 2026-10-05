@@ -607,6 +607,54 @@ describe('createExamStageRenderer', function () {
         expect(markup).toContain('Kumpulkan Jawaban');
     });
 
+    it('renders a jump button to the first unopened added question inside the revision notice', function () {
+        var renderer = createAnsweredExamFixture({
+            state: {
+                questionOrderIds: [11, 22, 33],
+                questionRevisionMarkerLookup: {
+                    33: true
+                },
+                questionRevisionNotice: {
+                    id: 'notice-1',
+                    kind: 'added-questions',
+                    message: '2 soal baru ditambahkan: No. 2, 3.',
+                    questionIds: [22, 33],
+                    sticky: true,
+                    tone: 'info'
+                }
+            }
+        });
+
+        var notice = renderer.renderExamRegions().notice;
+
+        expect(notice).toContain('2 soal baru ditambahkan: No. 2, 3.');
+        // Soal 22 sudah dibuka (marker hilang), jadi tombol menunjuk soal baru berikutnya (index 2).
+        expect(notice).toContain('class="cbt-exam-revision-notice-action" data-action="jump" data-index="2"');
+        expect(notice).toContain('Buka soal No. 2');
+    });
+
+    it('omits the revision notice jump button once every added question has been opened', function () {
+        var renderer = createAnsweredExamFixture({
+            state: {
+                questionOrderIds: [11, 22],
+                questionRevisionMarkerLookup: {},
+                questionRevisionNotice: {
+                    id: 'notice-2',
+                    kind: 'revision-summary',
+                    message: '1 soal berubah: No. 1.',
+                    questionIds: [22],
+                    sticky: true,
+                    tone: 'info'
+                }
+            }
+        });
+
+        var notice = renderer.renderExamRegions().notice;
+
+        expect(notice).toContain('1 soal berubah: No. 1.');
+        expect(notice).not.toContain('cbt-exam-revision-notice-action');
+    });
+
     it('renders low-opacity forensic watermark only when enabled with a user and attempt', function () {
         var renderer = createAnsweredExamFixture({
             watermarkEnabled: true,

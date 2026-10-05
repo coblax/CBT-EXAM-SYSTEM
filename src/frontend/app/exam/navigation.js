@@ -673,7 +673,7 @@ export function createExamNavigationManager(deps) {
             }
             renderNavigationPatch({
                 navigation: true,
-                notice: didClearLoadedStickyRevisionNotice || state.notice !== '',
+                notice: didClearLoadedStickyRevisionNotice || didAcknowledgeLoadedRevisionMarker || state.notice !== '',
                 question: true
             }, 'navigation:question-transition', {
                 nextIndex: safeIndex,
@@ -700,7 +700,7 @@ export function createExamNavigationManager(deps) {
             state.navigationRefreshing = false;
             renderNavigationPatch({
                 navigation: true,
-                notice: didClearLoadedStickyRevisionNotice || state.notice !== ''
+                notice: didClearLoadedStickyRevisionNotice || didAcknowledgeLoadedRevisionMarker || state.notice !== ''
             }, 'navigation:jump', {
                 nextIndex: safeIndex,
                 requiresWindowLoad: false
@@ -732,7 +732,7 @@ export function createExamNavigationManager(deps) {
         state.navigationRefreshing = false;
         renderNavigationPatch({
             navigation: true,
-            notice: didClearStickyRevisionNotice || state.notice !== '',
+            notice: didClearStickyRevisionNotice || didAcknowledgeRevisionMarker || state.notice !== '',
             question: true
         }, 'navigation:jump', {
             nextIndex: safeIndex,

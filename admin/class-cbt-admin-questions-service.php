@@ -2827,6 +2827,9 @@ final class CBT_Admin_Questions_Service
             $affected_exam_ids = array_values(array_unique(array_filter(array_map('intval', (array) ($duplicate_result['affected_exam_ids'] ?? [])))));
             if (!empty($affected_exam_ids)) {
                 CBT_Cache::invalidate_catalog();
+                // Salinan masuk ke exam yang sama; tanpa menaikkan revisi exam, attempt yang sedang berjalan
+                // tidak pernah menerima soal baru ini sementara siswa yang baru mulai sudah melihatnya.
+                CBT_Cache::invalidate_exams($affected_exam_ids);
                 self::warm_exam_question_delivery_snapshots($affected_exam_ids);
             }
 

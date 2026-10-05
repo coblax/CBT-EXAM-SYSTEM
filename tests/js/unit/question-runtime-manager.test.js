@@ -829,7 +829,11 @@ describe('createQuestionRuntimeManager', function () {
         expect(fixture.state.acknowledgedRevisionQuestionIds).toEqual({
             101: true
         });
-        expect(fixture.state.questionRevisionNotice && fixture.state.questionRevisionNotice.message).toBe('1 soal berubah.');
+        expect(fixture.state.questionRevisionNotice).toMatchObject({
+            kind: 'revision-summary',
+            message: '1 soal berubah: No. 1 (termasuk soal yang sedang dibuka).',
+            sticky: true
+        });
     });
 
     it('tracks added questions without displacing the current question and keeps current answers intact', async function () {
@@ -929,7 +933,19 @@ describe('createQuestionRuntimeManager', function () {
         expect(fixture.state.questionRevisionMarkerLookup).toEqual({
             202: true
         });
-        expect(fixture.state.questionRevisionNotice && fixture.state.questionRevisionNotice.message).toBe('1 soal baru ditambahkan.');
+        expect(fixture.state.questionRevisionNotice).toMatchObject({
+            kind: 'added-questions',
+            message: '1 soal baru ditambahkan: No. 2.',
+            questionIds: [202],
+            sticky: true
+        });
+
+        // Pemberitahuan soal baru bertahan saat siswa berpindah soal sampai soal baru itu dibuka.
+        expect(fixture.manager.clearStickyQuestionRevisionNotice()).toBe(false);
+        expect(fixture.state.questionRevisionNotice).not.toBe(null);
+        fixture.manager.acknowledgeQuestionRevisionMarker(202, { persist: false });
+        expect(fixture.manager.clearStickyQuestionRevisionNotice()).toBe(true);
+        expect(fixture.state.questionRevisionNotice).toBe(null);
         expect(fixture.calls.recordTimeline).toEqual(expect.arrayContaining([
             expect.objectContaining({
                 kind: 'question-revision:added',
@@ -948,6 +964,135 @@ describe('createQuestionRuntimeManager', function () {
                 })
             })
         ]));
+    });
+
+    function createAddedQuestionFixture(stateOverrides, responseRevision) {
+        var existingQuestion = createQuestion(101, {
+            options: [{ id: 11, option_key: 'A', option_text: 'Alpha', is_correct: 1 }],
+            question_number: 1,
+            question_text: 'Stem lama tetap',
+            updated_at: 'rev-1'
+        });
+        var existingManifest = {
+            id: 101,
+            options: [{ id: 11, option_key: 'A', option_text: 'Alpha', is_correct: 1 }],
+            question_number: 1,
+            question_text: 'Stem lama tetap',
+            question_type: 'multiple_choice',
+            updated_at: 'rev-1'
+        };
+        var fixture = createFixture({
+            deps: {
+                apiRequest: async function (endpoint) {
+                    fixture.calls.apiRequest.push({ endpoint: endpoint });
+                    return buildQuestionResponse(
+                        fixture.cacheHelpers,
+                        [
+                            existingQuestion,
+                            createQuestion(202, {
+                                question_number: 2,
+                                question_text: 'Soal baru ditambahkan',
+                                question_type: 'essay',
+                                updated_at: 'rev-2'
+                            })
+                        ],
+                        responseRevision || createRevision(2, 9),
+                        {
+                            limit: 2,
+                            total_questions: 2
+                        }
+                    );
+                }
+            },
+            state: Object.assign({
+                answers: { 101: 11 },
+                answeredQuestionLookup: { 101: true },
+                currentIndex: 0,
+                questionManifest: [existingManifest],
+                questionManifestById: { 101: existingManifest },
+                questionOrderIds: [101],
+                questionPayloadById: { 101: existingQuestion },
+                questions: [existingQuestion],
+                questionRevision: createRevision(1, 9),
+                totalQuestions: 1,
+                windowLimit: 2
+            }, stateOverrides || {})
+        });
+
+        return fixture;
+    }
+
+    it('closes an open finish confirmation when questions are added so the stale summary cannot be confirmed', async function () {
+        var fixture = createAddedQuestionFixture({
+            finishConfirmOpen: true,
+            finishConfirmSummary: {
+                answeredQuestions: 1,
+                totalQuestions: 1,
+                unansweredQuestions: 0
+            }
+        });
+
+        await fixture.manager.refreshAttemptQuestionRevision(createRevision(2, 9), {
+            attemptId: 55,
+            examId: 9,
+            preferredIndex: 0
+        });
+
+        expect(fixture.state.questionOrderIds).toEqual([101, 202]);
+        expect(fixture.state.finishConfirmOpen).toBe(false);
+        expect(fixture.state.finishConfirmSummary).toBe(null);
+        expect(fixture.state.questionRevisionNotice).toMatchObject({
+            kind: 'added-questions',
+            message: '1 soal baru ditambahkan: No. 2.'
+        });
+        expect(fixture.calls.render[fixture.calls.render.length - 1]).toMatchObject({
+            reason: 'question-revision:finish-confirm-closed'
+        });
+    });
+
+    it('does not swap question data while the exam is locked for finishing', async function () {
+        var fixture = createAddedQuestionFixture({
+            examLockedForPendingFinish: true
+        });
+
+        var payload = await fixture.manager.refreshAttemptQuestionRevision(createRevision(2, 9), {
+            attemptId: 55,
+            examId: 9,
+            preferredIndex: 0
+        });
+
+        expect(payload).toBe(null);
+        expect(fixture.calls.apiRequest).toEqual([]);
+        expect(fixture.state.questionOrderIds).toEqual([101]);
+    });
+
+    it('keeps announcing unopened added questions when a later revision has no question changes', async function () {
+        var fixture = createAddedQuestionFixture();
+
+        await fixture.manager.refreshAttemptQuestionRevision(createRevision(2, 9), {
+            attemptId: 55,
+            examId: 9,
+            preferredIndex: 0
+        });
+        expect(fixture.state.questionRevisionNotice).toMatchObject({
+            kind: 'added-questions',
+            questionIds: [202]
+        });
+
+        // Revisi berikutnya (mis. guru mengubah pengaturan exam) mengirim soal yang sama persis.
+        await fixture.manager.refreshAttemptQuestionRevision(createRevision(3, 9), {
+            attemptId: 55,
+            examId: 9,
+            preferredIndex: 0
+        });
+
+        expect(fixture.state.questionOrderIds).toEqual([101, 202]);
+        expect(fixture.state.questionRevisionNotice).toMatchObject({
+            kind: 'added-questions',
+            message: '1 soal baru ditambahkan: No. 2.',
+            questionIds: [202],
+            sticky: true
+        });
     });
 
     it('moves to the next valid question when the active question is removed without falling back to manual reload', async function () {
@@ -1072,6 +1217,7 @@ describe('createQuestionRuntimeManager', function () {
             tone: 'warning'
         });
         expect(fixture.state.questionRevisionNotice.message).toContain('Soal aktif berubah karena revisi exam.');
+        expect(fixture.state.questionRevisionNotice.message).toContain('1 soal dihapus: No. 1.');
         expect(fixture.calls.render.every(function (entry) {
             return entry.reason !== 'question-revision:manual-reload-notice';
         })).toBe(true);
@@ -1196,7 +1342,11 @@ describe('createQuestionRuntimeManager', function () {
             202: true
         });
         expect(fixture.state.acknowledgedRevisionQuestionIds).toEqual({});
-        expect(fixture.state.questionRevisionNotice && fixture.state.questionRevisionNotice.message).toBe('1 soal berubah.');
+        expect(fixture.state.questionRevisionNotice).toMatchObject({
+            kind: 'revision-summary',
+            message: '1 soal berubah: No. 2.',
+            sticky: true
+        });
     });
 
     it('falls back to a sticky manual reload warning when the refreshed question order contract is invalid', async function () {
@@ -1277,6 +1427,11 @@ describe('createQuestionRuntimeManager', function () {
             sticky: true,
             tone: 'warning'
         });
+        expect(fixture.state.questionRevisionNotice.message).toContain('Muat ulang halaman');
+        expect(fixture.state.questionRevisionNotice.kind).toBe('manual-reload');
+        // Berpindah soal tidak boleh menghapus peringatan muat ulang: signature yang sama sudah diblokir
+        // sehingga heartbeat tidak akan menampilkannya lagi.
+        expect(fixture.manager.clearStickyQuestionRevisionNotice()).toBe(false);
         expect(fixture.state.questionRevisionNotice.message).toContain('Muat ulang halaman');
         expect(fixture.calls.render[fixture.calls.render.length - 1]).toEqual({
             meta: {

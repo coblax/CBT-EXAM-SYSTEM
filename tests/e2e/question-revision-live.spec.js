@@ -77,7 +77,7 @@ test.describe('Question revision live flow', () => {
                 await page.bringToFront();
                 revisionNoticePromise = page.waitForFunction(() => {
                     const notice = document.querySelector('.cbt-exam-revision-notice');
-                    return !!(notice && String(notice.textContent || '').includes('1 soal berubah.'));
+                    return !!(notice && String(notice.textContent || '').includes('1 soal berubah'));
                 }, null, { timeout: 35000 });
 
                 await waitForCondition(() => {
@@ -97,9 +97,9 @@ test.describe('Question revision live flow', () => {
                 await page.bringToFront();
                 await (revisionNoticePromise || page.waitForFunction(() => {
                     const notice = document.querySelector('.cbt-exam-revision-notice');
-                    return !!(notice && String(notice.textContent || '').includes('1 soal berubah.'));
+                    return !!(notice && String(notice.textContent || '').includes('1 soal berubah'));
                 }, null, { timeout: 35000 }));
-                await expect(page.locator('.cbt-exam-revision-notice')).toContainText('1 soal berubah.');
+                await expect(page.locator('.cbt-exam-revision-notice')).toContainText('1 soal berubah');
                 await expect(page.locator('.cbt-question-stem')).toContainText(revisionMarker, { timeout: 35000 });
                 await expect(page.locator('[data-cbt-exam-shell="1"]')).toBeVisible({ timeout: 10000 });
                 await expect(page.locator('#cbt-login-form')).toHaveCount(0);

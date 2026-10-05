@@ -3381,10 +3381,12 @@ trait CBT_REST_Question_Snapshot_Helpers
     }
 
     /**
-     * Soal yang ditambahkan ke exam saat attempt berjalan harus di-append ke attempt aktif (lihat
-     * BUG-NOTES-QUESTION-ORDER.md), tetapi snapshot kontrak/sesi attempt di Redis membekukan daftar soal
-     * saat attempt dimulai sehingga soal baru tidak pernah muncul. Sekali per revisi exam, buang snapshot
-     * yang tidak lagi mencakup semua soal aktif exam agar dibangun ulang lewat rekonsiliasi urutan.
+     * Soal yang ditambahkan ke exam saat attempt berjalan harus di-append ke attempt aktif, dan soal yang
+     * dihapus/dinonaktifkan harus keluar dari navigasi aktif (lihat BUG-NOTES-QUESTION-ORDER.md). Snapshot
+     * kontrak/sesi attempt di Redis membekukan daftar soal saat attempt dimulai, sehingga tanpa pemeriksaan
+     * ini soal baru tidak pernah muncul dan soal yang dihapus tetap tampil. Sekali per revisi exam, buang
+     * snapshot yang himpunan soalnya tidak lagi sama dengan soal aktif exam agar dibangun ulang lewat
+     * rekonsiliasi urutan.
      */
     private static function ensure_attempt_snapshots_cover_exam_questions(int $attempt_id, int $exam_id): void
     {
@@ -3406,16 +3408,38 @@ trait CBT_REST_Question_Snapshot_Helpers
             return;
         }
 
-        $current_question_ids = array_keys(self::get_exam_question_content_stamps($exam_id));
+        $current_question_ids = array_values(array_filter(
+            array_map('intval', array_keys(self::get_exam_question_content_stamps($exam_id))),
+            static function (int $question_id): bool {
+                return $question_id > 0;
+            }
+        ));
         if (!empty($current_question_ids)) {
+            $current_lookup = array_fill_keys($current_question_ids, true);
             $contract = CBT_Attempt_Question_Contract_Cache::read_cached_attempt_snapshot($attempt_id);
-            $contract_lookup = array_fill_keys(array_map('intval', (array) ($contract['question_order_ids'] ?? [])), true);
+            $contract_question_ids = array_values(array_filter(
+                array_map('intval', (array) ($contract['question_order_ids'] ?? [])),
+                static function (int $question_id): bool {
+                    return $question_id > 0;
+                }
+            ));
+            $contract_lookup = array_fill_keys($contract_question_ids, true);
             $contract_stale = false;
             if (!empty($contract_lookup)) {
+                // Soal baru di exam yang belum ada di kontrak attempt.
                 foreach ($current_question_ids as $question_id) {
-                    if (!isset($contract_lookup[(int) $question_id])) {
+                    if (!isset($contract_lookup[$question_id])) {
                         $contract_stale = true;
                         break;
+                    }
+                }
+                // Soal yang sudah dihapus/dinonaktifkan tetapi masih ada di kontrak attempt.
+                if (!$contract_stale) {
+                    foreach ($contract_question_ids as $question_id) {
+                        if (!isset($current_lookup[$question_id])) {
+                            $contract_stale = true;
+                            break;
+                        }
                     }
                 }
             }
@@ -3423,8 +3447,16 @@ trait CBT_REST_Question_Snapshot_Helpers
             $session_stale = false;
             if (class_exists('CBT_Attempt_Session_Snapshot_Cache')) {
                 $session_snapshot = CBT_Attempt_Session_Snapshot_Cache::read_cached_attempt_snapshot($attempt_id);
-                $session_question_count = (int) ($session_snapshot['question_count'] ?? 0);
-                $session_stale = $session_question_count > 0 && $session_question_count < count($current_question_ids);
+                if (!empty($session_snapshot)) {
+                    $session_question_count = (int) ($session_snapshot['question_count'] ?? 0);
+                    $session_signature = (string) ($session_snapshot['question_order_signature'] ?? '');
+                    $contract_signature = (string) ($contract['question_order_signature'] ?? '');
+                    // Tanpa kontrak, pertukaran soal (hapus satu, tambah satu) tidak terlihat dari jumlah saja;
+                    // signature sesi lama lalu bentrok dengan kontrak baru dan memicu refresh berulang di heartbeat.
+                    $session_stale = ($session_question_count > 0 && $session_question_count !== count($current_question_ids))
+                        || empty($contract_lookup)
+                        || ($session_signature !== '' && $contract_signature !== '' && $session_signature !== $contract_signature);
+                }
             }
 
             if ($contract_stale || $session_stale) {

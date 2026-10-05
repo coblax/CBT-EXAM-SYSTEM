@@ -61,6 +61,10 @@ export function createQuestionRuntimeManager(deps) {
     var apiRequest = deps.apiRequest;
     var windowRef = deps.windowRef;
 
+    var QUESTION_REVISION_NOTICE_MANUAL_RELOAD = 'manual-reload';
+    var QUESTION_REVISION_NOTICE_SYNC_RETRY = 'sync-retry';
+    var QUESTION_REVISION_NOTICE_MAX_NUMBERS = 5;
+
     var questionCachePersistTimer = 0;
     var questionDataGeneration = 0;
     var questionRevisionRefreshInFlight = null;
@@ -195,7 +199,8 @@ export function createQuestionRuntimeManager(deps) {
             kind: String(notice.kind || 'toast'),
             tone: String(notice.tone || 'info'),
             sticky: !!notice.sticky,
-            message: String(notice.message || '').trim()
+            message: String(notice.message || '').trim(),
+            questionIds: normalizeQuestionIdList(Array.isArray(notice.questionIds) ? notice.questionIds : [])
         };
 
         if (!state.questionRevisionNotice.sticky) {
@@ -551,12 +556,91 @@ export function createQuestionRuntimeManager(deps) {
         return didChange;
     }
 
+    function getPendingRevisionNoticeQuestionIds(notice) {
+        var questionIds = notice && Array.isArray(notice.questionIds) ? notice.questionIds : [];
+        var markerLookup = state.questionRevisionMarkerLookup || {};
+        var orderIds = Array.isArray(state.questionOrderIds) ? state.questionOrderIds : [];
+
+        return questionIds.filter(function (questionId) {
+            var safeQuestionId = Number(questionId) || 0;
+            return safeQuestionId > 0 && !!markerLookup[safeQuestionId] && orderIds.indexOf(safeQuestionId) >= 0;
+        });
+    }
+
     function clearStickyQuestionRevisionNotice(options) {
-        if (!state.questionRevisionNotice || !state.questionRevisionNotice.sticky) {
+        var notice = state.questionRevisionNotice;
+        if (!notice || !notice.sticky) {
+            return false;
+        }
+
+        // Peringatan muat ulang harus tetap terlihat: setelah urutan diblokir, heartbeat tidak akan
+        // memunculkannya lagi untuk signature yang sama.
+        if (notice.kind === QUESTION_REVISION_NOTICE_MANUAL_RELOAD) {
+            return false;
+        }
+
+        // Pemberitahuan soal baru bertahan sampai semua soal baru sudah dibuka siswa.
+        if (getPendingRevisionNoticeQuestionIds(notice).length > 0) {
             return false;
         }
 
         return clearQuestionRevisionNotice(options);
+    }
+
+    function setManualReloadQuestionRevisionNotice(options) {
+        return setQuestionRevisionNotice({
+            kind: QUESTION_REVISION_NOTICE_MANUAL_RELOAD,
+            tone: 'warning',
+            sticky: true,
+            message: 'Perubahan soal terdeteksi tetapi urutan terbaru belum bisa disinkron otomatis. Muat ulang halaman untuk melanjutkan dengan aman.'
+        }, options);
+    }
+
+    function buildRemovedQuestionIds(previousQuestionOrderIds, nextQuestionOrderIds) {
+        var nextLookup = normalizeQuestionIdList(nextQuestionOrderIds).reduce(function (accumulator, questionId) {
+            accumulator[questionId] = true;
+            return accumulator;
+        }, {});
+
+        return normalizeQuestionIdList(previousQuestionOrderIds).filter(function (questionId) {
+            return !nextLookup[questionId];
+        });
+    }
+
+    function collectQuestionNumbers(questionIds, manifestById, payloadById) {
+        return normalizeQuestionIdList(questionIds).reduce(function (accumulator, questionId) {
+            var questionNumber = getQuestionNumberFromContract(questionId, manifestById, payloadById);
+            if (questionNumber > 0) {
+                accumulator.push(questionNumber);
+            }
+            return accumulator;
+        }, []).sort(function (left, right) {
+            return left - right;
+        });
+    }
+
+    function formatQuestionNumberList(questionNumbers) {
+        var safeNumbers = Array.isArray(questionNumbers) ? questionNumbers : [];
+        if (!safeNumbers.length) {
+            return '';
+        }
+
+        var visibleNumbers = safeNumbers.slice(0, QUESTION_REVISION_NOTICE_MAX_NUMBERS);
+        var hiddenCount = safeNumbers.length - visibleNumbers.length;
+        return 'No. ' + visibleNumbers.join(', ') + (hiddenCount > 0 ? ' dan ' + String(hiddenCount) + ' lainnya' : '');
+    }
+
+    function buildQuestionRevisionNoticePart(count, label, questionNumbers, suffix) {
+        var safeCount = Math.max(0, Number(count) || 0);
+        if (safeCount <= 0) {
+            return '';
+        }
+
+        var numberList = formatQuestionNumberList(questionNumbers);
+        return String(safeCount) + ' soal ' + label
+            + (numberList ? ': ' + numberList : '')
+            + (suffix ? ' (' + suffix + ')' : '')
+            + '.';
     }
 
     function buildAddedQuestionIds(previousManifestById, nextManifestById) {
@@ -578,23 +662,24 @@ export function createQuestionRuntimeManager(deps) {
         }, []);
     }
 
-    function buildQuestionRevisionNotice(changedQuestionCount, addedQuestionCount) {
-        var safeChangedCount = Math.max(0, Number(changedQuestionCount) || 0);
-        var safeAddedCount = Math.max(0, Number(addedQuestionCount) || 0);
+    function buildQuestionRevisionNotice(summary) {
+        var safeSummary = summary && typeof summary === 'object' ? summary : {};
+        var addedNumbers = Array.isArray(safeSummary.addedNumbers) ? safeSummary.addedNumbers : [];
+        var changedNumbers = Array.isArray(safeSummary.changedNumbers) ? safeSummary.changedNumbers : [];
+        var removedNumbers = Array.isArray(safeSummary.removedNumbers) ? safeSummary.removedNumbers : [];
 
-        if (safeAddedCount > 0) {
-            if (safeChangedCount > 0) {
-                return String(safeAddedCount) + ' soal baru ditambahkan, ' + String(safeChangedCount) + ' soal berubah.';
-            }
-
-            return String(safeAddedCount) + ' soal baru ditambahkan.';
-        }
-
-        if (safeChangedCount > 0) {
-            return String(safeChangedCount) + ' soal berubah.';
-        }
-
-        return '';
+        return [
+            buildQuestionRevisionNoticePart(safeSummary.addedCount, 'baru ditambahkan', addedNumbers, ''),
+            buildQuestionRevisionNoticePart(
+                safeSummary.changedCount,
+                'berubah',
+                changedNumbers,
+                safeSummary.currentQuestionChanged ? 'termasuk soal yang sedang dibuka' : ''
+            ),
+            buildQuestionRevisionNoticePart(safeSummary.removedCount, 'dihapus', removedNumbers, '')
+        ].filter(function (part) {
+            return part !== '';
+        }).join(' ');
     }
 
     function clearQuestionCachePersistTimer() {
@@ -1179,12 +1264,7 @@ export function createQuestionRuntimeManager(deps) {
                 setBlockedQuestionOrderSignature(
                     String(error.questionOrderSignature || responseQuestionOrderSignature || '').trim()
                 );
-                setQuestionRevisionNotice({
-                    kind: 'warning',
-                    tone: 'warning',
-                    sticky: true,
-                    message: 'Perubahan soal terdeteksi tetapi urutan terbaru belum bisa disinkron otomatis. Muat ulang halaman untuk melanjutkan dengan aman.'
-                }, {
+                setManualReloadQuestionRevisionNotice({
                     render: true,
                     reason: 'question-window:manual-reload-notice',
                     meta: {
@@ -1265,6 +1345,12 @@ export function createQuestionRuntimeManager(deps) {
             return Promise.resolve(null);
         }
 
+        // Saat finish berjalan state soal sudah dikunci untuk sinkron akhir; jangan diganti di tengah jalan.
+        // Bila finish gagal dan ujian dibuka lagi, heartbeat berikutnya mengulang refresh karena revisi masih beda.
+        if (state.isFinishing || state.examLockedForPendingFinish) {
+            return Promise.resolve(null);
+        }
+
         if (!options.force && !hasRevisionTransition && !hasQuestionOrderTransition) {
             return Promise.resolve(null);
         }
@@ -1306,6 +1392,8 @@ export function createQuestionRuntimeManager(deps) {
             }
             return accumulator;
         }, {});
+        var previousQuestionOrderIds = normalizeQuestionIdList(state.questionOrderIds || []);
+        var previousQuestionPayloadById = Object.assign({}, state.questionPayloadById || {});
         var preservedNavQuestionFilter = normalizeNavigationQuestionFilter(state.navQuestionFilter);
         var preservedAnswers = captureRevisionSafeLocalAnswers();
         var preservedAutoSaveState = buildAutoSaveStateSnapshot();
@@ -1462,20 +1550,74 @@ export function createQuestionRuntimeManager(deps) {
                 state.questionRevisionRefreshing = false;
                 state.navigationRefreshing = false;
                 state.questionRegionRefreshing = false;
+
+                var removedQuestionIds = buildRemovedQuestionIds(previousQuestionOrderIds, state.questionOrderIds);
+                var addedQuestionIdLookup = addedQuestionIds.reduce(function (accumulator, questionId) {
+                    accumulator[questionId] = true;
+                    return accumulator;
+                }, {});
+                var changedOnlyQuestionIds = Object.keys(state.changedQuestionLookup || {}).reduce(function (accumulator, key) {
+                    var questionId = Number(key) || 0;
+                    if (questionId > 0 && state.changedQuestionLookup[key] && !addedQuestionIdLookup[questionId]) {
+                        accumulator.push(questionId);
+                    }
+                    return accumulator;
+                }, []);
+                // Soal baru dari revisi sebelumnya yang belum dibuka tetap diumumkan, supaya revisi berikutnya
+                // (mis. guru mengubah pengaturan exam) tidak menghapus pemberitahuan yang masih relevan.
+                var pendingNoticeQuestionIds = getPendingRevisionNoticeQuestionIds(state.questionRevisionNotice);
+                var unopenedAddedQuestionIds = normalizeQuestionIdList(pendingNoticeQuestionIds.concat(addedQuestionIds));
+                var currentQuestionChanged = !currentQuestionDisplaced
+                    && nextCurrentQuestionId > 0
+                    && !addedQuestionIdLookup[nextCurrentQuestionId]
+                    && Boolean(state.changedQuestionLookup[nextCurrentQuestionId]);
+                var revisionSummaryMessage = buildQuestionRevisionNotice({
+                    addedCount: unopenedAddedQuestionIds.length,
+                    addedNumbers: collectQuestionNumbers(unopenedAddedQuestionIds, state.questionManifestById, state.questionPayloadById),
+                    changedCount: changedOnlyQuestionIds.length,
+                    changedNumbers: collectQuestionNumbers(changedOnlyQuestionIds, state.questionManifestById, state.questionPayloadById),
+                    currentQuestionChanged: currentQuestionChanged,
+                    removedCount: removedQuestionIds.length,
+                    removedNumbers: collectQuestionNumbers(removedQuestionIds, previousQuestionManifestById, previousQuestionPayloadById)
+                });
+
                 if (currentQuestionDisplaced) {
                     setQuestionRevisionNotice({
                         kind: 'current-question-warning',
                         tone: 'warning',
                         sticky: true,
                         message: 'Soal aktif berubah karena revisi exam. Anda dipindahkan ke soal yang masih valid.'
+                            + (revisionSummaryMessage ? ' ' + revisionSummaryMessage : ''),
+                        questionIds: unopenedAddedQuestionIds
                     });
-                } else {
+                } else if (revisionSummaryMessage !== '') {
+                    // Perubahan soal di tengah ujian tidak boleh hanya berupa toast singkat yang mudah terlewat:
+                    // pemberitahuan bertahan sampai siswa berpindah soal, atau sampai semua soal baru dibuka.
                     setQuestionRevisionNotice({
-                        kind: 'toast',
+                        kind: unopenedAddedQuestionIds.length > 0 ? 'added-questions' : 'revision-summary',
                         tone: 'info',
-                        sticky: false,
-                        message: buildQuestionRevisionNotice(changedOnlyQuestionCount, addedQuestionIds.length)
+                        sticky: true,
+                        message: revisionSummaryMessage,
+                        questionIds: unopenedAddedQuestionIds
                     });
+                } else if (
+                    state.questionRevisionNotice
+                    && (
+                        state.questionRevisionNotice.kind === QUESTION_REVISION_NOTICE_MANUAL_RELOAD
+                        || state.questionRevisionNotice.kind === QUESTION_REVISION_NOTICE_SYNC_RETRY
+                    )
+                ) {
+                    // Sinkronisasi yang sebelumnya gagal sudah pulih tanpa perubahan soal yang perlu diumumkan.
+                    clearQuestionRevisionNotice();
+                }
+
+                // Ringkasan dialog selesai dihitung saat dialog dibuka; bila daftar soal berubah, tutup dialog
+                // agar siswa tidak menyelesaikan ujian tanpa melihat soal baru atau soal yang dihapus.
+                var shouldCloseFinishConfirm = !!state.finishConfirmOpen
+                    && (addedQuestionIds.length > 0 || removedQuestionIds.length > 0);
+                if (shouldCloseFinishConfirm) {
+                    state.finishConfirmOpen = false;
+                    state.finishConfirmSummary = null;
                 }
                 if (
                     typeof state.error === 'string' &&
@@ -1503,15 +1645,24 @@ export function createQuestionRuntimeManager(deps) {
                         selectedExamId: examId
                     });
                 }
-                renderRevisionPatch({
-                    navigation: true,
-                    notice: true,
-                    question: currentQuestionAffected
-                }, 'question-revision:patched', {
+                var revisionPatchMeta = {
                     addedQuestionCount: addedQuestionIds.length,
                     changedQuestionCount: changedOnlyQuestionCount,
                     currentIndex: Number(state.currentIndex) || 0
-                });
+                };
+                if (removedQuestionIds.length > 0) {
+                    revisionPatchMeta.removedQuestionCount = removedQuestionIds.length;
+                }
+                if (shouldCloseFinishConfirm) {
+                    // Dialog selesai ada di luar region partial, jadi perlu render penuh untuk menutupnya.
+                    render('question-revision:finish-confirm-closed', revisionPatchMeta);
+                } else {
+                    renderRevisionPatch({
+                        navigation: true,
+                        notice: true,
+                        question: currentQuestionAffected
+                    }, 'question-revision:patched', revisionPatchMeta);
+                }
                 deps.resetQuestionPrefetchIdleTimer();
                 return questionPayload;
             } catch (error) {
@@ -1530,12 +1681,7 @@ export function createQuestionRuntimeManager(deps) {
                         setBlockedQuestionOrderSignature(
                             String(error.questionOrderSignature || expectedQuestionOrderSignature || '').trim()
                         );
-                        setQuestionRevisionNotice({
-                            kind: 'warning',
-                            tone: 'warning',
-                            sticky: true,
-                            message: 'Perubahan soal terdeteksi tetapi urutan terbaru belum bisa disinkron otomatis. Muat ulang halaman untuk melanjutkan dengan aman.'
-                        });
+                        setManualReloadQuestionRevisionNotice();
                         recordTimelineEntry('question-revision:manual-reload', error instanceof Error ? error.message : 'Refresh manual diperlukan untuk sinkronisasi soal.', {
                             attemptId: attemptId,
                             selectedExamId: examId,
@@ -1548,7 +1694,7 @@ export function createQuestionRuntimeManager(deps) {
                         });
                     } else {
                         setQuestionRevisionNotice({
-                            kind: 'warning',
+                            kind: QUESTION_REVISION_NOTICE_SYNC_RETRY,
                             tone: 'warning',
                             sticky: true,
                             message: 'Perubahan soal terdeteksi. Sinkronisasi akan dicoba lagi.'

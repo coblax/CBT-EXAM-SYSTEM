@@ -427,6 +427,8 @@ export function createSessionHeartbeatManager(deps) {
                 && Number(state.attemptId) === heartbeatAttemptId
             ) {
                 var calculatorAvailabilityChanged = syncCalculatorAvailabilityFromSession(sessionPayload);
+                // Timer selalu disinkronkan, termasuk pada heartbeat yang memicu refresh revisi soal.
+                applyAttemptTimerPayload(sessionPayload && sessionPayload.attempt_timer);
                 var sessionRevision = normalizeQuestionRevision(
                     sessionPayload && sessionPayload.question_revision,
                     heartbeatExamId
@@ -476,8 +478,6 @@ export function createSessionHeartbeatManager(deps) {
                 if (sessionRevision && !state.questionRevision) {
                     setQuestionRevision(sessionRevision, heartbeatExamId);
                 }
-
-                applyAttemptTimerPayload(sessionPayload && sessionPayload.attempt_timer);
 
                 if (calculatorAvailabilityChanged && typeof render === 'function') {
                     render('heartbeat-calculator-availability', {

@@ -561,11 +561,35 @@ export function createExamStageRenderer(deps) {
                 '<div class="' + noticeClasses.join(' ') + '" role="status" aria-live="polite">'
                 + '<span class="cbt-exam-revision-notice-dot" aria-hidden="true"></span>'
                 + '<div class="cbt-exam-revision-notice-copy">' + escapeHtml(revisionNotice.message) + '</div>'
+                + renderRevisionNoticeJumpAction(revisionNotice)
                 + '</div>'
             );
         }
 
         return parts.join('');
+    }
+
+    // Tombol ke soal baru pertama yang belum dibuka; ikut bergeser setiap kali satu soal baru dibuka.
+    function renderRevisionNoticeJumpAction(revisionNotice) {
+        var questionIds = Array.isArray(revisionNotice.questionIds) ? revisionNotice.questionIds : [];
+        var markerLookup = state.questionRevisionMarkerLookup || {};
+        var orderIds = Array.isArray(state.questionOrderIds) ? state.questionOrderIds : [];
+
+        for (var index = 0; index < questionIds.length; index++) {
+            var questionId = Number(questionIds[index]) || 0;
+            var questionIndex = questionId > 0 ? orderIds.indexOf(questionId) : -1;
+            if (questionIndex < 0 || !markerLookup[questionId]) {
+                continue;
+            }
+
+            var question = getQuestionPayloadById(questionId) || getQuestionManifestById(questionId) || { id: questionId };
+            var displayNumber = getQuestionDisplayNumber(question, questionIndex);
+            return '<button type="button" class="cbt-exam-revision-notice-action" data-action="jump" data-index="' + escapeHtml(questionIndex) + '">'
+                + 'Buka soal No. ' + escapeHtml(displayNumber)
+                + '</button>';
+        }
+
+        return '';
     }
 
     function normalizeExamWatermarkOpacity(value) {

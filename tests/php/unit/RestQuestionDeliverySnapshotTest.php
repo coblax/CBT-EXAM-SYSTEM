@@ -437,6 +437,115 @@ final class RestQuestionDeliverySnapshotTest extends TestCase
         self::assertSame([], CBT_Attempt_Question_Contract_Cache::read_cached_attempt_snapshot(77));
     }
 
+    #[RunInSeparateProcess]
+    public function test_cached_attempt_snapshots_are_discarded_when_a_question_is_removed_during_the_attempt(): void
+    {
+        $this->bootstrapRestDeliverySnapshotScaffold();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-attempt-session-snapshot-cache.php';
+        $this->registerStudentFixture();
+        $this->useDeliveryFakeRedis();
+        $this->useAttemptContractFakeRedis();
+        $this->useAttemptSessionFakeRedis();
+        $this->setRuntimeRedisUnavailable();
+
+        global $wpdb;
+        $wpdb = new RestQuestionDeliverySnapshotFakeWpdb();
+        $wpdb->includeSecondQuestion = true;
+        CBT_REST::warm_exam_question_delivery_snapshot(55);
+
+        $this->writeAttemptSnapshots(77, [201, 202], 'sig-201-202');
+
+        $ensure = new ReflectionMethod(CBT_REST::class, 'ensure_attempt_snapshots_cover_exam_questions');
+        $ensure->setAccessible(true);
+
+        // Himpunan soal kontrak sama dengan soal aktif exam: snapshot dipertahankan.
+        $ensure->invoke(null, 77, 55);
+        self::assertSame([201, 202], CBT_Attempt_Question_Contract_Cache::read_cached_attempt_snapshot(77)['question_order_ids'] ?? null);
+        self::assertSame(2, CBT_Attempt_Session_Snapshot_Cache::read_cached_attempt_snapshot(77)['question_count'] ?? null);
+
+        // Admin menghapus/menonaktifkan soal 202: kontrak lama masih memuat 202 sehingga harus dibuang, begitu
+        // juga snapshot sesi yang masih melaporkan 2 soal ke heartbeat.
+        $wpdb->includeSecondQuestion = false;
+        CBT_Cache::invalidate_exam(55);
+        CBT_REST::warm_exam_question_delivery_snapshot(55);
+        $ensure->invoke(null, 77, 55);
+        self::assertSame([], CBT_Attempt_Question_Contract_Cache::read_cached_attempt_snapshot(77));
+        self::assertSame([], CBT_Attempt_Session_Snapshot_Cache::read_cached_attempt_snapshot(77));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_cached_session_snapshot_is_discarded_when_attempt_contract_is_missing_for_a_new_exam_revision(): void
+    {
+        $this->bootstrapRestDeliverySnapshotScaffold();
+        require_once dirname(__DIR__, 3) . '/includes/class-cbt-attempt-session-snapshot-cache.php';
+        $this->registerStudentFixture();
+        $this->useDeliveryFakeRedis();
+        $this->useAttemptContractFakeRedis();
+        $this->useAttemptSessionFakeRedis();
+        $this->setRuntimeRedisUnavailable();
+
+        global $wpdb;
+        $wpdb = new RestQuestionDeliverySnapshotFakeWpdb();
+        CBT_REST::warm_exam_question_delivery_snapshot(55);
+
+        $ensure = new ReflectionMethod(CBT_REST::class, 'ensure_attempt_snapshots_cover_exam_questions');
+        $ensure->setAccessible(true);
+
+        // Kontrak dan sesi konsisten: keduanya dipertahankan.
+        $this->writeAttemptSnapshots(77, [201], 'sig-201');
+        $ensure->invoke(null, 77, 55);
+        self::assertNotEmpty(CBT_Attempt_Question_Contract_Cache::read_cached_attempt_snapshot(77));
+        self::assertNotEmpty(CBT_Attempt_Session_Snapshot_Cache::read_cached_attempt_snapshot(77));
+
+        // Revisi baru, kontrak sudah tidak ada (mis. evicted) tetapi sesi lama masih ada: jumlah soal sama
+        // tidak menjamin himpunan soal sama, jadi signature sesi lama tidak boleh dipakai heartbeat.
+        CBT_Attempt_Question_Contract_Cache::clear_attempt_snapshot(77);
+        CBT_Cache::invalidate_exam(55);
+        CBT_REST::warm_exam_question_delivery_snapshot(55);
+        $ensure->invoke(null, 77, 55);
+        self::assertSame([], CBT_Attempt_Session_Snapshot_Cache::read_cached_attempt_snapshot(77));
+    }
+
+    /**
+     * @param array<int,int> $questionOrderIds
+     */
+    private function writeAttemptSnapshots(int $attemptId, array $questionOrderIds, string $signature): void
+    {
+        CBT_Attempt_Question_Contract_Cache::write_attempt_snapshot($attemptId, [
+            'attempt_id' => $attemptId,
+            'exam_id' => 55,
+            'student_id' => 7,
+            'status' => 'in_progress',
+            'question_order_ids' => $questionOrderIds,
+            'question_order_signature' => $signature,
+        ]);
+        CBT_Attempt_Session_Snapshot_Cache::write_attempt_snapshot($attemptId, [
+            'attempt_id' => $attemptId,
+            'exam_id' => 55,
+            'student_id' => 7,
+            'status' => 'in_progress',
+            'question_count' => count($questionOrderIds),
+            'question_order_signature' => $signature,
+        ]);
+    }
+
+    private function useAttemptSessionFakeRedis(): void
+    {
+        $reflection = new ReflectionClass(CBT_Attempt_Session_Snapshot_Cache::class);
+
+        $redisProperty = $reflection->getProperty('snapshot_redis');
+        $redisProperty->setAccessible(true);
+        $redisProperty->setValue(null, new CBT_Test_Redis_Client());
+
+        $attemptedProperty = $reflection->getProperty('snapshot_redis_connection_attempted');
+        $attemptedProperty->setAccessible(true);
+        $attemptedProperty->setValue(null, true);
+
+        $errorProperty = $reflection->getProperty('snapshot_redis_last_connection_error');
+        $errorProperty->setAccessible(true);
+        $errorProperty->setValue(null, '');
+    }
+
     /** @return array<string,mixed> */
     private function decodeQuestionsResponse($response): array
     {

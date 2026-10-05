@@ -100,6 +100,7 @@ final class QuestionsActionHandlersTest extends TestCase
             'return_page' => 'cbt-question-bank',
             'question_search' => 'bank copy',
         ];
+        $revisionBefore = (int) (CBT_Cache::get_exam_revision_meta(100)['version'] ?? 0);
 
         try {
             CBT_Admin_Questions_Service::handle_duplicate_question();
@@ -117,6 +118,8 @@ final class QuestionsActionHandlersTest extends TestCase
         self::assertStringContainsString('edit=900', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('question_search=bank+copy', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_msg=Sumber+soal+diduplikasi+menjadi+soal+', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        // Salinan masuk ke exam 100: revisi exam harus naik agar attempt yang sedang berjalan ikut menerimanya.
+        self::assertGreaterThan($revisionBefore, (int) (CBT_Cache::get_exam_revision_meta(100)['version'] ?? 0));
     }
 
     private function bootstrapQuestionHandlers(): void

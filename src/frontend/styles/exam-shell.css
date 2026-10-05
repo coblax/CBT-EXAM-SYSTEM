@@ -45,10 +45,46 @@
 }
 
 .cbt-exam-revision-notice-copy {
+    flex: 1 1 auto;
     min-width: 0;
     font-size: 13px;
     line-height: 1.5;
     font-weight: 600;
+}
+
+.cbt-exam-revision-notice-action {
+    flex: 0 0 auto;
+    align-self: center;
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    padding: 4px 12px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.4;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.cbt-exam-revision-notice-action:hover {
+    background: rgba(255, 255, 255, 0.45);
+}
+
+.cbt-exam-revision-notice-action:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+}
+
+@media (max-width: 560px) {
+    .cbt-exam-revision-notice {
+        flex-wrap: wrap;
+    }
+
+    .cbt-exam-revision-notice-action {
+        margin-left: 20px;
+    }
 }
 
 .cbt-exam-revision-notice.is-info {
