@@ -76,17 +76,49 @@ final class CBT_Update_Backup_Service
         $file_name = sprintf('cbt-exam-system-%s-%s-%s.zip', $safe_version, wp_date('YmdHis', $created_at_ts, wp_timezone()), $token);
         $path = rtrim((string) $backup_dir, '/\\') . DIRECTORY_SEPARATOR . $file_name;
 
+        // Kompresi ZipArchive baru terjadi saat close(); plugin ini bisa ratusan MB sehingga butuh waktu,
+        // memori, dan ruang disk yang cukup. Cek dulu agar kegagalan memberi alasan yang jelas.
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(0);
+        }
+        if (function_exists('wp_raise_memory_limit')) {
+            wp_raise_memory_limit('admin');
+        }
+
+        $source_size = self::directory_size($source_dir);
+        $free_space = function_exists('disk_free_space') ? @disk_free_space((string) $backup_dir) : false;
+        if (is_numeric($free_space) && $source_size > 0 && (float) $free_space < ($source_size * 1.1)) {
+            return new WP_Error(
+                'backup_disk_full',
+                sprintf(
+                    'Ruang disk tidak cukup untuk backup update: butuh sekitar %s, tersedia %s di folder uploads.',
+                    size_format((int) ceil($source_size * 1.1)),
+                    size_format((int) $free_space)
+                )
+            );
+        }
+
         $zip = new ZipArchive();
-        if ($zip->open($path, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
-            return new WP_Error('backup_zip_open_failed', 'File backup update tidak bisa dibuat.');
+        $open_result = $zip->open($path, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+        if ($open_result !== true) {
+            return new WP_Error('backup_zip_open_failed', sprintf('File backup update tidak bisa dibuat di %s (kode ZipArchive %s). Pastikan folder uploads bisa ditulis.', (string) $backup_dir, (string) $open_result));
         }
 
         $added = self::add_directory_to_zip($zip, $source_dir, 'cbt-exam-system');
-        $zip->close();
-
-        if ($added <= 0 || !file_exists($path)) {
+        if ($added <= 0) {
+            $zip->close();
             @unlink($path);
-            return new WP_Error('backup_zip_empty', 'Backup update gagal karena tidak ada file plugin yang masuk ke zip.');
+            return new WP_Error('backup_zip_empty', 'Backup update gagal karena tidak ada file plugin yang terbaca dari folder plugin.');
+        }
+
+        $closed = $zip->close();
+        if (!$closed || !file_exists($path)) {
+            $status = method_exists($zip, 'getStatusString') ? (string) @$zip->getStatusString() : '';
+            @unlink($path);
+            return new WP_Error(
+                'backup_zip_write_failed',
+                'Backup update gagal ditulis ke disk' . ($status !== '' ? ' (' . $status . ')' : '') . '. Periksa ruang disk/kuota hosting dan izin tulis folder wp-content/uploads.'
+            );
         }
 
         $hash = hash_file('sha256', $path);
@@ -245,7 +277,11 @@ final class CBT_Update_Backup_Service
 
             $path = wp_normalize_path($file_info->getPathname());
             $relative = ltrim(substr($path, strlen($source_dir)), '/');
-            if ($relative === '' || $relative === '.git' || str_starts_with($relative, '.git/')) {
+            if ($relative === '') {
+                continue;
+            }
+
+            if (self::is_excluded_backup_path($relative)) {
                 continue;
             }
 
@@ -256,11 +292,51 @@ final class CBT_Update_Backup_Service
             }
 
             if ($file_info->isFile() && $zip->addFile($path, $entry)) {
+                // Gambar/arsip sudah terkompresi: simpan apa adanya agar backup jauh lebih cepat.
+                if (preg_match('/\.(png|jpe?g|gif|webp|zip|gz|woff2?|mp3|mp4)$/i', $relative) === 1 && method_exists($zip, 'setCompressionName')) {
+                    $zip->setCompressionName($entry, ZipArchive::CM_STORE);
+                }
                 $count++;
             }
         }
 
         return $count;
+    }
+
+    private static function is_excluded_backup_path(string $relative): bool
+    {
+        // Folder pengembangan tidak dibutuhkan untuk rollback dan bisa sangat besar.
+        foreach (['.git', 'node_modules', 'coverage', 'test-results', 'playwright-results', '.phpunit.cache'] as $excluded) {
+            if ($relative === $excluded || str_starts_with($relative, $excluded . '/')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static function directory_size(string $source_dir): int
+    {
+        $size = 0;
+        $source_dir = rtrim(wp_normalize_path($source_dir), '/');
+        try {
+            $iterator = new RecursiveIteratorIterator(
+                new RecursiveDirectoryIterator($source_dir, FilesystemIterator::SKIP_DOTS)
+            );
+            foreach ($iterator as $file_info) {
+                if (!$file_info instanceof SplFileInfo || !$file_info->isFile()) {
+                    continue;
+                }
+                $relative = ltrim(substr(wp_normalize_path($file_info->getPathname()), strlen($source_dir)), '/');
+                if (!self::is_excluded_backup_path($relative)) {
+                    $size += (int) $file_info->getSize();
+                }
+            }
+        } catch (Throwable $throwable) {
+            return 0;
+        }
+
+        return $size;
     }
 
     /**
