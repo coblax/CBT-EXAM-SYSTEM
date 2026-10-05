@@ -4,7 +4,7 @@ Plugin WordPress untuk ujian CBT berbasis web: panel admin lengkap, frontend sis
 
 README ini adalah dokumen onboarding utama repo. Isinya cukup untuk memahami gambaran produk, setup lokal, workflow frontend, pengujian, dan area operasional penting tanpa harus membaca seluruh source lebih dulu.
 
-Versi plugin saat dokumen ini diperbarui: **`3.2.7`** (lihat header `cbt-exam-system.php`).
+Versi plugin saat dokumen ini diperbarui: **`3.4.0`** (lihat header `cbt-exam-system.php`).
 
 ## Dokumen Lain di Repo
 
