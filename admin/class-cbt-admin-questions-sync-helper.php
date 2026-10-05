@@ -699,28 +699,56 @@ final class CBT_Admin_Questions_Sync_Helper
     
             $normalized_existing = self::normalize_question_sync_options((array) $existing_options);
             $normalized_desired = self::normalize_question_sync_options($desired_options);
-    
+
             $existing_ids_by_match_key = [];
+            $existing_ids_by_text = [];
             foreach ($normalized_existing as $existing_option) {
                 $existing_id = (int) ($existing_option['id'] ?? 0);
                 $match_key = (string) ($existing_option['match_key'] ?? '');
                 if ($existing_id <= 0 || $match_key === '') {
                     continue;
                 }
-    
+
                 $existing_ids_by_match_key[$match_key] = $existing_id;
+                $text_key = trim((string) ($existing_option['option_text'] ?? ''));
+                if ($text_key !== '') {
+                    $existing_ids_by_text[$text_key][] = $existing_id;
+                }
             }
-    
-            $new_ids_by_match_key = [];
+
+            // Cocokkan opsi lama ke opsi baru berdasarkan isi teks dulu, baru key (A/B/C). Dulu hanya
+            // berdasarkan key: menghapus/menukar opsi di bank soal saat ujian berjalan membuat jawaban
+            // siswa (option id) diam-diam menunjuk isi opsi lain, mis. pilihan "C" menjadi teks opsi D lama.
+            $assigned_existing_ids = [];
+            $taken_existing_ids = [];
+            foreach ($normalized_desired as $desired_index => $desired_option) {
+                $text_key = trim((string) ($desired_option['option_text'] ?? ''));
+                foreach ((array) ($existing_ids_by_text[$text_key] ?? []) as $candidate_id) {
+                    if (!isset($taken_existing_ids[$candidate_id])) {
+                        $assigned_existing_ids[$desired_index] = (int) $candidate_id;
+                        $taken_existing_ids[$candidate_id] = true;
+                        break;
+                    }
+                }
+            }
+            foreach ($normalized_desired as $desired_index => $desired_option) {
+                if (isset($assigned_existing_ids[$desired_index])) {
+                    continue;
+                }
+                $match_key = (string) ($desired_option['match_key'] ?? '');
+                $candidate_id = $match_key !== '' ? (int) ($existing_ids_by_match_key[$match_key] ?? 0) : 0;
+                if ($candidate_id > 0 && !isset($taken_existing_ids[$candidate_id])) {
+                    $assigned_existing_ids[$desired_index] = $candidate_id;
+                    $taken_existing_ids[$candidate_id] = true;
+                }
+            }
+
             $used_existing_ids = [];
             $now = current_time('mysql');
-    
-            foreach ($normalized_desired as $desired_option) {
-                $match_key = (string) ($desired_option['match_key'] ?? '');
-                $existing_id = $match_key !== '' && isset($existing_ids_by_match_key[$match_key])
-                    ? (int) $existing_ids_by_match_key[$match_key]
-                    : 0;
-    
+
+            foreach ($normalized_desired as $desired_index => $desired_option) {
+                $existing_id = (int) ($assigned_existing_ids[$desired_index] ?? 0);
+
                 if ($existing_id > 0) {
                     $updated = $wpdb->update(
                         $option_table,
@@ -735,7 +763,6 @@ final class CBT_Admin_Questions_Sync_Helper
                     );
                     self::assert_sync_write_succeeded($updated, 'Gagal memperbarui opsi soal turunan Bank Soal.', $throw_on_failure);
                     $used_existing_ids[$existing_id] = true;
-                    $new_ids_by_match_key[$match_key] = $existing_id;
                     continue;
                 }
     
@@ -758,7 +785,6 @@ final class CBT_Admin_Questions_Sync_Helper
                 $new_option_id = (int) $wpdb->insert_id;
                 if ($new_option_id > 0) {
                     $used_existing_ids[$new_option_id] = true;
-                    $new_ids_by_match_key[$match_key] = $new_option_id;
                 }
             }
     
@@ -771,14 +797,14 @@ final class CBT_Admin_Questions_Sync_Helper
                 self::assert_sync_write_succeeded($deleted, 'Gagal menghapus opsi lama soal turunan Bank Soal.', $throw_on_failure);
             }
     
+            // Opsi lama yang dipertahankan tetap memakai id yang sama; opsi yang terhapus tidak dipetakan.
             $old_to_new = [];
-            foreach ($existing_ids_by_match_key as $match_key => $old_option_id) {
-                $new_option_id = (int) ($new_ids_by_match_key[$match_key] ?? 0);
-                if ($old_option_id > 0 && $new_option_id > 0) {
-                    $old_to_new[$old_option_id] = $new_option_id;
+            foreach ($assigned_existing_ids as $kept_option_id) {
+                if (isset($used_existing_ids[$kept_option_id])) {
+                    $old_to_new[(int) $kept_option_id] = (int) $kept_option_id;
                 }
             }
-    
+
             return $old_to_new;
         }
 

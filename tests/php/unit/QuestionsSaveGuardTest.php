@@ -82,6 +82,72 @@ final class QuestionsSaveGuardTest extends TestCase
         self::assertStringNotContainsString('edit=', $redirect);
     }
 
+    #[RunInSeparateProcess]
+    public function test_editing_bank_question_keeps_it_in_its_current_bank_exam(): void
+    {
+        $this->bootstrapQuestionHandlers();
+
+        global $wpdb;
+        $wpdb = new QuestionsSaveGuardFakeWpdb();
+        // Soal tersimpan di bank exam #77 (milik guru A); bank terbaru subject ini (#55) milik guru lain.
+        $wpdb->storedExamId = 77;
+        $wpdb->stopOnQuestionUpdate = true;
+
+        $_POST = [
+            'id' => 321,
+            'exam_id' => 0,
+            'subject_id' => 4,
+            'return_page' => 'cbt-question-bank',
+            'question_type' => 'true_false',
+            'question_text' => '<p>Bumi itu bulat.</p>',
+            'correct_text' => 'true',
+            'points' => '1',
+        ];
+        $wpdb->questionTypeForEdit = 'true_false';
+
+        try {
+            CBT_Admin_Questions_Service::handle_save_question();
+            self::fail('Update soal seharusnya dipanggil.');
+        } catch (RuntimeException $exception) {
+            self::assertSame('__stop_after_question_update__', $exception->getMessage());
+        }
+
+        $questionUpdate = $wpdb->updates[0] ?? [];
+        self::assertSame('wp_cbt_questions', $questionUpdate['table'] ?? '');
+        self::assertSame(77, $questionUpdate['data']['exam_id'] ?? null, 'Edit tidak boleh memindahkan soal ke bank exam lain.');
+    }
+
+    #[RunInSeparateProcess]
+    public function test_editing_missing_question_is_rejected_without_writes(): void
+    {
+        $this->bootstrapQuestionHandlers();
+
+        global $wpdb;
+        $wpdb = new QuestionsSaveGuardFakeWpdb();
+        $wpdb->storedExamId = 0;
+        $wpdb->questionTypeForEdit = 'true_false';
+
+        $_POST = [
+            'id' => 999,
+            'exam_id' => 0,
+            'subject_id' => 4,
+            'return_page' => 'cbt-question-bank',
+            'question_type' => 'true_false',
+            'question_text' => '<p>Bumi itu bulat.</p>',
+            'correct_text' => 'true',
+            'points' => '1',
+        ];
+
+        $this->expectRedirect(static function (): void {
+            CBT_Admin_Questions_Service::handle_save_question();
+        });
+
+        self::assertSame(0, $wpdb->updateCalls);
+        self::assertSame(0, $wpdb->deleteCalls);
+        self::assertSame(0, $wpdb->insertCalls);
+        self::assertStringContainsString('Soal+yang+diedit+tidak+ditemukan', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+    }
+
     private function expectRedirect(callable $callback): void
     {
         try {
@@ -109,6 +175,11 @@ final class QuestionsSaveGuardFakeWpdb
     public int $updateCalls = 0;
     public int $deleteCalls = 0;
     public int $insertCalls = 0;
+    public int $storedExamId = 55;
+    public string $questionTypeForEdit = 'multiple_choice';
+    public bool $stopOnQuestionUpdate = false;
+    /** @var array<int,array{table:string,data:array<string,mixed>}> */
+    public array $updates = [];
 
     /** @return array{query:string,args:array<int,mixed>} */
     public function prepare(string $query, ...$args): array
@@ -133,7 +204,10 @@ final class QuestionsSaveGuardFakeWpdb
     {
         $query = is_array($prepared) ? (string) ($prepared['query'] ?? '') : (string) $prepared;
         if (strpos($query, 'SELECT question_type FROM wp_cbt_questions') !== false) {
-            return 'multiple_choice';
+            return $this->questionTypeForEdit;
+        }
+        if (strpos($query, 'SELECT exam_id FROM wp_cbt_questions') !== false) {
+            return $this->storedExamId;
         }
         if (strpos($query, 'FROM wp_cbt_exams') !== false && strpos($query, 'subject_id = %d') !== false) {
             return 55;
@@ -169,6 +243,10 @@ final class QuestionsSaveGuardFakeWpdb
     public function update(string $table, array $data, array $where, $format = null, $whereFormat = null): int
     {
         $this->updateCalls++;
+        $this->updates[] = ['table' => $table, 'data' => $data];
+        if ($this->stopOnQuestionUpdate && $table === 'wp_cbt_questions') {
+            throw new RuntimeException('__stop_after_question_update__');
+        }
         return 1;
     }
 

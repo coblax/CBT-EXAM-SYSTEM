@@ -206,6 +206,28 @@ final class CBT_Admin_Questions_Import_Helper
             }
             self::maybe_cleanup_expired_question_import_transients();
 
+            // Satu batch per token dalam satu waktu. Request lama tetap berjalan setelah halaman
+            // di-refresh (ignore_user_abort), sehingga dulu offset yang sama diproses dua kali dan soal
+            // terimpor ganda. Request yang kalah cukup kembali ke halaman progres dan mencoba lagi.
+            $import_lock_key = 'question_import:' . $token;
+            if (class_exists('CBT_Cache')) {
+                if (!CBT_Cache::acquire_lock($import_lock_key, 300, ['token' => $token])) {
+                    $locked_state = self::get_question_import_state_for_current_user($token);
+                    wp_safe_redirect(add_query_arg(
+                        [
+                            'page' => CBT_Admin_Questions_Helper::normalize_question_page_slug((string) (($locked_state['return_page'] ?? '') ?: 'cbt-question-bank')),
+                            'cbt_question_import_token' => $token,
+                            '_wpnonce' => wp_create_nonce('cbt_continue_import_questions'),
+                        ],
+                        admin_url('admin.php')
+                    ));
+                    exit;
+                }
+                register_shutdown_function(static function () use ($import_lock_key): void {
+                    CBT_Cache::release_lock($import_lock_key);
+                });
+            }
+
             $state = self::get_question_import_state_for_current_user($token);
             if (!is_array($state)) {
                 self::clear_question_import_transients($token);
@@ -3254,8 +3276,11 @@ final class CBT_Admin_Questions_Import_Helper
             }
             $affected_exam_ids[$exam_id] = $exam_id;
 
-            $points = isset($row['points']) && $row['points'] !== '' ? (float) $row['points'] : 1.0;
-            $points = max(0, $points);
+            $points = isset($row['points']) && $row['points'] !== '' ? round((float) $row['points'], 2) : 1.0;
+            // Rentang sama dengan form manual; dulu import menerima poin 0 atau di atas 999.99.
+            if (!is_finite($points) || $points < 0.01 || $points > 999.99) {
+                return self::failed_import_result($row, 'Poin soal harus antara 0.01 sampai 999.99.');
+            }
 
             $options_input = (string) ($row['options'] ?? '');
             $correct_answer = (string) ($row['correct_answer'] ?? '');
@@ -5603,6 +5628,7 @@ final class CBT_Admin_Questions_Import_Helper
             $tf_matrix_answer_map = [];
             $diagnostic_entries = [];
             $active_context = 'question';
+            $allow_shorthand_option_lines = self::docx_block_allows_shorthand_option_lines($block);
 
             foreach ($block as $raw_line) {
                 $line = trim((string) $raw_line);
@@ -5663,7 +5689,7 @@ final class CBT_Admin_Questions_Import_Helper
                     continue;
                 }
 
-                if (preg_match('/^([1-9]|1[0-2])[\.\)]\s*(.+)$/u', $line, $matches)) {
+                if ($allow_shorthand_option_lines && preg_match('/^([1-9]|1[0-2])[\.\)]\s*(.+)$/u', $line, $matches)) {
                     $opt_idx = (int) $matches[1];
                     if ($opt_idx >= 1 && $opt_idx <= $max_option_index) {
                         $options_map[$opt_idx] = trim((string) $matches[2]);
@@ -5672,7 +5698,7 @@ final class CBT_Admin_Questions_Import_Helper
                     continue;
                 }
 
-                if (preg_match('/^([A-La-l])[\.\)]\s*(.+)$/u', $line, $matches)) {
+                if ($allow_shorthand_option_lines && preg_match('/^([A-La-l])[\.\)]\s*(.+)$/u', $line, $matches)) {
                     $opt_idx = ord(strtoupper((string) $matches[1])) - ord('A') + 1;
                     if ($opt_idx >= 1 && $opt_idx <= $max_option_index) {
                         $options_map[$opt_idx] = trim((string) $matches[2]);
@@ -5706,8 +5732,11 @@ final class CBT_Admin_Questions_Import_Helper
                     }
 
                     if (in_array($key, ['point', 'points', 'poin', 'nilai'], true)) {
-                        if ($value !== '' && is_numeric($value)) {
-                            $points = (float) $value;
+                        // Terima desimal koma ("2,5"). Nilai tidak valid tidak lagi diam-diam jadi 1;
+                        // dibuat 0 agar ditolak validasi rentang poin saat import.
+                        $points_value = str_replace(',', '.', trim($value));
+                        if ($points_value !== '') {
+                            $points = is_numeric($points_value) ? (float) $points_value : 0.0;
                         }
                         continue;
                     }
@@ -6616,6 +6645,60 @@ final class CBT_Admin_Questions_Import_Helper
             $row['__import_diagnostics'] = $diagnostic_entries;
 
             return $row;
+        }
+
+        /**
+         * Baris singkat "1. ..." / "A. ..." hanya dianggap opsi pada format lama tanpa field
+         * PILIHAN_n/ITEM_n, dan hanya untuk tipe pilihan/ordering. Di template resmi, baris bernomor di
+         * SOAL, JAWABAN, atau PEMBAHASAN adalah isi teks; dulu baris itu hilang dari soal/essay dan
+         * langkah bernomor di PEMBAHASAN menimpa PILIHAN_1, PILIHAN_2, dst.
+         *
+         * @param array<int,mixed> $block
+         */
+        private static function docx_block_allows_shorthand_option_lines(array $block): bool
+        {
+            $declared_type = '';
+            $has_explicit_option_keys = false;
+            $has_explicit_ordering_keys = false;
+
+            foreach ($block as $raw_line) {
+                $line = trim((string) $raw_line);
+                if (
+                    $line === '' ||
+                    strpos($line, self::DOCX_HTML_MARKER_PREFIX) === 0 ||
+                    strpos($line, self::DOCX_DIAGNOSTIC_MARKER_PREFIX) === 0 ||
+                    strpos($line, '__IMG__:') === 0
+                ) {
+                    continue;
+                }
+
+                $parts = explode(':', $line, 2);
+                if (count($parts) !== 2) {
+                    continue;
+                }
+
+                $key = str_replace([' ', '-'], '_', strtolower(trim((string) $parts[0])));
+                if ($declared_type === '' && in_array($key, ['jenis_soal', 'question_type', 'type'], true)) {
+                    $declared_type = self::map_import_question_type(trim((string) $parts[1]));
+                    continue;
+                }
+                if (preg_match('/^(pilihan|opsi|option)_?([1-9]|1[0-2])$/', $key) === 1) {
+                    $has_explicit_option_keys = true;
+                    continue;
+                }
+                if (preg_match('/^(item|urutan|sequence|ordering)_?([1-9]|1[0-2])$/', $key) === 1) {
+                    $has_explicit_ordering_keys = true;
+                }
+            }
+
+            if ($declared_type === 'ordering') {
+                return !$has_explicit_option_keys && !$has_explicit_ordering_keys;
+            }
+            if ($declared_type !== '' && !in_array($declared_type, ['multiple_choice', 'multiple_answer'], true)) {
+                return false;
+            }
+
+            return !$has_explicit_option_keys;
         }
 
         private static function is_docx_structured_question_block(array $block): bool

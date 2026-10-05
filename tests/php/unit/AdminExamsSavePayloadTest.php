@@ -52,6 +52,32 @@ final class AdminExamsSavePayloadTest extends TestCase
         self::assertSame('XI-A', $result['target_kelas']);
     }
 
+    #[RunInSeparateProcess]
+    public function test_schedule_minutes_are_saved_with_zero_seconds(): void
+    {
+        $result = $this->normalizePayload([
+            'starts_at' => '2026-10-01T07:00',
+            'ends_at' => '2026-10-01T09:30',
+        ]);
+
+        self::assertIsArray($result);
+        self::assertSame('2026-10-01 07:00:00', $result['starts_at']);
+        self::assertSame('2026-10-01 09:30:00', $result['ends_at']);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_schedule_with_seconds_is_kept_in_site_timezone(): void
+    {
+        $result = $this->normalizePayload([
+            'starts_at' => '2026-10-01T07:00:00',
+            'ends_at' => '2026-10-01T09:30:15',
+        ]);
+
+        self::assertIsArray($result);
+        self::assertSame('2026-10-01 07:00:00', $result['starts_at']);
+        self::assertSame('2026-10-01 09:30:15', $result['ends_at']);
+    }
+
     /**
      * @param array<string,mixed> $overrides
      * @return array<string,mixed>|WP_Error

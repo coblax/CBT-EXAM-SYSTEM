@@ -284,8 +284,27 @@ final class CBT_Admin_Questions_Helper
                 $value = strtolower($value);
             }
             $value = preg_replace('/\s+/u', ' ', $value);
-            $value = is_string($value) ? preg_replace('/^[\p{P}\p{S}\s]+|[\p{P}\p{S}\s]+$/u', '', $value) : '';
-            return $value === null ? '' : $value;
+            return is_string($value) ? self::trim_compare_edge_punctuation($value) : '';
+        }
+
+        /**
+         * Buang tanda baca/simbol di tepi teks pembanding ("Jakarta." = "Jakarta"), tetapi
+         * pertahankan tanda yang mengubah makna di depan angka/huruf: minus, ±, akar, dan titik
+         * desimal. Tanpa ini "-5" dan "5", atau ".5" dan "5", dianggap sama.
+         */
+        public static function trim_compare_edge_punctuation(string $value): string
+        {
+            $value = preg_replace('/[\x{2010}-\x{2015}\x{2212}]/u', '-', $value);
+            if (!is_string($value)) {
+                return '';
+            }
+            $value = preg_replace('/^(?:(?![\-\x{00B1}\x{221A}-\x{221C}]\s*[\p{L}\p{N}]|[.,]\d)[\p{P}\p{S}\s])+|[\p{P}\p{S}\s]+$/u', '', $value);
+            if (!is_string($value)) {
+                return '';
+            }
+            $value = preg_replace('/^([\-\x{00B1}\x{221A}-\x{221C}])\s+/u', '$1', $value);
+
+            return is_string($value) ? $value : '';
         }
 
         public static function normalize_short_answer_values(string $raw): array
@@ -3850,8 +3869,7 @@ CSS;
                 $text = strtolower($text);
             }
             $text = preg_replace('/\s+/u', ' ', trim($text));
-            $text = is_string($text) ? preg_replace('/^[\p{P}\p{S}\s]+|[\p{P}\p{S}\s]+$/u', '', $text) : '';
-            $text = $text === null ? '' : $text;
+            $text = is_string($text) ? self::trim_compare_edge_punctuation($text) : '';
 
             $image_sources = [];
             if (preg_match_all('/<img\b[^>]*\bsrc=(["\'])(.*?)\1/i', $html, $matches)) {
@@ -3943,9 +3961,8 @@ CSS;
             }
 
             $value = preg_replace('/\s+/u', ' ', $value);
-            $value = is_string($value) ? preg_replace('/^[\p{P}\p{S}\s]+|[\p{P}\p{S}\s]+$/u', '', $value) : '';
 
-            return $value === null ? '' : $value;
+            return is_string($value) ? self::trim_compare_edge_punctuation($value) : '';
         }
 
         /**

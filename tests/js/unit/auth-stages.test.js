@@ -392,8 +392,12 @@ describe('createAuthStageManager', function () {
 
         var html = manager.renderConfirmStage();
 
-        expect(html).toContain('Admin Diagnostic: Redis Preflight');
-        expect(html).toContain('READY | v2 fragmented | 330 soal | TTL 11j 58m | payload index 14.18 KB');
+        expect(html).toContain('Status Kesiapan Redis');
+        expect(html).toContain('100% SIAP DIGUNAKAN');
+        expect(html).toContain('Data Ujian Tersimpan di RAM (330 soal)');
+        expect(html).toContain('>11j 58m<');
+        expect(html).toContain('>14.18 KB<');
+        expect(html).toContain('v2 fragmented');
         expect(html).toContain('Koneksi Redis');
         expect(html).toContain('/var/run/redis/redis.sock');
         expect(html).toContain('Snapshot');
@@ -431,7 +435,7 @@ describe('createAuthStageManager', function () {
                 }
             });
 
-            expect(manager.renderConfirmStage()).toContain('TTL ' + entry[1]);
+            expect(manager.renderConfirmStage()).toContain('>' + entry[1] + '<');
         });
     });
 
@@ -462,7 +466,9 @@ describe('createAuthStageManager', function () {
 
         var html = manager.renderConfirmStage();
 
-        expect(html).toContain('GAGAL/MATI');
+        expect(html).toContain('0% KONEKSI TERPUTUS');
+        expect(html).toContain('Koneksi Server Redis Gagal');
+        expect(html).toContain('DISCONNECTED');
         expect(html).toContain('UNAVAILABLE');
         expect(html).toContain('Permission denied');
         expect(html).toContain('Redis start snapshot tidak tersedia.');
@@ -513,7 +519,7 @@ describe('createAuthStageManager', function () {
 
         var html = manager.renderConfirmStage();
 
-        expect(html).not.toContain('Admin Diagnostic: Redis Preflight');
+        expect(html).not.toContain('Status Kesiapan Redis');
         expect(html).not.toContain('Koneksi Redis');
     });
 });

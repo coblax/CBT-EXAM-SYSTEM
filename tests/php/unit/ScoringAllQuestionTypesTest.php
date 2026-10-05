@@ -186,6 +186,30 @@ final class ScoringAllQuestionTypesTest extends TestCase
     }
 
     #[RunInSeparateProcess]
+    public function test_short_answer_keeps_negative_sign_and_decimal_point(): void
+    {
+        $this->bootstrapScoringScaffold();
+
+        $negative = $this->buildContext('short_answer', 1.0, [
+            'short_answer_values' => ['-5'],
+        ]);
+        self::assertSame(0, $this->callEvaluate($negative, '5')['is_correct'], '"5" tidak boleh dinilai benar untuk kunci "-5".');
+        self::assertSame(1, $this->callEvaluate($negative, '-5')['is_correct']);
+        self::assertSame(1, $this->callEvaluate($negative, "\u{2212}5")['is_correct'], 'Tanda minus Unicode setara dengan "-".');
+        self::assertSame(1, $this->callEvaluate($negative, '(-5).')['is_correct']);
+
+        $decimal = $this->buildContext('short_answer', 1.0, [
+            'short_answer_values' => ['.5'],
+        ]);
+        self::assertSame(0, $this->callEvaluate($decimal, '5')['is_correct'], '"5" tidak boleh dinilai benar untuk kunci ".5".');
+
+        $text = $this->buildContext('short_answer', 1.0, [
+            'short_answer_values' => ['Jakarta'],
+        ]);
+        self::assertSame(1, $this->callEvaluate($text, '"Jakarta."')['is_correct'], 'Tanda baca di tepi teks tetap diabaikan.');
+    }
+
+    #[RunInSeparateProcess]
     public function test_short_answer_empty_submission(): void
     {
         $this->bootstrapScoringScaffold();

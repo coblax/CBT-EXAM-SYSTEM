@@ -650,6 +650,37 @@ trait CBT_REST_Start_Attempt_Routes
                 );
             }
 
+            if (empty($question_ids)) {
+                // Jangan buat attempt kosong (mis. exam baru masih disinkronkan bertahap atau semua soal
+                // dinonaktifkan): siswa akan terjebak di ujian tanpa soal dan tidak bisa mengulang.
+                self::write_start_attempt_opening_state($exam_id, $user_id, 'terminal_error', 'exam_no_questions');
+                self::record_start_attempt_resolution('terminal_error', $exam_id, $user_id, [
+                    'error_code' => 'exam_no_questions',
+                ]);
+                $no_questions_suggestion = 'Kembali ke daftar exam dan coba lagi setelah pengawas menyiapkan soal.';
+                $no_questions_error = new WP_Error(
+                    'exam_no_questions',
+                    'Exam ini belum memiliki soal aktif. Hubungi pengawas/admin.',
+                    [
+                        'status' => 409,
+                        'opening_reason' => 'exam_no_questions',
+                        'suggestion' => $no_questions_suggestion,
+                        'return_to_exam_list_suggestion' => $no_questions_suggestion,
+                    ]
+                );
+                self::record_start_attempt_response_ready_phase(
+                    'start_attempt_response_ready',
+                    $exam_id,
+                    $user_id,
+                    $request_started_at,
+                    $no_questions_error,
+                    ['error_code' => 'exam_no_questions'],
+                    'terminal_error'
+                );
+                // Tidak disimpan sebagai replay idempotensi: kondisi ini sementara dan boleh dicoba ulang.
+                return $finalize_start_attempt_response($no_questions_error);
+            }
+
             if (empty($start_attempt_question_manifest)) {
                 $start_attempt_question_manifest = self::build_minimal_question_manifest_from_order(
                     $question_ids,

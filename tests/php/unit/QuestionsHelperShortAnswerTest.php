@@ -39,6 +39,30 @@ final class QuestionsHelperShortAnswerTest extends TestCase
         );
     }
 
+    public function test_normalize_short_answer_compare_value_keeps_meaningful_leading_signs(): void
+    {
+        $normalize = static fn (string $value): string => \CBT_Admin_Questions_Helper::normalize_short_answer_compare_value($value);
+
+        self::assertNotSame($normalize('5'), $normalize('-5'));
+        self::assertNotSame($normalize('5'), $normalize('.5'));
+        self::assertNotSame($normalize('2'), $normalize("\u{221A}2"));
+        self::assertSame($normalize('-5'), $normalize("\u{2212}5"));
+        self::assertSame($normalize('-5'), $normalize('- 5'));
+        self::assertSame($normalize('-5'), $normalize('(-5)'));
+    }
+
+    public function test_find_duplicate_option_indexes_treats_signed_numbers_as_distinct(): void
+    {
+        $duplicates = \CBT_Admin_Questions_Helper::find_duplicate_option_indexes([
+            ['option_text' => '5', 'is_correct' => 1],
+            ['option_text' => '-5', 'is_correct' => 0],
+            ['option_text' => '11', 'is_correct' => 0],
+            ['option_text' => '-11', 'is_correct' => 0],
+        ]);
+
+        self::assertSame([], $duplicates);
+    }
+
     public function test_resolve_short_answer_input_keys_detects_unique_placeholders_in_order(): void
     {
         $keys = \CBT_Admin_Questions_Helper::resolve_short_answer_input_keys(

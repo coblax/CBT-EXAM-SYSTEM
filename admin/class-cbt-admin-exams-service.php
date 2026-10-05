@@ -8764,24 +8764,46 @@ final class CBT_Admin_Exams_Service
         }
 
         $attempt_table = $wpdb->prefix . 'cbt_attempts';
-        $attempt_ids = $wpdb->get_col(
+        $attempt_rows = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT id
+                "SELECT id, status
                  FROM {$attempt_table}
                  WHERE exam_id = %d",
                 $exam_id
-            )
+            ),
+            ARRAY_A
         );
 
-        $attempt_ids = array_values(array_unique(array_filter(array_map('absint', (array) $attempt_ids))));
+        $attempt_ids = [];
+        $finished_attempt_ids = [];
+        foreach ((array) $attempt_rows as $attempt_row) {
+            $attempt_id = absint($attempt_row['id'] ?? 0);
+            if ($attempt_id <= 0) {
+                continue;
+            }
+            $attempt_ids[$attempt_id] = $attempt_id;
+            if ((string) ($attempt_row['status'] ?? '') !== 'in_progress') {
+                $finished_attempt_ids[$attempt_id] = $attempt_id;
+            }
+        }
         if (empty($attempt_ids)) {
             return;
         }
 
-        CBT_Cache::invalidate_attempts($attempt_ids);
-        CBT_UI_State::clear_attempt_states_by_attempt_ids($attempt_ids);
+        CBT_Cache::invalidate_attempts(array_values($attempt_ids));
+
+        // Attempt yang sedang berjalan tidak boleh dikosongkan: runtime Redis menyimpan buffer jawaban
+        // yang belum di-flush ke DB, dan UI state menyimpan tanda ragu-ragu. Dulu menyimpan exam saat ujian
+        // berjalan (mis. memperpanjang jam selesai) menghapus jawaban terbaru seluruh siswa. Urutan soal
+        // attempt aktif tetap direkonsiliasi dari snapshot DB (lihat BUG-NOTES-QUESTION-ORDER.md).
+        $finished_attempt_ids = array_values($finished_attempt_ids);
+        if (empty($finished_attempt_ids)) {
+            return;
+        }
+
+        CBT_UI_State::clear_attempt_states_by_attempt_ids($finished_attempt_ids);
         if (class_exists('CBT_Runtime')) {
-            foreach ($attempt_ids as $attempt_id) {
+            foreach ($finished_attempt_ids as $attempt_id) {
                 CBT_Runtime::clear_attempt_runtime((int) $attempt_id);
             }
         }
@@ -9681,17 +9703,22 @@ final class CBT_Admin_Exams_Service
         }
 
         $timezone = wp_timezone();
-        $dt = DateTimeImmutable::createFromFormat('Y-m-d\TH:i', $value, $timezone);
+        // Input dengan detik ("2026-10-01T07:00:00") dulu jatuh ke strtotime() yang membaca zona default
+        // PHP (UTC di WordPress), sehingga jadwal bergeser sebesar offset situs (WIB: +7 jam).
+        $dt = false;
+        foreach (['Y-m-d\TH:i', 'Y-m-d\TH:i:s', 'Y-m-d H:i', 'Y-m-d H:i:s'] as $format) {
+            $dt = DateTimeImmutable::createFromFormat('!' . $format, $value, $timezone);
+            if ($dt) {
+                break;
+            }
+        }
         if (!$dt) {
-            $timestamp = strtotime($value);
-            if (!$timestamp) {
+            // Fallback tetap ditafsirkan di zona waktu situs, bukan zona default PHP (UTC di WordPress).
+            try {
+                $dt = new DateTimeImmutable($value, $timezone);
+            } catch (Exception $exception) {
                 return null;
             }
-            $dt = (new DateTimeImmutable('@' . $timestamp))->setTimezone($timezone);
-        }
-
-        if (!$dt) {
-            return null;
         }
 
         return $dt->format('Y-m-d H:i:s');

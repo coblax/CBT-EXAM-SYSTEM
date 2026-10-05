@@ -1452,6 +1452,57 @@ describe('createExamSessionManager', function () {
                 }
 
                 if (endpoint === 'start_attempt') {
+                    throw Object.assign(new Error('Exam belum dimulai.'), {
+                        code: 'exam_not_started',
+                        status: 403
+                    });
+                }
+
+                throw new Error('Unexpected endpoint: ' + String(endpoint));
+            }
+        });
+
+        await fixture.manager.handleStartExam();
+
+        expect(fixture.state.stage).toBe('exam');
+        expect(fixture.calls.apiCalls.map(function (entry) {
+            return entry.endpoint;
+        })).toEqual(['exams', 'start_attempt']);
+    });
+
+    it('returns the student to the token form when the server rejects the exam token', async function () {
+        var fixture = createFixture({
+            state: {
+                exams: [
+                    {
+                        id: 55,
+                        duration_minutes: 60,
+                        is_class_allowed: 1,
+                        latest_attempt_id: 0,
+                        latest_attempt_status: '',
+                        token_refresh_minutes: 15
+                    }
+                ],
+                selectedExamId: 55
+            },
+            apiRequest: async function (endpoint) {
+                if (endpoint === 'exams') {
+                    return {
+                        current_user: null,
+                        items: [
+                            {
+                                id: 55,
+                                duration_minutes: 60,
+                                is_class_allowed: 1,
+                                latest_attempt_id: 0,
+                                latest_attempt_status: '',
+                                token_refresh_minutes: 15
+                            }
+                        ]
+                    };
+                }
+
+                if (endpoint === 'start_attempt') {
                     throw Object.assign(new Error('Token ujian tidak valid.'), {
                         code: 'token_invalid',
                         status: 403
@@ -1464,7 +1515,10 @@ describe('createExamSessionManager', function () {
 
         await fixture.manager.handleStartExam();
 
-        expect(fixture.state.stage).toBe('exam');
+        expect(fixture.state.stage).toBe('confirm');
+        expect(fixture.state.isOpeningAttempt).toBe(false);
+        expect(fixture.state.error).toContain('Token ujian tidak valid');
+        expect(fixture.state.error).toContain('15 menit');
         expect(fixture.calls.apiCalls.map(function (entry) {
             return entry.endpoint;
         })).toEqual(['exams', 'start_attempt']);

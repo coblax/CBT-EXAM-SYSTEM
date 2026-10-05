@@ -6420,7 +6420,11 @@ if (!defined('ABSPATH')) {
                                 normalized = probe.textContent || probe.innerText || '';
                             }
                             normalized = normalized.replace(/\u00a0/g, ' ').trim().toLowerCase();
-                            normalized = normalized.replace(/\s+/g, ' ').replace(/^[\p{P}\p{S}\s]+|[\p{P}\p{S}\s]+$/gu, '');
+                            // Sama dengan CBT_Admin_Questions_Helper::trim_compare_edge_punctuation():
+                            // minus, ±, akar, dan titik desimal di depan angka/huruf tidak dibuang.
+                            normalized = normalized.replace(/\s+/g, ' ').replace(/[\u2010-\u2015\u2212]/gu, '-');
+                            normalized = normalized.replace(/^(?:(?![-\u00b1\u221a-\u221c]\s*[\p{L}\p{N}]|[.,]\d)[\p{P}\p{S}\s])+|[\p{P}\p{S}\s]+$/gu, '');
+                            normalized = normalized.replace(/^([-\u00b1\u221a-\u221c])\s+/u, '$1');
                             return normalized;
                         };
                         const normalizeOptionSignature = (html) => {

@@ -2744,8 +2744,24 @@ trait CBT_REST_Scoring_Helpers
             $value = strtolower($value);
         }
         $value = preg_replace('/\s+/u', ' ', $value);
-        $value = is_string($value) ? preg_replace('/^[\p{P}\p{S}\s]+|[\p{P}\p{S}\s]+$/u', '', $value) : '';
-        return $value === null ? '' : $value;
+        if (!is_string($value)) {
+            return '';
+        }
+
+        // Tanda baca/simbol di tepi diabaikan ("Jakarta." = "Jakarta"), tetapi minus, ±, akar,
+        // dan titik desimal di depan angka/huruf tetap dipakai agar "-5" tidak dinilai sama dengan "5".
+        // Aturan ini harus sama dengan CBT_Admin_Questions_Helper::trim_compare_edge_punctuation().
+        $value = preg_replace('/[\x{2010}-\x{2015}\x{2212}]/u', '-', $value);
+        if (!is_string($value)) {
+            return '';
+        }
+        $value = preg_replace('/^(?:(?![\-\x{00B1}\x{221A}-\x{221C}]\s*[\p{L}\p{N}]|[.,]\d)[\p{P}\p{S}\s])+|[\p{P}\p{S}\s]+$/u', '', $value);
+        if (!is_string($value)) {
+            return '';
+        }
+        $value = preg_replace('/^([\-\x{00B1}\x{221A}-\x{221C}])\s+/u', '$1', $value);
+
+        return is_string($value) ? $value : '';
     }
 
     /**

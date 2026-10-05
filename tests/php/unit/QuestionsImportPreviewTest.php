@@ -269,6 +269,47 @@ final class QuestionsImportPreviewTest extends TestCase
         self::assertGreaterThan(0, (int) ($result['question_id'] ?? 0));
     }
 
+    public function test_import_single_question_row_rejects_points_outside_manual_form_range(): void
+    {
+        global $wpdb;
+        $wpdb = new QuestionsImportPreviewFakeWpdb();
+        $affectedExamIds = [];
+
+        foreach (['0', '1000', '-2'] as $points) {
+            $result = $this->invokeImportHelper('import_single_question_row', [[
+                'question_type' => 'true_false',
+                'question_text' => 'Bumi itu bulat.',
+                'correct_answer' => 'true',
+                'points' => $points,
+            ], 1, true, 1, &$affectedExamIds]);
+
+            self::assertSame('failed', $result['status'] ?? '', 'Poin ' . $points . ' harus ditolak.');
+            self::assertStringContainsString('Poin soal harus antara 0.01 sampai 999.99', (string) ($result['message'] ?? ''));
+        }
+        self::assertSame(0, $wpdb->insertCalls);
+    }
+
+    public function test_parse_docx_block_accepts_decimal_comma_points_and_flags_invalid_points(): void
+    {
+        $row = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'JENIS_SOAL: true_false',
+            'SOAL: Bumi itu bulat.',
+            'JAWABAN: true',
+            'POIN: 2,5',
+        ]]);
+        self::assertIsArray($row);
+        self::assertSame('2.5', $row['points']);
+
+        $invalid = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'JENIS_SOAL: true_false',
+            'SOAL: Bumi itu bulat.',
+            'JAWABAN: true',
+            'POIN: dua',
+        ]]);
+        self::assertIsArray($invalid);
+        self::assertSame('0', $invalid['points'], 'Poin tidak valid tidak boleh diam-diam menjadi 1.');
+    }
+
     public function test_import_single_question_row_rejects_ordering_keyed_gaps_but_accepts_freeform(): void
     {
         global $wpdb;
@@ -529,6 +570,70 @@ final class QuestionsImportPreviewTest extends TestCase
         self::assertStringContainsString('<img src="http://example.test/pembahasan.png"', (string) $row['explanation']);
         self::assertStringNotContainsString('Langit terlihat biru saat siang.', (string) $row['question_text']);
         self::assertStringNotContainsString('http://example.test/pembahasan.png', (string) $row['question_text']);
+    }
+
+    public function test_parse_docx_block_keeps_numbered_lines_in_question_when_template_uses_pilihan_fields(): void
+    {
+        $row = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'JENIS_SOAL: multiple_choice',
+            'SOAL: Perhatikan pernyataan berikut!',
+            '1. Air mendidih pada 100 derajat.',
+            '2. Es mencair pada 0 derajat.',
+            '3. Besi memuai saat dipanaskan.',
+            'Pernyataan yang benar adalah ...',
+            'PILIHAN_1: 1 dan 2',
+            'PILIHAN_2: 1 dan 3',
+            'PILIHAN_3: 2 dan 3',
+            'PILIHAN_4: Semua benar',
+            'JAWABAN: 4',
+        ]]);
+
+        self::assertIsArray($row);
+        self::assertStringContainsString('1. Air mendidih pada 100 derajat.', (string) $row['question_text']);
+        self::assertStringContainsString('3. Besi memuai saat dipanaskan.', (string) $row['question_text']);
+        self::assertStringContainsString('Pernyataan yang benar adalah ...', (string) $row['question_text']);
+        self::assertSame('1 dan 2||1 dan 3||2 dan 3||Semua benar', $row['options']);
+        self::assertSame('D', $row['correct_answer']);
+    }
+
+    public function test_parse_docx_block_numbered_explanation_steps_do_not_overwrite_options(): void
+    {
+        $row = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'JENIS_SOAL: multiple_choice',
+            'SOAL: Luas persegi sisi 4 cm adalah ...',
+            'PILIHAN_1: 8 cm2',
+            'PILIHAN_2: 12 cm2',
+            'PILIHAN_3: 16 cm2',
+            'PILIHAN_4: 20 cm2',
+            'JAWABAN: 3',
+            'POIN: 1',
+            'PEMBAHASAN: Langkah penyelesaian:',
+            '1. Rumus luas = s x s',
+            '2. 4 x 4 = 16',
+        ]]);
+
+        self::assertIsArray($row);
+        self::assertSame('8 cm2||12 cm2||16 cm2||20 cm2', $row['options']);
+        self::assertSame('C', $row['correct_answer']);
+        self::assertStringContainsString('1. Rumus luas = s x s', (string) $row['explanation']);
+        self::assertStringContainsString('2. 4 x 4 = 16', (string) $row['explanation']);
+    }
+
+    public function test_parse_docx_essay_keeps_lettered_sub_questions_in_question_text(): void
+    {
+        $row = $this->invokeImportHelper('parse_docx_multiple_choice_block', [[
+            'JENIS_SOAL: essay',
+            'SOAL: Jawablah pertanyaan berikut:',
+            'a) Apa itu fotosintesis?',
+            'b) Sebutkan dua faktornya.',
+            'JAWABAN: Rubrik umum.',
+            'a) Proses pembentukan makanan.',
+        ]]);
+
+        self::assertIsArray($row);
+        self::assertStringContainsString('a) Apa itu fotosintesis?', (string) $row['question_text']);
+        self::assertStringContainsString('b) Sebutkan dua faktornya.', (string) $row['question_text']);
+        self::assertStringContainsString('a) Proses pembentukan makanan.', (string) $row['correct_text']);
     }
 
     public function test_parse_docx_block_accepts_explanation_alias_and_key_only_lines(): void

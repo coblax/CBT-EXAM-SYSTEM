@@ -247,10 +247,11 @@ describe('createStageRuntimeManager', function () {
         });
 
         fixture.manager.toggleCalculator();
+        // Pemuatan chunk menunggu dua requestAnimationFrame (~32ms di jsdom), jadi beri jendela polling lebih panjang.
         await waitForAssertion(function () {
             expect(fixture.state.calculatorVisible).toBe(false);
             expect(String(fixture.state.notice || '')).toContain('Kalkulator gagal dimuat');
-        });
+        }, 200);
     });
 
     it('renders exam stage fallback with retry and back controls when the exam chunk fails', async function () {

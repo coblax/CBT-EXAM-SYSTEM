@@ -1811,14 +1811,21 @@ final class CBT_Admin_Questions_Service
                 $normalized_detail_text = CBT_Admin_Questions_Helper::build_table_completion_payload($table_completion_definition);
             }
     
-            $resolved_bank_exam_id = 0;
-            if ($subject_id > 0) {
-                $resolved_bank_exam_id = CBT_Admin_Questions_Helper::ensure_subject_question_bank_exam($subject_id, $is_admin_scope, $current_user_id);
-            }
-            if ($id <= 0) {
-                $exam_id = $resolved_bank_exam_id;
-            } elseif ($exam_id <= 0 && $resolved_bank_exam_id > 0) {
-                $exam_id = $resolved_bank_exam_id;
+            if ($id > 0) {
+                // Edit tidak memindahkan soal: tetap di exam/bank asalnya. Dulu soal bank (exam_id=0 dari
+                // form) di-resolve ulang ke bank terbaru subject itu, sehingga admin yang mengedit soal
+                // guru A memindahkannya ke bank guru lain dan soal hilang dari daftar guru A.
+                $stored_exam_id = (int) $wpdb->get_var(
+                    $wpdb->prepare("SELECT exam_id FROM {$question_table} WHERE id = %d", $id)
+                );
+                if ($stored_exam_id <= 0) {
+                    self::redirect_question_import_with_error('Soal yang diedit tidak ditemukan.', $return_page);
+                }
+                $exam_id = $stored_exam_id;
+            } else {
+                $exam_id = $subject_id > 0
+                    ? CBT_Admin_Questions_Helper::ensure_subject_question_bank_exam($subject_id, $is_admin_scope, $current_user_id)
+                    : 0;
             }
     
             if ($exam_id <= 0 || trim($question_text) === '' || $subject_id <= 0) {

@@ -159,7 +159,8 @@ final class RestStartAttemptActiveIndexTest extends TestCase
             ],
             latestAttemptRow: null,
             attemptRowsById: [],
-            insertId: 123
+            insertId: 123,
+            questionPayloadRows: self::singleEssayQuestionPayloadRows()
         );
 
         $response = CBT_REST::start_attempt(new WP_REST_Request([
@@ -175,8 +176,9 @@ final class RestStartAttemptActiveIndexTest extends TestCase
         self::assertSame('2026-03-24 13:30:00', $wpdb->lastInsertData['deadline_at'] ?? '');
         self::assertSame(123, CBT_Active_Attempt_Index::get_active_attempt_id(7, 15));
         self::assertFalse(CBT_Runtime::has_attempt_state(123));
-        self::assertArrayNotHasKey('cbt_attempt_session:attempt:123', (array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
-        self::assertArrayNotHasKey('cbt_attempt_contract:attempt:123', (array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
+        // Exam bersoal: snapshot entry minimal ditulis sinkron agar soal pertama bisa langsung dimuat.
+        self::assertArrayHasKey('cbt_attempt_session:attempt:123', (array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
+        self::assertArrayHasKey('cbt_attempt_contract:attempt:123', (array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
         self::assertSame('ready', CBT_Start_Attempt_Opening_State_Service::get_state(7, 15)['opening_state'] ?? '');
         self::assertSame(123, (int) (CBT_Start_Attempt_Opening_State_Service::get_state(7, 15)['attempt_id'] ?? 0));
 
@@ -184,6 +186,47 @@ final class RestStartAttemptActiveIndexTest extends TestCase
 
         self::assertArrayHasKey('cbt_attempt_session:attempt:123', (array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
         self::assertArrayHasKey('cbt_attempt_contract:attempt:123', (array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_start_attempt_refuses_to_create_attempt_for_exam_without_active_questions(): void
+    {
+        $this->bootstrapStartAttemptScaffold();
+        $this->useFakeRuntimeRedisClient();
+        $this->useFakeActiveAttemptRedisClient();
+        $this->useFakeStartSnapshotRedis();
+        $this->useFakeAttemptSessionSnapshotRedis();
+        $this->useFakeAttemptContractSnapshotRedis();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+        $GLOBALS['cbt_test_global_exam_token_meta'] = ['token' => ''];
+
+        global $wpdb;
+        $wpdb = new RestStartAttemptActiveIndexFakeWpdb(
+            examRow: [
+                'id' => 15,
+                'status' => 'published',
+                'starts_at' => '',
+                'ends_at' => '',
+                'duration_minutes' => 90,
+                'randomize_questions' => 0,
+                'randomize_options' => 0,
+                'target_kelas' => '',
+            ],
+            latestAttemptRow: null,
+            attemptRowsById: [],
+            insertId: 123
+        );
+
+        $response = CBT_REST::start_attempt(new WP_REST_Request([
+            'exam_id' => 15,
+        ]));
+
+        self::assertTrue(is_wp_error($response));
+        self::assertSame('exam_no_questions', $response->get_error_code());
+        self::assertSame(0, $wpdb->insertCalls, 'Attempt kosong tidak boleh dibuat.');
+        self::assertSame(0, CBT_Active_Attempt_Index::get_active_attempt_id(7, 15));
     }
 
     #[RunInSeparateProcess]
@@ -846,7 +889,8 @@ final class RestStartAttemptActiveIndexTest extends TestCase
             ],
             latestAttemptRow: null,
             attemptRowsById: [],
-            insertId: 123
+            insertId: 123,
+            questionPayloadRows: self::singleEssayQuestionPayloadRows()
         );
 
         $started = CBT_REST::start_attempt(new WP_REST_Request([
@@ -855,6 +899,8 @@ final class RestStartAttemptActiveIndexTest extends TestCase
 
         self::assertFalse(is_wp_error($started));
         self::assertSame('started', $started['status']);
+        // Simulasikan snapshot sesi yang belum sempat tertulis (mis. Redis sempat gagal) sebelum get_session.
+        unset($GLOBALS['cbt_test_redis_storage']['cbt_attempt_session:attempt:123']);
         self::assertArrayNotHasKey('cbt_attempt_session:attempt:123', (array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
 
         $wpdb = new RestStartAttemptActiveIndexFakeWpdb(
@@ -884,7 +930,8 @@ final class RestStartAttemptActiveIndexTest extends TestCase
                     'created_by' => 0,
                     'exam_duration_minutes' => 90,
                 ],
-            ]
+            ],
+            questionPayloadRows: self::singleEssayQuestionPayloadRows()
         );
 
         $session = CBT_REST::get_session(new WP_REST_Request([
@@ -992,7 +1039,8 @@ final class RestStartAttemptActiveIndexTest extends TestCase
             ],
             latestAttemptRow: null,
             attemptRowsById: [],
-            insertId: 123
+            insertId: 123,
+            questionPayloadRows: self::singleEssayQuestionPayloadRows()
         );
 
         $started = CBT_REST::start_attempt(new WP_REST_Request([
@@ -1026,7 +1074,8 @@ final class RestStartAttemptActiveIndexTest extends TestCase
                     'question_order' => (string) ($wpdb->lastInsertData['question_order'] ?? '[]'),
                     'option_order' => (string) ($wpdb->lastInsertData['option_order'] ?? ''),
                 ],
-            ]
+            ],
+            questionPayloadRows: self::singleEssayQuestionPayloadRows()
         );
 
         $questions = CBT_REST::get_questions(new WP_REST_Request([
@@ -1123,7 +1172,8 @@ final class RestStartAttemptActiveIndexTest extends TestCase
             ],
             latestAttemptRow: null,
             attemptRowsById: [],
-            insertId: 123
+            insertId: 123,
+            questionPayloadRows: self::singleEssayQuestionPayloadRows()
         );
 
         $queued = CBT_REST::start_attempt(new WP_REST_Request([
@@ -1226,7 +1276,8 @@ final class RestStartAttemptActiveIndexTest extends TestCase
             ],
             latestAttemptRow: null,
             attemptRowsById: [],
-            insertId: 123
+            insertId: 123,
+            questionPayloadRows: self::singleEssayQuestionPayloadRows()
         );
 
         $started = CBT_REST::start_attempt(new WP_REST_Request([
@@ -1412,6 +1463,29 @@ final class RestStartAttemptActiveIndexTest extends TestCase
         self::assertSame(0, $wpdb->insertCalls);
 
         CBT_Start_Attempt_Idempotency_Service::abandon((array) ($claimResult['claim'] ?? []));
+    }
+
+    /**
+     * Exam wajib punya minimal satu soal aktif agar start_attempt membuat attempt.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    private static function singleEssayQuestionPayloadRows(): array
+    {
+        return [[
+            'id' => 201,
+            'exam_id' => 15,
+            'question_text' => '<p>Jelaskan fotosintesis.</p>',
+            'question_type' => 'essay',
+            'points' => 1,
+            'correct_text' => 'Rubrik',
+            'created_at' => '2026-03-24 10:00:00',
+            'updated_at' => '2026-03-24 10:00:00',
+            'is_active' => 1,
+            'short_answer_correct_text' => null,
+            'ordering_scoring_mode' => null,
+            'ordering_shuffle_items' => null,
+        ]];
     }
 
     private function bootstrapStartAttemptScaffold(): void
@@ -1683,6 +1757,9 @@ final class RestStartAttemptActiveIndexFakeWpdb
     /** @var array<int,array<string,mixed>> */
     private array $startSnapshotOptionRows;
 
+    /** @var array<int,array<string,mixed>> */
+    private array $questionPayloadRows;
+
     /**
      * @param array<string,mixed>|null $examRow
      * @param array<string,mixed>|null $latestAttemptRow
@@ -1700,9 +1777,11 @@ final class RestStartAttemptActiveIndexFakeWpdb
         array $startSnapshotQuestionRows = [],
         array $startSnapshotOptionRows = [],
         ?array $activeAttemptRow = null,
-        array $activeAttemptRowsSequence = []
+        array $activeAttemptRowsSequence = [],
+        array $questionPayloadRows = []
     )
     {
+        $this->questionPayloadRows = $questionPayloadRows;
         $this->examRow = $examRow;
         $this->latestAttemptRow = $latestAttemptRow;
         $this->attemptRowsById = $attemptRowsById;
@@ -1780,7 +1859,7 @@ final class RestStartAttemptActiveIndexFakeWpdb
 
         if (str_contains($query, 'FROM wp_cbt_questions q')) {
             $this->questionQueryCount++;
-            return [];
+            return $this->questionPayloadRows;
         }
 
         return [];
