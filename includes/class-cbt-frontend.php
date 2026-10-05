@@ -1036,6 +1036,70 @@ class CBT_Frontend
         });
     }
 
+    // Baca lalu tulis antrean dalam satu transaksi readwrite agar SW dan halaman tidak bisa me-lease
+    // atau menimpa item yang sama bersamaan. mutate wajib sinkron: kembalikan { puts, deletes, result }.
+    function mutateAnswerQueue(mutate) {
+        return openAnswerQueueDb().then(function (db) {
+            if (!db) {
+                return null;
+            }
+
+            return new Promise(function (resolve) {
+                var plan = null;
+                var tx;
+                try {
+                    tx = db.transaction(ANSWER_QUEUE_STORE, 'readwrite');
+                    var store = tx.objectStore(ANSWER_QUEUE_STORE);
+                    var request = store.getAll();
+                    request.onsuccess = function () {
+                        var items = (Array.isArray(request.result) ? request.result : []).map(normalizeQueueItem).filter(Boolean);
+                        plan = mutate(items) || {};
+                        (plan.puts || []).forEach(function (item) {
+                            store.put(item);
+                        });
+                        (plan.deletes || []).forEach(function (queueKey) {
+                            store.delete(queueKey);
+                        });
+                    };
+                } catch (error) {
+                    resolve(null);
+                    return;
+                }
+
+                tx.oncomplete = function () {
+                    resolve(plan ? plan.result : null);
+                };
+                tx.onerror = function () {
+                    resolve(null);
+                };
+                tx.onabort = tx.onerror;
+            });
+        });
+    }
+
+    function indexQueueItemsByKey(items) {
+        return items.reduce(function (lookup, item) {
+            lookup[String(item.queue_key || '')] = item;
+            return lookup;
+        }, {});
+    }
+
+    // Versi jawaban yang lebih baru ditahan di bawah lease pengirim versi lama; lepaskan setelah request
+    // versi lama selesai agar versi baru terkirim berikutnya (urutan tiba di server tetap lama -> baru).
+    function releaseHeldNewerQueueItem(current, owner, now) {
+        if (!current || current.status !== 'syncing') {
+            return null;
+        }
+        if (String(current.lease_owner || '') !== '' && String(current.lease_owner || '') !== String(owner || '')) {
+            return null;
+        }
+        current.status = 'pending';
+        current.lease_owner = '';
+        current.lease_until = 0;
+        current.updated_at = now;
+        return current;
+    }
+
     function normalizeQueueItem(raw) {
         if (!raw || typeof raw !== 'object') {
             return null;
@@ -1057,18 +1121,6 @@ class CBT_Frontend
         });
     }
 
-    function putAnswerQueueItem(item) {
-        return withAnswerQueueStore(ANSWER_QUEUE_STORE, 'readwrite', function (store) {
-            return store.put(item);
-        });
-    }
-
-    function deleteAnswerQueueItem(queueKey) {
-        return withAnswerQueueStore(ANSWER_QUEUE_STORE, 'readwrite', function (store) {
-            return store.delete(queueKey);
-        });
-    }
-
     function listAuthGrants() {
         return withAnswerQueueStore(AUTH_GRANT_STORE, 'readonly', function (store) {
             return store.getAll();
@@ -1083,8 +1135,8 @@ class CBT_Frontend
     function acquireAnswerQueueBatch(grant) {
         var now = Date.now();
         var owner = 'sw:' + BUILD_ID;
-        return listAnswerQueueItems().then(function (items) {
-            var available = items.filter(function (item) {
+        return mutateAnswerQueue(function (items) {
+            var acquired = items.filter(function (item) {
                 if (Number(item.user_id) !== Number(grant.user_id) || Number(item.attempt_id) !== Number(grant.attempt_id)) {
                     return false;
                 }
@@ -1092,52 +1144,94 @@ class CBT_Frontend
                     return true;
                 }
                 return item.status === 'syncing' && Number(item.lease_until) > 0 && Number(item.lease_until) <= now;
-            }).slice(0, 10);
-
-            return available.reduce(function (promise, item) {
-                return promise.then(function (acquired) {
-                    item.status = 'syncing';
-                    item.lease_owner = owner;
-                    item.lease_until = now + ANSWER_SYNC_LEASE_MS;
-                    item.attempted_at = now;
-                    item.attempt_count = Math.max(0, Number(item.attempt_count) || 0) + 1;
-                    item.updated_at = now;
-                    return putAnswerQueueItem(item).then(function () {
-                        acquired.push(item);
-                        return acquired;
-                    });
-                });
-            }, Promise.resolve([]));
+            }).sort(function (left, right) {
+                return ((Number(left.created_at) || 0) - (Number(right.created_at) || 0))
+                    || ((Number(left.question_id) || 0) - (Number(right.question_id) || 0));
+            }).slice(0, 10).map(function (item) {
+                item.status = 'syncing';
+                item.lease_owner = owner;
+                item.lease_until = now + ANSWER_SYNC_LEASE_MS;
+                item.attempted_at = now;
+                item.attempt_count = Math.max(0, Number(item.attempt_count) || 0) + 1;
+                item.updated_at = now;
+                return item;
+            });
+            return {
+                puts: acquired,
+                result: acquired
+            };
+        }).then(function (acquired) {
+            return Array.isArray(acquired) ? acquired : [];
         });
     }
 
     function releaseAnswerQueueBatch(items, status, message) {
         var now = Date.now();
-        return (Array.isArray(items) ? items : []).reduce(function (promise, item) {
-            return promise.then(function () {
-                item.status = status || 'failed_retryable';
-                item.lease_owner = '';
-                item.lease_until = 0;
-                item.last_error = String(message || '');
-                item.updated_at = now;
-                return putAnswerQueueItem(item);
+        var released = Array.isArray(items) ? items : [];
+        if (!released.length) {
+            return Promise.resolve(null);
+        }
+        return mutateAnswerQueue(function (storedItems) {
+            var storedByKey = indexQueueItemsByKey(storedItems);
+            var puts = [];
+            released.forEach(function (item) {
+                var current = storedByKey[String(item.queue_key || '')];
+                if (!current) {
+                    return;
+                }
+                if (String(current.signature || '') !== String(item.signature || '')) {
+                    // Jangan tulis ulang salinan lama: siswa sudah mengganti jawaban selama request berjalan.
+                    var newer = releaseHeldNewerQueueItem(current, item.lease_owner, now);
+                    if (newer) {
+                        puts.push(newer);
+                    }
+                    return;
+                }
+                current.status = status || 'failed_retryable';
+                current.lease_owner = '';
+                current.lease_until = 0;
+                current.last_error = String(message || '');
+                current.updated_at = now;
+                puts.push(current);
             });
-        }, Promise.resolve());
+            return {
+                puts: puts,
+                result: null
+            };
+        });
     }
 
     function ackAnswerQueueBatch(items) {
-        return (Array.isArray(items) ? items : []).reduce(function (promise, item) {
-            return promise.then(function () {
-                return withAnswerQueueStore(ANSWER_QUEUE_STORE, 'readonly', function (store) {
-                    return store.get(item.queue_key);
-                }).then(function (current) {
-                    if (current && String(current.signature || '') === String(item.signature || '')) {
-                        return deleteAnswerQueueItem(item.queue_key);
-                    }
-                    return null;
-                });
+        var now = Date.now();
+        var submitted = Array.isArray(items) ? items : [];
+        if (!submitted.length) {
+            return Promise.resolve(null);
+        }
+        return mutateAnswerQueue(function (storedItems) {
+            var storedByKey = indexQueueItemsByKey(storedItems);
+            var puts = [];
+            var deletes = [];
+            submitted.forEach(function (item) {
+                var queueKey = String(item.queue_key || '');
+                var current = storedByKey[queueKey];
+                if (!current) {
+                    return;
+                }
+                if (String(current.signature || '') === String(item.signature || '')) {
+                    deletes.push(queueKey);
+                    return;
+                }
+                var newer = releaseHeldNewerQueueItem(current, item.lease_owner, now);
+                if (newer) {
+                    puts.push(newer);
+                }
             });
-        }, Promise.resolve());
+            return {
+                puts: puts,
+                deletes: deletes,
+                result: null
+            };
+        });
     }
 
     function notifyAnswerSyncComplete() {

@@ -148,6 +148,8 @@
     margin: 0;
 }
 
+/* Hanya opacity: transform (termasuk translateY(0) yang tertahan fill-mode) menjadikan panel
+   containing block untuk elemen fixed, sehingga bar aksi/alert/modal menempel ke panel, bukan layar. */
 .cbt-stage-panel.is-stage-enter {
     animation: cbt-stage-enter 260ms ease-out both;
 }
@@ -155,11 +157,9 @@
 @keyframes cbt-stage-enter {
     from {
         opacity: 0;
-        transform: translateY(10px) scale(0.995);
     }
     to {
         opacity: 1;
-        transform: translateY(0) scale(1);
     }
 }
 

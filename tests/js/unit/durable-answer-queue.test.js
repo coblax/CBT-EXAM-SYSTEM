@@ -274,6 +274,75 @@ describe('createDurableAnswerQueueStorage', function () {
         });
     });
 
+    describe('newer answer while an older version is in flight', function () {
+        it('holds the newer version under the existing lease so another owner cannot send it out of order', async function () {
+            var queue = createQueue({ nowMs: 5000 });
+            var ctx = context({ attemptId: 9101 });
+
+            await queue.upsertAnswer(ctx, { question_id: 1, answer: 'A', signature: 'sig-A' });
+            var swBatch = await queue.acquireBatch(ctx, { limit: 10, owner: 'sw', leaseMs: 30000 });
+            expect(swBatch.map(function (item) { return item.signature; })).toEqual(['sig-A']);
+
+            var updated = await queue.upsertAnswer(ctx, { question_id: 1, answer: 'B', signature: 'sig-B' });
+            expect(updated.answer).toBe('B');
+            expect(updated.status).toBe('syncing');
+            expect(updated.lease_owner).toBe('sw');
+
+            var mainBatch = await queue.acquireBatch(ctx, { limit: 10, owner: 'main', leaseMs: 30000 });
+            expect(mainBatch).toEqual([]);
+        });
+
+        it('releases the held newer version once the older request is acknowledged', async function () {
+            var queue = createQueue({ nowMs: 5000 });
+            var ctx = context({ attemptId: 9102 });
+
+            await queue.upsertAnswer(ctx, { question_id: 1, answer: 'A', signature: 'sig-A' });
+            var swBatch = await queue.acquireBatch(ctx, { limit: 10, owner: 'sw', leaseMs: 30000 });
+            await queue.upsertAnswer(ctx, { question_id: 1, answer: 'B', signature: 'sig-B' });
+
+            var acked = await queue.markAcked(ctx, swBatch, { owner: 'sw' });
+            expect(acked).toEqual([]);
+
+            var mainBatch = await queue.acquireBatch(ctx, { limit: 10, owner: 'main', leaseMs: 30000 });
+            expect(mainBatch.length).toBe(1);
+            expect(mainBatch[0].answer).toBe('B');
+            expect(mainBatch[0].signature).toBe('sig-B');
+        });
+
+        it('does not overwrite the newer answer with the stale copy when the older request fails', async function () {
+            var queue = createQueue({ nowMs: 5000 });
+            var ctx = context({ attemptId: 9103 });
+
+            await queue.upsertAnswer(ctx, { question_id: 1, answer: 'A', signature: 'sig-A' });
+            var swBatch = await queue.acquireBatch(ctx, { limit: 10, owner: 'sw', leaseMs: 30000 });
+            await queue.upsertAnswer(ctx, { question_id: 1, answer: 'B', signature: 'sig-B' });
+
+            await queue.releaseBatch(ctx, swBatch, { owner: 'sw', status: 'failed_retryable', errorMessage: 'network' });
+
+            var pending = await queue.listPendingAnswers(ctx);
+            expect(pending.length).toBe(1);
+            expect(pending[0].answer).toBe('B');
+            expect(pending[0].signature).toBe('sig-B');
+            expect(pending[0].status).toBe('pending');
+            expect(pending[0].lease_owner).toBe('');
+        });
+
+        it('leaves a newer version leased by another owner untouched', async function () {
+            var queue = createQueue({ nowMs: 5000 });
+            var ctx = context({ attemptId: 9104 });
+
+            await queue.upsertAnswer(ctx, { question_id: 1, answer: 'A', signature: 'sig-A' });
+            await queue.acquireBatch(ctx, { limit: 10, owner: 'main', leaseMs: 30000 });
+            await queue.upsertAnswer(ctx, { question_id: 1, answer: 'B', signature: 'sig-B' });
+
+            await queue.markAcked(ctx, [{ question_id: 1, signature: 'sig-stale' }], { owner: 'sw' });
+
+            var pending = await queue.listPendingAnswers(ctx);
+            expect(pending[0].status).toBe('syncing');
+            expect(pending[0].lease_owner).toBe('main');
+        });
+    });
+
     describe('getPendingCount', function () {
         it('returns correct count excluding acked items', async function () {
             var queue = createQueue();

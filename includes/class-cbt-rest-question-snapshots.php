@@ -100,6 +100,7 @@ trait CBT_REST_Question_Snapshot_Helpers
         if (empty($question_manifest)) {
             $question_manifest = self::build_minimal_question_manifest_from_order($question_order_ids, $question_number_map);
         }
+        $question_manifest = self::attach_current_content_hashes_to_manifest($exam_id, $question_manifest);
 
         $window_questions = self::order_question_payload_by_ids($window_questions, $window_question_ids);
         if (!empty($option_order_map)) {
@@ -113,15 +114,31 @@ trait CBT_REST_Question_Snapshot_Helpers
             $attempt,
             (int) ($exam['duration_minutes'] ?? 0)
         );
+        // Jawaban terbaru bisa masih berada di buffer runtime (Redis) dan belum di-flush ke DB. Jika state
+        // runtime attempt ada, ia sumber kebenaran; membaca DB saja membuat jawaban siswa tampil kosong saat
+        // reload setelah cache exam/user di-invalidasi (jalur raw v2 tidak tersedia lalu jatuh ke sini).
+        $prefer_runtime_answers = CBT_Runtime::is_ready() && CBT_Runtime::has_attempt_state($attempt_id);
         $answered_question_ids = self::get_attempt_answered_question_ids(
             $attempt_id,
             $attempt,
             $attempt_duration_minutes,
-            false
+            $prefer_runtime_answers
         );
         $existing_answers_map = [];
         if ($include_existing) {
-            self::merge_existing_answers_into_question_payload($window_questions, $attempt_id, $window_question_ids);
+            $runtime_window_rows = [];
+            $runtime_state_found = false;
+            if ($prefer_runtime_answers) {
+                $runtime_window_rows = CBT_Runtime::get_existing_answers_for_questions($attempt_id, $window_question_ids, $runtime_state_found);
+            }
+            if ($runtime_state_found) {
+                self::apply_existing_answer_map_to_question_payload(
+                    $window_questions,
+                    self::normalize_answer_rows_by_question_id($runtime_window_rows)
+                );
+            } else {
+                self::merge_existing_answers_into_question_payload($window_questions, $attempt_id, $window_question_ids);
+            }
         }
         if ($include_answer_manifest) {
             $existing_answers_map = self::build_attempt_existing_answers_map(
@@ -129,7 +146,7 @@ trait CBT_REST_Question_Snapshot_Helpers
                 $attempt_id,
                 $attempt,
                 $attempt_duration_minutes,
-                false
+                $prefer_runtime_answers
             );
         }
 
@@ -3297,6 +3314,130 @@ trait CBT_REST_Question_Snapshot_Helpers
      * @param array<int,array<string,mixed>> $questions
      * @return array<int,array<string,mixed>>
      */
+    /**
+     * Manifest di kontrak attempt adalah versi ringan dari saat attempt dimulai (tanpa teks/opsi soal),
+     * sehingga revisi isi soal oleh admin tidak pernah terdeteksi heartbeat siswa. Tempelkan hash konten
+     * terkini per soal agar klien bisa menandai soal yang benar-benar berubah.
+     *
+     * @param array<int,array<string,mixed>> $question_manifest
+     * @return array<int,array<string,mixed>>
+     */
+    private static function attach_current_content_hashes_to_manifest(int $exam_id, array $question_manifest): array
+    {
+        if ($exam_id <= 0 || empty($question_manifest)) {
+            return $question_manifest;
+        }
+
+        $content_stamps = self::get_exam_question_content_stamps($exam_id);
+        if (empty($content_stamps)) {
+            return $question_manifest;
+        }
+
+        foreach ($question_manifest as $index => $manifest_item) {
+            $question_id = (int) ($manifest_item['id'] ?? 0);
+            if ($question_id > 0 && isset($content_stamps[$question_id])) {
+                $question_manifest[$index]['content_hash'] = (string) $content_stamps[$question_id];
+            }
+        }
+
+        return $question_manifest;
+    }
+
+    /**
+     * Hash isi soal (teks, opsi, meta tipe, poin) tanpa field volatil seperti updated_at: sinkron bank
+     * menyentuh updated_at semua baris soal, sehingga stempel berbasis waktu menandai semua soal "berubah".
+     * Dihitung sekali per revisi exam karena cache ikut basi saat namespace exam di-invalidasi.
+     *
+     * @return array<int,string>
+     */
+    private static function get_exam_question_content_stamps(int $exam_id): array
+    {
+        if ($exam_id <= 0 || !method_exists('CBT_Cache', 'remember') || !method_exists('CBT_Cache', 'namespace_exam')) {
+            return [];
+        }
+
+        $stamps = CBT_Cache::remember(
+            'exam_question_content_stamps:v1:' . $exam_id,
+            21600,
+            [CBT_Cache::namespace_exam($exam_id)],
+            static function () use ($exam_id): array {
+                $map = [];
+                foreach ((array) self::get_student_exam_question_delivery_payload($exam_id) as $question) {
+                    $question = (array) $question;
+                    $question_id = (int) ($question['id'] ?? 0);
+                    if ($question_id <= 0) {
+                        continue;
+                    }
+
+                    unset($question['updated_at'], $question['created_at'], $question['question_number'], $question['existing_answer']);
+                    $map[$question_id] = md5((string) wp_json_encode($question));
+                }
+
+                return $map;
+            }
+        );
+
+        return is_array($stamps) ? $stamps : [];
+    }
+
+    /**
+     * Soal yang ditambahkan ke exam saat attempt berjalan harus di-append ke attempt aktif (lihat
+     * BUG-NOTES-QUESTION-ORDER.md), tetapi snapshot kontrak/sesi attempt di Redis membekukan daftar soal
+     * saat attempt dimulai sehingga soal baru tidak pernah muncul. Sekali per revisi exam, buang snapshot
+     * yang tidak lagi mencakup semua soal aktif exam agar dibangun ulang lewat rekonsiliasi urutan.
+     */
+    private static function ensure_attempt_snapshots_cover_exam_questions(int $attempt_id, int $exam_id): void
+    {
+        if (
+            $attempt_id <= 0
+            || $exam_id <= 0
+            || !class_exists('CBT_Attempt_Question_Contract_Cache')
+            || !method_exists('CBT_Cache', 'namespace_attempt')
+            || !method_exists('CBT_Cache', 'get_exam_revision_meta')
+        ) {
+            return;
+        }
+
+        $revision = CBT_Cache::get_exam_revision_meta($exam_id);
+        $marker_key = 'attempt_exam_coverage:' . $attempt_id . ':' . (string) ($revision['signature'] ?? '');
+        $marker_namespaces = [CBT_Cache::namespace_attempt($attempt_id)];
+        CBT_Cache::get($marker_key, $marker_namespaces, $already_checked);
+        if ($already_checked) {
+            return;
+        }
+
+        $current_question_ids = array_keys(self::get_exam_question_content_stamps($exam_id));
+        if (!empty($current_question_ids)) {
+            $contract = CBT_Attempt_Question_Contract_Cache::read_cached_attempt_snapshot($attempt_id);
+            $contract_lookup = array_fill_keys(array_map('intval', (array) ($contract['question_order_ids'] ?? [])), true);
+            $contract_stale = false;
+            if (!empty($contract_lookup)) {
+                foreach ($current_question_ids as $question_id) {
+                    if (!isset($contract_lookup[(int) $question_id])) {
+                        $contract_stale = true;
+                        break;
+                    }
+                }
+            }
+
+            $session_stale = false;
+            if (class_exists('CBT_Attempt_Session_Snapshot_Cache')) {
+                $session_snapshot = CBT_Attempt_Session_Snapshot_Cache::read_cached_attempt_snapshot($attempt_id);
+                $session_question_count = (int) ($session_snapshot['question_count'] ?? 0);
+                $session_stale = $session_question_count > 0 && $session_question_count < count($current_question_ids);
+            }
+
+            if ($contract_stale || $session_stale) {
+                CBT_Attempt_Question_Contract_Cache::clear_attempt_snapshot($attempt_id);
+                if (class_exists('CBT_Attempt_Session_Snapshot_Cache')) {
+                    CBT_Attempt_Session_Snapshot_Cache::clear_attempt_snapshot($attempt_id);
+                }
+            }
+        }
+
+        CBT_Cache::set($marker_key, 1, 21600, $marker_namespaces);
+    }
+
     private static function build_question_manifest(array $questions): array
     {
         $manifest = [];

@@ -23,6 +23,7 @@ class CBT_Admin
         add_action('admin_enqueue_scripts', [CBT_Admin_Assets::class, 'enqueue_admin_assets']);
         add_filter('script_loader_tag', [CBT_Admin_Assets::class, 'filter_script_loader_tag'], 10, 3);
         add_action('admin_notices', [CBT_Admin_Cache_Page::class, 'render_runtime_notice']);
+        add_filter('wp_redirect', [CBT_Admin_UI_Helper::class, 'encode_notice_query_args'], 10, 1);
 
         add_action('admin_post_cbt_save_subject', [CBT_Admin_Subjects_Actions::class, 'handle_save_subject']);
         add_action('admin_post_cbt_delete_subject', [CBT_Admin_Subjects_Actions::class, 'handle_delete_subject']);

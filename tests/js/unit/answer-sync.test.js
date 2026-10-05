@@ -447,6 +447,78 @@ describe('createAnswerSyncManager', function () {
         expect(fixture.state.pendingSyncCount).toBe(0);
     });
 
+    it('does not resend an answer that the service worker already acknowledged from the durable queue', async function () {
+        var durableQueue = createDurableAnswerQueueStorage({
+            getIndexedDb: function () {
+                return null;
+            },
+            getLocalStorage: function () {
+                return localStorage;
+            },
+            localStorageKey: 'cbt_test_sw_acked_queue',
+            now: function () {
+                return Date.now();
+            }
+        });
+        var durableContext = {
+            attemptId: 55,
+            examId: 9,
+            userId: 7
+        };
+        var requests = [];
+        var fixture = createFixture({
+            apiRequest: async function (path, options) {
+                requests.push({
+                    body: options.body,
+                    path: path
+                });
+                return {
+                    attempt_id: 55,
+                    accepted_count: 1,
+                    items: []
+                };
+            },
+            durableAnswerQueue: durableQueue,
+            getQuestionById: function (questionId) {
+                return {
+                    id: Number(questionId) || 0,
+                    question_type: 'multiple_choice'
+                };
+            },
+            payloadSignature: function (payload) {
+                return JSON.stringify(payload || null);
+            },
+            questionAnswerPayload: function () {
+                return { selected: 808 };
+            },
+            state: {
+                user: {
+                    user_id: 7
+                }
+            }
+        });
+
+        expect(fixture.manager.queueQuestionAnswer({ id: 404, question_type: 'multiple_choice' })).toBe(true);
+        for (var attempt = 0; attempt < 20 && (await durableQueue.getPendingCount(durableContext)) === 0; attempt += 1) {
+            await Promise.resolve();
+        }
+
+        // Service worker mengirim dan meng-ack item lebih dulu.
+        var swBatch = await durableQueue.acquireBatch(durableContext, { limit: 10, owner: 'sw:test', leaseMs: 30000 });
+        expect(swBatch.length).toBe(1);
+        await durableQueue.markAcked(durableContext, swBatch, { owner: 'sw:test' });
+
+        await fixture.manager.flushPendingAnswerBatch({ flushAll: true });
+        expect(fixture.manager.queueQuestionAnswer({ id: 404, question_type: 'multiple_choice' }, { force: true })).toBe(false);
+        await fixture.manager.flushPendingAnswerBatch({ flushAll: true });
+
+        expect(requests).toEqual([]);
+        expect(fixture.manager.getAutoSaveState().lastSubmittedPayloadByQuestion).toEqual({
+            404: JSON.stringify({ selected: 808 })
+        });
+        expect(fixture.state.pendingSyncCount).toBe(0);
+    });
+
     it('reports unique pending sync question ids from queued and in-flight batches', async function () {
         var resolveBatch;
         var payloadByQuestion = {

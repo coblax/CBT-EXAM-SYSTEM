@@ -123,6 +123,21 @@ export function createAnswerSyncManager(deps) {
                 nextOrder.push(questionId);
             }
         });
+        // Item yang hilang dari antrean durable sudah di-ack pihak lain (mis. service worker). Catat
+        // signature-nya agar autosave/navigasi berikutnya tidak mengirim ulang jawaban yang sama.
+        Object.keys(pendingAnswerBatchByQuestion).forEach(function (key) {
+            var previousQuestionId = Number(key) || 0;
+            var previousItem = pendingAnswerBatchByQuestion[key];
+            if (previousQuestionId <= 0 || !previousItem || Object.prototype.hasOwnProperty.call(nextByQuestion, previousQuestionId)) {
+                return;
+            }
+            var previousSignature = String(previousItem.signature || '');
+            if (previousSignature === '') {
+                delete lastSubmittedPayloadByQuestion[previousQuestionId];
+            } else {
+                lastSubmittedPayloadByQuestion[previousQuestionId] = previousSignature;
+            }
+        });
         pendingAnswerBatchByQuestion = nextByQuestion;
         pendingAnswerBatchOrder = nextOrder;
     }
@@ -1162,6 +1177,7 @@ export function createAnswerSyncManager(deps) {
         if (durableAnswerQueue && hasDurableQueueContext() && typeof durableAnswerQueue.releaseBatch === 'function') {
             await durableAnswerQueue.releaseBatch(getDurableQueueContext(), items, {
                 errorMessage: options.errorMessage || '',
+                owner: durableQueueOwner,
                 status: options.status || 'failed_retryable'
             });
             await refreshDurablePendingMirror('batch-released', {
@@ -1189,7 +1205,9 @@ export function createAnswerSyncManager(deps) {
 
         var submittedItems = Array.isArray(items) ? items : [];
         if (durableAnswerQueue && hasDurableQueueContext() && typeof durableAnswerQueue.markAcked === 'function') {
-            submittedItems = await durableAnswerQueue.markAcked(getDurableQueueContext(), submittedItems);
+            submittedItems = await durableAnswerQueue.markAcked(getDurableQueueContext(), submittedItems, {
+                owner: durableQueueOwner
+            });
             await refreshDurablePendingMirror('batch-acked', {
                 persist: false
             });

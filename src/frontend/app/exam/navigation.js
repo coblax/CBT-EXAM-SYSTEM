@@ -552,6 +552,37 @@ export function createExamNavigationManager(deps) {
         return false;
     }
 
+    // Panel navigasi sticky bisa diklik saat soal panjang sudah di-scroll ke bawah; bawa awal soal baru
+    // ke bawah topbar agar siswa tidak mulai membaca dari tengah soal.
+    function revealQuestionTopAfterNavigation() {
+        if (!documentRef || typeof documentRef.querySelector !== 'function') {
+            return;
+        }
+
+        var reveal = function () {
+            var card = documentRef.querySelector('.cbt-question-card');
+            var scroller = card && typeof card.closest === 'function'
+                ? (card.closest('.cbt-web-shell') || documentRef.scrollingElement)
+                : null;
+            if (!card || !scroller || typeof card.getBoundingClientRect !== 'function') {
+                return;
+            }
+            var topbar = documentRef.querySelector('.cbt-topbar');
+            var visibleTop = topbar ? topbar.getBoundingClientRect().bottom : 0;
+            var cardTop = card.getBoundingClientRect().top;
+            if (cardTop >= visibleTop) {
+                return;
+            }
+            scroller.scrollTop = Math.max(0, (Number(scroller.scrollTop) || 0) + cardTop - visibleTop - 12);
+        };
+
+        if (windowRef && typeof windowRef.requestAnimationFrame === 'function') {
+            windowRef.requestAnimationFrame(reveal);
+            return;
+        }
+        reveal();
+    }
+
     async function goToQuestion(nextIndex) {
         if (state.busy || state.isFinishing) {
             return;
@@ -674,6 +705,7 @@ export function createExamNavigationManager(deps) {
                 nextIndex: safeIndex,
                 requiresWindowLoad: false
             });
+            revealQuestionTopAfterNavigation();
             scheduleQuestionPrefetchAfterNavigation();
             return;
         }
@@ -707,6 +739,7 @@ export function createExamNavigationManager(deps) {
             requiresWindowLoad: requiresWindowLoad,
             revisionMarkerAcknowledged: didAcknowledgeRevisionMarker
         });
+        revealQuestionTopAfterNavigation();
         scheduleQuestionPrefetchAfterNavigation();
     }
 

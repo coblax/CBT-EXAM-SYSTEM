@@ -592,6 +592,59 @@ describe('createExamNavigationManager', function () {
         expect(fixture.calls.queueQuestionAnswer).toEqual([101, 103]);
     });
 
+    it('scrolls the new question start below the sticky topbar when navigating from a scrolled long question', async function () {
+        var fixture = createFixture();
+        var shell = document.createElement('div');
+        shell.className = 'cbt-web-shell';
+        shell.innerHTML = '<div class="cbt-topbar"></div><div class="cbt-question-card"></div>';
+        document.body.prepend(shell);
+        shell.scrollTop = 900;
+        shell.querySelector('.cbt-topbar').getBoundingClientRect = function () {
+            return { top: 0, bottom: 71 };
+        };
+        shell.querySelector('.cbt-question-card').getBoundingClientRect = function () {
+            return { top: -300, bottom: 600 };
+        };
+        vi.spyOn(window, 'requestAnimationFrame').mockImplementation(function (callback) {
+            callback(0);
+            return 1;
+        });
+
+        try {
+            await fixture.navigationManager.goToQuestion(1);
+            expect(fixture.state.currentIndex).toBe(1);
+            expect(shell.scrollTop).toBe(900 - 300 - 71 - 12);
+        } finally {
+            shell.remove();
+        }
+    });
+
+    it('leaves the scroll position alone when the question start is already visible', async function () {
+        var fixture = createFixture();
+        var shell = document.createElement('div');
+        shell.className = 'cbt-web-shell';
+        shell.innerHTML = '<div class="cbt-topbar"></div><div class="cbt-question-card"></div>';
+        document.body.prepend(shell);
+        shell.scrollTop = 40;
+        shell.querySelector('.cbt-topbar').getBoundingClientRect = function () {
+            return { top: 0, bottom: 71 };
+        };
+        shell.querySelector('.cbt-question-card').getBoundingClientRect = function () {
+            return { top: 120, bottom: 900 };
+        };
+        vi.spyOn(window, 'requestAnimationFrame').mockImplementation(function (callback) {
+            callback(0);
+            return 1;
+        });
+
+        try {
+            await fixture.navigationManager.goToQuestion(1);
+            expect(shell.scrollTop).toBe(40);
+        } finally {
+            shell.remove();
+        }
+    });
+
     it('keeps doubtful flags intact when answers change and the user moves away and back', async function () {
         var fixture = createFixture();
         var doubtfulButton = document.createElement('button');

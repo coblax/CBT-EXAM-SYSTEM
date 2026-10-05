@@ -4,6 +4,7 @@ const {
     getE2EExamQuestions,
     getE2EFixture,
     getLatestE2EAttempt,
+    resetE2EFixture,
 } = require('./helpers/e2e-fixture');
 const {
     answerCurrentMultipleChoice,
@@ -41,6 +42,12 @@ async function prepareRuntimeAttempt(page, fixture) {
 
 test.describe('Question Runtime flow check', () => {
     test.setTimeout(150000);
+
+    test.beforeEach(() => {
+        // Reset juga membersihkan sesi login; tanpa ini test berikutnya ditolak aturan 1 akun = 1 sesi
+        // dan me-resume attempt test sebelumnya di posisi soal yang berbeda.
+        resetE2EFixture('question_runtime', 'primary_student');
+    });
 
     test('Runtime Flow: mixed question answers stay isolated', async ({ page, baseURL }) => {
         test.skip(!baseURL, 'Set CBT_E2E_BASE_URL untuk mengaktifkan flow check Playwright ini.');
@@ -156,11 +163,17 @@ test.describe('Question Runtime flow check', () => {
         const prepared = await prepareRuntimeAttempt(page, fixture);
         const firstQuestionId = Number(prepared.questions[0] && prepared.questions[0].id ? prepared.questions[0].id : 0);
         const secondQuestionId = Number(prepared.questions[1] && prepared.questions[1].id ? prepared.questions[1].id : 0);
+        const secondQuestionType = String(prepared.questions[1] && prepared.questions[1].question_type ? prepared.questions[1].question_type : '');
 
         await test.step('Jawab dua soal berdekatan dengan navigasi cepat maju mundur', async () => {
             await answerCurrentSingleChoice(page, 0);
             await clickNextQuestion(page);
-            await answerCurrentSingleChoice(page, 1);
+            // Fixture campuran: soal kedua bisa multiple answer, bukan pilihan tunggal.
+            if (secondQuestionType === 'multiple_answer') {
+                await answerCurrentMultipleChoice(page, [1]);
+            } else {
+                await answerCurrentSingleChoice(page, 1);
+            }
             await clickPreviousQuestion(page);
             await clickNextQuestion(page);
             await waitForAnswerSync(page, 3000);

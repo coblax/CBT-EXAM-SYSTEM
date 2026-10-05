@@ -184,12 +184,10 @@ async function deleteQuestionRowByMarker(page, markerText) {
         await dialog.accept();
     });
 
-    await Promise.all([
-        page.waitForURL((url) => decodeURIComponent(String(url)).includes('cbt_msg=Question deleted'), { timeout: 20000 }),
-        deleteLink.click({ force: true }),
-    ]);
-
-    await expect(page.locator('.notice.notice-success, .updated.notice, .notice-info').first()).toBeVisible({ timeout: 20000 });
+    await deleteLink.click({ force: true });
+    await expect(
+        page.locator('.notice.notice-success').filter({ hasText: /Soal #\d+ dihapus/ }).first()
+    ).toBeVisible({ timeout: 30000 });
     return questionId;
 }
 
@@ -386,12 +384,12 @@ async function submitManualQuestionExpectSuccess(page) {
     const submitButton = manualForm.locator('input[type="submit"], button[type="submit"]').first();
     await expect(submitButton).toBeVisible({ timeout: 20000 });
 
-    await Promise.all([
-        page.waitForURL((url) => String(url).includes('cbt_msg='), { timeout: 20000 }),
-        submitButton.click({ force: true }),
-    ]);
-
-    await expect(page.locator('.notice.notice-success, .updated.notice, .notice-info').first()).toBeVisible({ timeout: 20000 });
+    // Form soal kini disimpan async dan URL dibersihkan dari cbt_msg setelah refresh lokal,
+    // jadi tunggu notifikasi sukses lengkap ("Soal #N ...") di halaman, bukan parameter URL.
+    await submitButton.click({ force: true });
+    await expect(
+        page.locator('.notice.notice-success').filter({ hasText: /Soal #\d+ (diperbarui|disimpan)/ }).first()
+    ).toBeVisible({ timeout: 30000 });
 }
 
 async function uploadQuestionsDocx(page, subjectId, filePath, questionType = 'multiple_choice') {

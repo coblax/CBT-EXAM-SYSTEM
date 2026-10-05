@@ -1051,6 +1051,39 @@ export function createExamSessionManager(deps) {
 
     function blockStartExamForTokenValidation(validationResult, reason) {
         blockStartExamForLocalValidation(validationResult, reason);
+        focusExamTokenInputAfterRender();
+    }
+
+    function focusExamTokenInputAfterRender() {
+        // Di laptop 1280x720/1366x768 kolom token berada di bawah lipatan layar dan tertutup bar aksi,
+        // sehingga siswa hanya melihat pesan "Token ujian wajib diisi". Bawa kolom token ke layar dan fokuskan.
+        var scheduleFrame = windowRef && typeof windowRef.requestAnimationFrame === 'function'
+            ? function (callback) { windowRef.requestAnimationFrame(callback); }
+            : function (callback) { callback(); };
+        scheduleFrame(function () {
+            scheduleFrame(function () {
+                var documentRef = windowRef && windowRef.document ? windowRef.document : null;
+                var tokenInput = documentRef && typeof documentRef.getElementById === 'function'
+                    ? documentRef.getElementById('cbt-exam-token')
+                    : null;
+                if (!tokenInput || state.stage !== 'confirm' || tokenInput.disabled) {
+                    return;
+                }
+                if (typeof tokenInput.scrollIntoView === 'function') {
+                    tokenInput.scrollIntoView({ block: 'center', inline: 'nearest' });
+                }
+                if (typeof tokenInput.focus === 'function') {
+                    try {
+                        tokenInput.focus({ preventScroll: true });
+                    } catch (error) {
+                        tokenInput.focus();
+                    }
+                }
+                if (typeof tokenInput.select === 'function') {
+                    tokenInput.select();
+                }
+            });
+        });
     }
 
     function updateOpeningAttemptQueueState(queuePayload) {

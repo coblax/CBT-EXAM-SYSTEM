@@ -446,6 +446,63 @@ describe('createFinishFlowManager', function () {
         ]);
     });
 
+    it('does not send a second finish request while the post-failure result probe is still running', async function () {
+        var probeReleases = [];
+        var finishCalls = 0;
+        var fixture = createFixture({
+            apiRequest: async function (path) {
+                if (path === 'submit_flow_metric') {
+                    return undefined;
+                }
+
+                if (path === 'finish_exam') {
+                    finishCalls += 1;
+                    var error = new Error('Finish ditolak sementara.');
+                    error.status = 503;
+                    throw error;
+                }
+
+                if (path === 'result') {
+                    await new Promise(function (resolve) {
+                        probeReleases.push(resolve);
+                    });
+                    var probeError = new Error('Attempt belum selesai.');
+                    probeError.status = 409;
+                    throw probeError;
+                }
+
+                throw new Error('Unexpected apiRequest path: ' + String(path));
+            }
+        });
+
+        var finishing = fixture.manager.maybeFinalizeLockedExam('unit-test');
+        await waitForAssertion(function () {
+            expect(probeReleases.length).toBe(1);
+        });
+
+        // Trigger sinkronisasi lain (mis. answer-sync-success) datang saat probe hasil masih berjalan.
+        var lateTrigger = fixture.manager.maybeFinalizeLockedExam('answer-sync-success');
+        for (var tick = 0; tick < 10; tick += 1) {
+            await Promise.resolve();
+        }
+        var finishCallsDuringProbe = finishCalls;
+
+        while (probeReleases.length > 0) {
+            probeReleases.shift()();
+            await new Promise(function (resolve) {
+                setTimeout(resolve, 0);
+            });
+        }
+        await Promise.all([finishing, lateTrigger]);
+
+        expect(finishCallsDuringProbe).toBe(1);
+        expect(finishCalls).toBe(1);
+        expect(fixture.state.stage).toBe('exam');
+        expect(fixture.state.examLockedForPendingFinish).toBe(false);
+        expect(fixture.state.isFinishing).toBe(false);
+        expect(fixture.state.error).toBe('Finish ditolak sementara.');
+    });
+
     it('recovers result instead of unlocking when a finish error was already committed server-side', async function () {
         var fixture = createFixture({
             apiRequest: async function (path) {

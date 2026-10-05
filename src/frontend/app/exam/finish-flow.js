@@ -1255,7 +1255,11 @@ export function createFinishFlowManager(deps) {
                     });
                 }
             } else {
+                // Kunci finish masih aktif selama probe hasil berjalan; tahan isFinishing agar trigger
+                // sinkronisasi lain (maybeFinalizeLockedExam) tidak mengirim finish_exam kedua diam-diam.
+                state.isFinishing = true;
                 var recoveredFromResultProbe = await recoverAmbiguousFinishFailureFromResult('finish-submit-error-probe');
+                state.isFinishing = false;
                 if (recoveredFromResultProbe) {
                     return;
                 }

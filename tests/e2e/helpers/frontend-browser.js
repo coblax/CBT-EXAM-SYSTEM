@@ -67,6 +67,9 @@ async function logoutFromFrontend(page) {
 async function selectExamByTitle(page, examTitle) {
     const examCard = examCardLocator(page).filter({ hasText: String(examTitle || '') }).first();
     await expect(examCard).toBeVisible({ timeout: 20000 });
+    // Daftar ujian dan halaman punya scroller sendiri, dan bar aksi bawah bisa menutupi kartu;
+    // tengahkan kartu dulu agar klik paksa tidak jatuh ke bar aksi.
+    await examCard.evaluate((node) => node.scrollIntoView({ block: 'center', inline: 'nearest' }));
     await examCard.click({ force: true });
     return examCard;
 }
@@ -88,8 +91,11 @@ async function fillExamTokenIfNeeded(page) {
 
 async function startOrResumeAttempt(page, fixture) {
     const examTitle = fixture.exam_title || fixture.exam?.title || '';
-    await selectExamByTitle(page, examTitle);
-    await expect(page.locator('.cbt-confirm-selected-title').first()).toHaveText(new RegExp(escapeRegex(examTitle), 'i'), { timeout: 20000 });
+    // Klik yang jatuh saat stage konfirmasi masih di-mount setelah login bisa hilang; ulangi sampai terpilih.
+    await expect(async () => {
+        await selectExamByTitle(page, examTitle);
+        await expect(page.locator('.cbt-confirm-selected-title').first()).toHaveText(new RegExp(escapeRegex(examTitle), 'i'), { timeout: 3000 });
+    }).toPass({ timeout: 30000 });
     await fillExamTokenIfNeeded(page);
 
     const startButton = page.locator('[data-action="start-exam"]').first();

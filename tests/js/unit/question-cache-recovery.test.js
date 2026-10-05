@@ -551,3 +551,64 @@ describe('question cache recovery', function () {
         expect(recovered.snapshot).toBeTruthy();
     });
 });
+
+describe('buildChangedQuestionLookup content hash', function () {
+    function createHelpers() {
+        return createQuestionCacheStorage({
+            state: {},
+            getSessionStorage: function () {
+                return null;
+            },
+            getLocalStorage: function () {
+                return null;
+            },
+            getIndexedDb: function () {
+                return null;
+            },
+            indexedDbName: '',
+            indexedDbStore: '',
+            sessionStorageKeyPrefix: 'test-question-cache',
+            metaLocalStorageKeyPrefix: 'test-question-cache-meta',
+            itemLocalStorageKeyPrefix: 'test-question-cache-item',
+            normalizeExistingAnswerForQuestion: function (value) {
+                return value;
+            },
+            getQuestionPayloadById: function () {
+                return null;
+            },
+            payloadSignature: function (value) {
+                return JSON.stringify(value);
+            }
+        });
+    }
+
+    function lightManifest(questionId, contentHash) {
+        var item = { id: questionId, question_type: 'multiple_choice', updated_at: '2026-10-05 05:41:42', points: 1, question_number: 1 };
+        if (contentHash) {
+            item.content_hash = contentHash;
+        }
+        return item;
+    }
+
+    it('flags a question whose content hash changed even when the light manifest has no question text', function () {
+        var helpers = createHelpers();
+        var changed = helpers.buildChangedQuestionLookup(
+            { 803: lightManifest(803, 'hash-old'), 807: lightManifest(807, 'hash-807') },
+            { 803: lightManifest(803, 'hash-new'), 807: lightManifest(807, 'hash-807') },
+            null
+        );
+
+        expect(changed).toEqual({ 803: true });
+    });
+
+    it('ignores the content hash when the previous manifest predates it', function () {
+        var helpers = createHelpers();
+        var changed = helpers.buildChangedQuestionLookup(
+            { 803: lightManifest(803, ''), 807: lightManifest(807, '') },
+            { 803: lightManifest(803, 'hash-new'), 807: lightManifest(807, 'hash-807') },
+            null
+        );
+
+        expect(changed).toEqual({});
+    });
+});

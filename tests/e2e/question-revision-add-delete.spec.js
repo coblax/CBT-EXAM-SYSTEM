@@ -120,6 +120,9 @@ async function cleanupTemporaryQuestion(adminPage, adminUser, fixture, fixtureKe
         return;
     }
 
+    // Admin tidak boleh menghapus soal selama masih ada peserta aktif pada exam terkait;
+    // akhiri attempt fixture dulu agar soal sementara bisa dibersihkan.
+    resetE2EFixture(fixtureKey, userKey);
     await loginToWpAdmin(adminPage, adminUser);
 
     try {

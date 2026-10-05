@@ -353,6 +353,101 @@ final class RestQuestionDeliverySnapshotTest extends TestCase
     }
 
     #[RunInSeparateProcess]
+    public function test_get_questions_manifest_carries_current_content_hash_that_changes_after_question_revision(): void
+    {
+        $this->bootstrapRestDeliverySnapshotScaffold();
+        $this->registerStudentFixture();
+        $this->useDeliveryFakeRedis();
+        $this->useAttemptContractFakeRedis();
+        $this->setRuntimeRedisUnavailable();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+
+        global $wpdb;
+        $wpdb = new RestQuestionDeliverySnapshotFakeWpdb();
+
+        CBT_REST::warm_exam_question_delivery_snapshot(55);
+
+        $request = new WP_REST_Request([
+            'exam_id' => 55,
+            'attempt_id' => 77,
+            'offset' => 0,
+            'limit' => 1,
+        ], [], [], '/cbt/v1/questions', 'GET');
+
+        CBT_REST::get_questions($request);
+        $before = $this->decodeQuestionsResponse(CBT_REST::get_questions($request));
+        $hashBefore = (string) ($before['question_manifest'][0]['content_hash'] ?? '');
+        self::assertNotSame('', $hashBefore);
+
+        // Sinkron bank yang hanya menyentuh updated_at tidak boleh menandai soal berubah.
+        $wpdb->questionUpdatedAt = '2026-04-03 06:05:00';
+        CBT_Cache::invalidate_exam(55);
+        CBT_REST::warm_exam_question_delivery_snapshot(55);
+        $touched = $this->decodeQuestionsResponse(CBT_REST::get_questions($request));
+        self::assertSame($hashBefore, (string) ($touched['question_manifest'][0]['content_hash'] ?? ''));
+
+        // Admin merevisi teks soal; kontrak attempt (manifest ringan) tetap dari cache.
+        $wpdb->questionText = 'Ibu Kota Indonesia saat ini?';
+        $wpdb->questionUpdatedAt = '2026-04-03 06:10:00';
+        CBT_Cache::invalidate_exam(55);
+        CBT_REST::warm_exam_question_delivery_snapshot(55);
+
+        $after = $this->decodeQuestionsResponse(CBT_REST::get_questions($request));
+        $hashAfter = (string) ($after['question_manifest'][0]['content_hash'] ?? '');
+        self::assertNotSame('', $hashAfter);
+        self::assertNotSame($hashBefore, $hashAfter);
+    }
+
+    #[RunInSeparateProcess]
+    public function test_cached_attempt_snapshots_are_discarded_when_exam_gains_a_question_during_the_attempt(): void
+    {
+        $this->bootstrapRestDeliverySnapshotScaffold();
+        $this->registerStudentFixture();
+        $this->useDeliveryFakeRedis();
+        $this->useAttemptContractFakeRedis();
+        $this->setRuntimeRedisUnavailable();
+
+        global $wpdb;
+        $wpdb = new RestQuestionDeliverySnapshotFakeWpdb();
+
+        CBT_Attempt_Question_Contract_Cache::write_attempt_snapshot(77, [
+            'attempt_id' => 77,
+            'exam_id' => 55,
+            'student_id' => 7,
+            'status' => 'in_progress',
+            'question_order_ids' => [201],
+            'question_order_signature' => 'sig-201',
+        ]);
+        self::assertSame([201], CBT_Attempt_Question_Contract_Cache::read_cached_attempt_snapshot(77)['question_order_ids'] ?? null);
+
+        $ensure = new ReflectionMethod(CBT_REST::class, 'ensure_attempt_snapshots_cover_exam_questions');
+        $ensure->setAccessible(true);
+
+        // Exam masih berisi soal yang sama: snapshot dipertahankan.
+        $ensure->invoke(null, 77, 55);
+        self::assertNotEmpty(CBT_Attempt_Question_Contract_Cache::read_cached_attempt_snapshot(77));
+
+        // Admin menambah soal ke exam (revisi exam baru): snapshot lama harus dibuang agar soal baru di-append.
+        $wpdb->includeSecondQuestion = true;
+        CBT_Cache::invalidate_exam(55);
+        CBT_REST::warm_exam_question_delivery_snapshot(55);
+        $ensure->invoke(null, 77, 55);
+        self::assertSame([], CBT_Attempt_Question_Contract_Cache::read_cached_attempt_snapshot(77));
+    }
+
+    /** @return array<string,mixed> */
+    private function decodeQuestionsResponse($response): array
+    {
+        if ($response instanceof CBT_Raw_JSON_REST_Response) {
+            return (array) json_decode($response->get_raw_json(), true);
+        }
+
+        return $response instanceof WP_REST_Response ? (array) $response->get_data() : (array) $response;
+    }
+
+    #[RunInSeparateProcess]
     public function test_get_questions_matching_if_none_match_returns_304_without_body(): void
     {
         $this->bootstrapRestDeliverySnapshotScaffold();
@@ -496,6 +591,41 @@ final class RestQuestionDeliverySnapshotTest extends TestCase
     }
 
     #[RunInSeparateProcess]
+    public function test_get_questions_bootstrap_light_prefers_buffered_runtime_answers_over_db_rows(): void
+    {
+        $this->bootstrapRestDeliverySnapshotScaffold();
+        $this->registerStudentFixture();
+        $this->useAttemptContractFakeRedis();
+        $this->useRuntimeFakeRedis();
+
+        $GLOBALS['cbt_test_rest_auth_user_id'] = 7;
+        $GLOBALS['cbt_test_rest_auth_role'] = 'student';
+
+        global $wpdb;
+        $wpdb = new RestQuestionDeliverySnapshotFakeWpdb();
+        $wpdb->selectedOptionIds = '[9002]';
+
+        // Jawaban terbaru (9001) masih di buffer runtime; baris DB (9002) sudah basi.
+        $this->writeRuntimeAnswer(77, 201, 9001);
+
+        $response = CBT_REST::get_questions(new WP_REST_Request([
+            'exam_id' => 55,
+            'attempt_id' => 77,
+            'offset' => 0,
+            'limit' => 1,
+            'include_existing' => 1,
+            'include_answer_manifest' => 1,
+            'bootstrap_light' => 1,
+        ], [], [], '/cbt/v1/questions', 'GET'));
+
+        self::assertFalse(is_wp_error($response));
+        $payload = $response instanceof WP_REST_Response ? $response->get_data() : (array) $response;
+        self::assertSame([201], array_map('intval', (array) ($payload['answered_question_ids'] ?? [])));
+        self::assertSame(9001, (int) (($payload['existing_answers_map'] ?? [])['201'] ?? 0));
+        self::assertSame(9001, (int) ($payload['items'][0]['existing_answer'] ?? 0));
+    }
+
+    #[RunInSeparateProcess]
     public function test_get_questions_bootstrap_light_returns_retryable_busy_when_contract_lock_is_active(): void
     {
         $this->bootstrapRestDeliverySnapshotScaffold();
@@ -626,6 +756,46 @@ PHP);
         $errorProperty = $reflection->getProperty('last_connection_error');
         $errorProperty->setAccessible(true);
         $errorProperty->setValue(null, 'disabled in test');
+    }
+
+    private function useRuntimeFakeRedis(): void
+    {
+        $reflection = new ReflectionClass(CBT_Runtime::class);
+        foreach (['redis', 'redis_connection_attempted', 'last_connection_error', 'cached_prefix'] as $prop) {
+            if (!$reflection->hasProperty($prop)) {
+                continue;
+            }
+            $property = $reflection->getProperty($prop);
+            $property->setAccessible(true);
+            if ($prop === 'redis') {
+                $property->setValue(null, new CBT_Test_Redis_Client());
+            } elseif ($prop === 'redis_connection_attempted') {
+                $property->setValue(null, true);
+            } else {
+                $property->setValue(null, $prop === 'cached_prefix' ? null : '');
+            }
+        }
+    }
+
+    private function writeRuntimeAnswer(int $attemptId, int $questionId, int $optionId): void
+    {
+        $reflection = new ReflectionClass(CBT_Runtime::class);
+        $redisProperty = $reflection->getProperty('redis');
+        $redisProperty->setAccessible(true);
+        $redis = $redisProperty->getValue();
+
+        $answersKey = $reflection->getMethod('attempt_answers_key');
+        $answersKey->setAccessible(true);
+        $redis->hSet((string) $answersKey->invoke(null, $attemptId), (string) $questionId, (string) wp_json_encode([
+            'question_id' => $questionId,
+            'answer' => $optionId,
+            'selected_option_ids' => '[' . $optionId . ']',
+            'answer_text' => '',
+            'is_correct' => null,
+            'score_awarded' => 0,
+            'answered_at' => '2026-04-03 05:40:00',
+            'clear' => 0,
+        ]));
     }
 
     private function useAttemptContractFakeRedis(): void

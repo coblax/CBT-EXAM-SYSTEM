@@ -458,6 +458,10 @@ export function createQuestionCacheStorage(deps) {
             updated_at: String(item.updated_at || '')
         };
 
+        if (typeof item.content_hash === 'string' && item.content_hash !== '') {
+            normalized.content_hash = String(item.content_hash);
+        }
+
         if (typeof item.question_text === 'string' && item.question_text !== '') {
             normalized.question_text = String(item.question_text);
         }
@@ -554,7 +558,7 @@ export function createQuestionCacheStorage(deps) {
         return String(normalized.updated_at || '').trim();
     }
 
-    function questionManifestContentSignature(question) {
+    function questionManifestContentSignature(question, ignoreContentHash) {
         var normalized = normalizeQuestionManifestItem(question);
         if (!normalized) {
             return '';
@@ -562,6 +566,9 @@ export function createQuestionCacheStorage(deps) {
 
         delete normalized.updated_at;
         delete normalized.question_number;
+        if (ignoreContentHash) {
+            delete normalized.content_hash;
+        }
         return payloadSignature(normalized);
     }
 
@@ -892,7 +899,11 @@ export function createQuestionCacheStorage(deps) {
                 return;
             }
 
-            var contentChanged = questionManifestContentSignature(previousManifest) !== questionManifestContentSignature(nextManifest);
+            // Hash konten hanya dibandingkan bila kedua manifest memilikinya (manifest lama dari cache lokal
+            // sebelum server mengirim content_hash tidak boleh membuat semua soal dianggap berubah).
+            var ignoreContentHash = !previousManifest.content_hash || !nextManifest.content_hash;
+            var contentChanged = questionManifestContentSignature(previousManifest, ignoreContentHash)
+                !== questionManifestContentSignature(nextManifest, ignoreContentHash);
             if (contentChanged) {
                 changedLookup[questionId] = true;
             }

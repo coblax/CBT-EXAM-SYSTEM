@@ -6,6 +6,45 @@ if (!defined('ABSPATH')) {
 
 final class CBT_Admin_UI_Helper
 {
+    /**
+     * add_query_arg() WordPress tidak meng-encode nilai, sehingga notifikasi cbt_msg/cbt_err yang
+     * memuat "#", "&" atau "%" terpotong di browser ("Soal #12 disimpan" tampil sebagai "Soal").
+     * Nilai yang masih mentah di-encode ulang; nilai yang sudah ter-encode dibiarkan.
+     *
+     * @param mixed $location
+     * @return mixed
+     */
+    public static function encode_notice_query_args($location)
+    {
+        if (!is_string($location) || (strpos($location, 'cbt_msg=') === false && strpos($location, 'cbt_err=') === false)) {
+            return $location;
+        }
+
+        // Fragment sah hanya berupa slug di ujung URL, mis. "#security" atau "#cbt-question-preview-12".
+        $fragment = '';
+        if (preg_match('/#[A-Za-z][A-Za-z0-9_-]*$/', $location, $fragment_match, PREG_OFFSET_CAPTURE) === 1) {
+            $fragment = (string) $fragment_match[0][0];
+            $location = substr($location, 0, (int) $fragment_match[0][1]);
+        }
+
+        $encoded = preg_replace_callback(
+            '/([?&])(cbt_msg|cbt_err)=(.*?)(?=&[A-Za-z0-9_\[\]%-]+=|$)/s',
+            static function (array $matches): string {
+                $value = (string) $matches[3];
+                if (preg_match('/^[A-Za-z0-9\-._~%+]*$/', $value) === 1) {
+                    return (string) $matches[0];
+                }
+
+                // wp_safe_redirect() sudah mengubah spasi/UTF-8 menjadi %XX sebelum filter ini jalan;
+                // decode dulu agar tidak ter-encode ganda (sanitize_text_field membuang sisa %XX).
+                return $matches[1] . $matches[2] . '=' . rawurlencode(rawurldecode($value));
+            },
+            $location
+        );
+
+        return (is_string($encoded) ? $encoded : $location) . $fragment;
+    }
+
     public static function render_empty_state(array $args = []): string
     {
         $title = trim((string) ($args['title'] ?? 'Belum ada data'));

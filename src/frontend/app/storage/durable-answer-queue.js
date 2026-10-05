@@ -132,6 +132,22 @@ function normalizeStoredAnswerItem(raw) {
     };
 }
 
+// Versi jawaban yang lebih baru ditahan (status syncing, lease pemilik lama) selama request versi lama
+// berjalan. Setelah request itu selesai/gagal, lepaskan agar versi baru dikirim pada flush berikutnya.
+function releaseHeldNewerVersion(existing, owner, currentTime) {
+    if (!existing || existing.status !== STATUS_SYNCING) {
+        return null;
+    }
+    if (owner !== '' && existing.lease_owner !== '' && existing.lease_owner !== owner) {
+        return null;
+    }
+    existing.status = STATUS_PENDING;
+    existing.lease_owner = '';
+    existing.lease_until = 0;
+    existing.updated_at = currentTime;
+    return existing;
+}
+
 function normalizeGrant(context, grant, now) {
     var normalizedContext = normalizeContext(context);
     var grantKey = buildGrantKey(normalizedContext);
@@ -273,11 +289,6 @@ export function createDurableAnswerQueueStorage(deps) {
         }
     }
 
-    function getLocalAnswer(queueKey) {
-        var state = readLocalState();
-        return normalizeStoredAnswerItem(state.answers[queueKey] || null);
-    }
-
     function putLocalAnswer(item) {
         var normalized = normalizeStoredAnswerItem(item);
         if (!normalized) {
@@ -377,33 +388,69 @@ export function createDurableAnswerQueueStorage(deps) {
         });
     }
 
-    function getAnswer(queueKey) {
-        var safeKey = String(queueKey || '');
-        if (safeKey === '') {
-            return Promise.resolve(null);
-        }
-
-        return runRequest(answerStore, 'readonly', function (store) {
-            return store.get(safeKey);
-        }, function () {
-            return getLocalAnswer(safeKey);
-        }).then(function (item) {
-            return normalizeStoredAnswerItem(item);
+    function pickContextAnswers(context, rawItems) {
+        var normalizedContext = normalizeContext(context);
+        return (Array.isArray(rawItems) ? rawItems : []).reduce(function (accumulator, raw) {
+            var item = normalizeStoredAnswerItem(raw);
+            if (
+                item
+                && item.user_id === normalizedContext.userId
+                && item.attempt_id === normalizedContext.attemptId
+                && item.question_id > 0
+            ) {
+                accumulator.push(item);
+            }
+            return accumulator;
+        }, []).sort(function (left, right) {
+            return (left.created_at - right.created_at) || (left.question_id - right.question_id);
         });
     }
 
-    function putAnswer(item) {
-        var normalized = normalizeStoredAnswerItem(item);
-        if (!normalized) {
-            return Promise.resolve(null);
+    // Baca lalu tulis dalam satu transaksi readwrite agar main thread dan service worker tidak bisa
+    // me-lease atau menimpa item yang sama secara bersamaan. mutate wajib sinkron dan mengembalikan
+    // { puts: [...], deletes: [...], result }.
+    function mutateAnswers(context, mutate) {
+        function applyLocally() {
+            var localPlan = mutate(pickContextAnswers(context, listLocalAnswers(context))) || {};
+            (localPlan.puts || []).forEach(putLocalAnswer);
+            (localPlan.deletes || []).forEach(deleteLocalAnswer);
+            return localPlan.result;
         }
 
-        return runRequest(answerStore, 'readwrite', function (store) {
-            return store.put(normalized);
-        }, function () {
-            return putLocalAnswer(normalized);
-        }).then(function () {
-            return normalized;
+        return openDb().then(function (database) {
+            if (!database) {
+                return applyLocally();
+            }
+
+            return new Promise(function (resolve) {
+                var plan = null;
+                var tx;
+                try {
+                    tx = database.transaction(answerStore, 'readwrite');
+                    var store = tx.objectStore(answerStore);
+                    var request = store.getAll();
+                    request.onsuccess = function () {
+                        plan = mutate(pickContextAnswers(context, request.result)) || {};
+                        (plan.puts || []).forEach(function (item) {
+                            store.put(item);
+                        });
+                        (plan.deletes || []).forEach(function (queueKey) {
+                            store.delete(queueKey);
+                        });
+                    };
+                } catch (error) {
+                    resolve(applyLocally());
+                    return;
+                }
+
+                tx.oncomplete = function () {
+                    resolve(plan ? plan.result : null);
+                };
+                tx.onerror = function () {
+                    resolve(null);
+                };
+                tx.onabort = tx.onerror;
+            });
         });
     }
 
@@ -429,21 +476,7 @@ export function createDurableAnswerQueueStorage(deps) {
         }, function () {
             return listLocalAnswers(context);
         }).then(function (items) {
-            var normalizedContext = normalizeContext(context);
-            return (Array.isArray(items) ? items : []).reduce(function (accumulator, raw) {
-                var item = normalizeStoredAnswerItem(raw);
-                if (
-                    item
-                    && item.user_id === normalizedContext.userId
-                    && item.attempt_id === normalizedContext.attemptId
-                    && item.question_id > 0
-                ) {
-                    accumulator.push(item);
-                }
-                return accumulator;
-            }, []).sort(function (left, right) {
-                return (left.created_at - right.created_at) || (left.question_id - right.question_id);
-            });
+            return pickContextAnswers(context, items);
         });
     }
 
@@ -454,9 +487,29 @@ export function createDurableAnswerQueueStorage(deps) {
             return Promise.resolve(null);
         }
 
-        return getAnswer(queueKey).then(function (existing) {
-            var normalized = normalizeAnswerItem(context, item, existing, now());
-            return normalized ? putAnswer(normalized) : null;
+        return mutateAnswers(context, function (items) {
+            var currentTime = now();
+            var existing = null;
+            items.forEach(function (stored) {
+                if (stored.queue_key === queueKey) {
+                    existing = stored;
+                }
+            });
+            var normalized = normalizeStoredAnswerItem(normalizeAnswerItem(context, item, existing, currentTime));
+            if (!normalized) {
+                return { result: null };
+            }
+            if (existing && existing.status === STATUS_SYNCING && existing.lease_until > currentTime) {
+                // Versi lama masih dikirim pemegang lease; tahan versi baru sampai request itu selesai
+                // supaya jawaban lama tidak tiba belakangan di server dan menimpa jawaban baru.
+                normalized.status = STATUS_SYNCING;
+                normalized.lease_owner = existing.lease_owner;
+                normalized.lease_until = existing.lease_until;
+            }
+            return {
+                puts: [normalized],
+                result: normalized
+            };
         });
     }
 
@@ -486,57 +539,77 @@ export function createDurableAnswerQueueStorage(deps) {
         var leaseMs = Math.max(1000, Number(options.leaseMs) || 30000);
         var currentTime = now();
 
-        return listAnswers(context).then(function (items) {
-            var available = items.filter(function (item) {
+        return mutateAnswers(context, function (items) {
+            var acquired = items.filter(function (item) {
                 if (item.status === STATUS_PENDING || item.status === STATUS_FAILED_RETRYABLE) {
                     return true;
                 }
                 return item.status === STATUS_SYNCING && item.lease_until > 0 && item.lease_until <= currentTime;
-            }).slice(0, limit);
-
-            return available.reduce(function (promise, item) {
-                return promise.then(function (acquired) {
-                    item.status = STATUS_SYNCING;
-                    item.lease_owner = owner;
-                    item.lease_until = currentTime + leaseMs;
-                    item.attempted_at = currentTime;
-                    item.attempt_count = Math.max(0, Number(item.attempt_count) || 0) + 1;
-                    item.updated_at = currentTime;
-                    return putAnswer(item).then(function (stored) {
-                        if (stored) {
-                            acquired.push(stored);
-                        }
-                        return acquired;
-                    });
-                });
-            }, Promise.resolve([]));
+            }).slice(0, limit).map(function (item) {
+                item.status = STATUS_SYNCING;
+                item.lease_owner = owner;
+                item.lease_until = currentTime + leaseMs;
+                item.attempted_at = currentTime;
+                item.attempt_count = Math.max(0, Number(item.attempt_count) || 0) + 1;
+                item.updated_at = currentTime;
+                return item;
+            });
+            return {
+                puts: acquired,
+                result: acquired
+            };
+        }).then(function (acquired) {
+            return Array.isArray(acquired) ? acquired : [];
         });
     }
 
-    function markAcked(context, items) {
-        var acked = [];
-        return (Array.isArray(items) ? items : []).reduce(function (promise, item) {
-            return promise.then(function () {
+    function indexByQueueKey(items) {
+        return items.reduce(function (lookup, item) {
+            lookup[item.queue_key] = item;
+            return lookup;
+        }, {});
+    }
+
+    function markAcked(context, items, options) {
+        options = options || {};
+        var owner = String(options.owner || '');
+        var submitted = Array.isArray(items) ? items : [];
+
+        return mutateAnswers(context, function (storedItems) {
+            var currentTime = now();
+            var storedByKey = indexByQueueKey(storedItems);
+            var acked = [];
+            var puts = [];
+            var deletes = [];
+            submitted.forEach(function (item) {
                 var questionId = Number(item && item.question_id) || 0;
                 var signature = String(item && item.signature ? item.signature : '');
                 var queueKey = buildQueueKey(context, questionId);
                 if (queueKey === '') {
-                    return null;
+                    return;
                 }
-                return getAnswer(queueKey).then(function (existing) {
-                    if (!existing) {
-                        acked.push(item);
-                        return null;
+                var existing = storedByKey[queueKey];
+                if (!existing) {
+                    acked.push(item);
+                    return;
+                }
+                if (String(existing.signature || '') !== signature) {
+                    var released = releaseHeldNewerVersion(existing, owner, currentTime);
+                    if (released) {
+                        puts.push(released);
                     }
-                    if (String(existing.signature || '') !== signature) {
-                        return null;
-                    }
-                    acked.push(existing);
-                    return deleteAnswer(queueKey);
-                });
+                    return;
+                }
+                acked.push(existing);
+                deletes.push(queueKey);
             });
-        }, Promise.resolve()).then(function () {
-            return acked;
+            return {
+                puts: puts,
+                deletes: deletes,
+                result: acked
+            };
+        }).then(function (acked) {
+            return Array.isArray(acked) ? acked : [];
         });
     }
 
@@ -547,29 +620,40 @@ export function createDurableAnswerQueueStorage(deps) {
             status = STATUS_FAILED_RETRYABLE;
         }
         var errorMessage = String(options.errorMessage || '');
-        var currentTime = now();
+        var owner = String(options.owner || '');
+        var released = Array.isArray(items) ? items : [];
 
-        return (Array.isArray(items) ? items : []).reduce(function (promise, item) {
-            return promise.then(function () {
+        return mutateAnswers(context, function (storedItems) {
+            var currentTime = now();
+            var storedByKey = indexByQueueKey(storedItems);
+            var puts = [];
+            released.forEach(function (item) {
                 var questionId = Number(item && item.question_id) || 0;
                 var signature = String(item && item.signature ? item.signature : '');
                 var queueKey = buildQueueKey(context, questionId);
-                if (queueKey === '') {
-                    return null;
+                var existing = queueKey !== '' ? storedByKey[queueKey] : null;
+                if (!existing) {
+                    return;
                 }
-                return getAnswer(queueKey).then(function (existing) {
-                    if (!existing || String(existing.signature || '') !== signature) {
-                        return null;
+                if (String(existing.signature || '') !== signature) {
+                    var newer = releaseHeldNewerVersion(existing, owner, currentTime);
+                    if (newer) {
+                        puts.push(newer);
                     }
-                    existing.status = status;
-                    existing.lease_owner = '';
-                    existing.lease_until = 0;
-                    existing.last_error = errorMessage;
-                    existing.updated_at = currentTime;
-                    return putAnswer(existing);
-                });
+                    return;
+                }
+                existing.status = status;
+                existing.lease_owner = '';
+                existing.lease_until = 0;
+                existing.last_error = errorMessage;
+                existing.updated_at = currentTime;
+                puts.push(existing);
             });
-        }, Promise.resolve());
+            return {
+                puts: puts,
+                result: null
+            };
+        });
     }
 
     function clearAttempt(context) {

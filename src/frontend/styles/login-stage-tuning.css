@@ -4,6 +4,13 @@
     min-height: max(680px, calc(100dvh - 70px));
 }
 
+/* Dengan stretch, tinggi shell terkunci ke tinggi viewport sehingga kartu terakhir "Alur Masuk Ujian"
+   terpotong overflow hero pada layar 1366x768 ke bawah. Biarkan shell tumbuh mengikuti isi. */
+body.cbt-exam-page.cbt-stage-login .cbt-container.cbt-container-login > .cbt-login-shell {
+    align-self: flex-start;
+    min-height: 100%;
+}
+
 .cbt-login-hero {
     position: relative;
     isolation: isolate;

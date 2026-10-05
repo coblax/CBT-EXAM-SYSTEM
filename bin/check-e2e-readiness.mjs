@@ -153,7 +153,8 @@ const checks = [
     await checkAbsolutePage(
         'CBT frontend',
         e2eFrontendUrl(),
-        'id="cbt-login-form"',
+        // Form login dirender di klien; HTML server hanya memuat mount shell CBT.
+        'id="cbt-exam-app"',
         'Jika frontend CBT bukan homepage WordPress, set CBT_E2E_FRONTEND_URL ke halaman yang memuat shortcode/frontend CBT.'
     ),
     checkFixtureCatalog(),

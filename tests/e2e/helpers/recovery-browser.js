@@ -158,8 +158,11 @@ async function jumpToQuestion(page, questionNumber) {
     const targetButton = page.locator(`[data-action="jump"][data-index="${targetIndex}"]`).first();
 
     await expect(targetButton).toBeVisible({ timeout: 20000 });
-    await targetButton.click({ force: true });
-    await expect(page.locator('.cbt-chip-question-index .cbt-chip-value')).toHaveText(String(targetNumber), { timeout: 20000 });
+    // Klik saat restore attempt masih berjalan (state.busy) diabaikan aplikasi; ulangi sampai pindah.
+    await expect(async () => {
+        await targetButton.click({ force: true });
+        await expect(page.locator('.cbt-chip-question-index .cbt-chip-value')).toHaveText(String(targetNumber), { timeout: 3000 });
+    }).toPass({ timeout: 20000 });
     await waitForAttemptUiSync(page, 2200);
 }
 

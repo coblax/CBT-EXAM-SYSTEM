@@ -42,6 +42,7 @@ trait CBT_REST_Session_Routes
             $attempt_timer = null;
             $attempt_question_order_ids = self::resolve_attempt_snapshot_question_order_ids($attempt);
             if ($attempt_status === 'in_progress') {
+                self::ensure_attempt_snapshots_cover_exam_questions((int) ($attempt['id'] ?? 0), $exam_id);
                 $attempt_table = $wpdb->prefix . 'cbt_attempts';
                 $exam_table = $wpdb->prefix . 'cbt_exams';
                 $exam = $wpdb->get_row(

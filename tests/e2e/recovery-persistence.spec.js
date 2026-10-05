@@ -13,6 +13,7 @@ const {
     getRecoveryFixture,
     invalidateRecoveryAdminSideCache,
     invalidateRecoveryNonAttemptCache,
+    resetRecoveryFixture,
     saveRecoveryRemoteState,
 } = require('./helpers/recovery-fixture');
 
@@ -20,6 +21,12 @@ test.describe.configure({ mode: 'serial' });
 
 test.describe('Recovery & Persistence flow check', () => {
     test.setTimeout(120000);
+
+    test.beforeEach(() => {
+        // Reset juga membersihkan sesi login; tanpa ini test berikutnya ditolak aturan 1 akun = 1 sesi
+        // dan me-resume attempt test sebelumnya di posisi soal yang berbeda.
+        resetRecoveryFixture();
+    });
 
     test('Recovery Flow: refresh restores current question, answer, and doubtful state', async ({ page, baseURL }) => {
         test.skip(!baseURL, 'Set CBT_E2E_BASE_URL untuk mengaktifkan flow check Playwright ini.');

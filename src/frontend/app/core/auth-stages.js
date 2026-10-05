@@ -942,7 +942,7 @@ export function createAuthStageManager(deps) {
                             : ('Token ujian diisi otomatis oleh sistem.' + (tokenRefreshMinutes > 0 ? (' Refresh setiap ' + tokenRefreshMinutes + ' menit.') : ''))
                     )
                     : 'Ujian ini tidak membutuhkan token.'))
-            : 'Pilih ujian terlebih dahulu dari daftar di kiri.';
+            : 'Pilih ujian terlebih dahulu dari daftar ujian.';
         if (selectedAttemptFinalizing) {
             tokenInfoText = 'Hasil sedang diproses.';
         }
@@ -950,7 +950,7 @@ export function createAuthStageManager(deps) {
         var userClassCode = String(state.user && state.user.kode_kelas ? state.user.kode_kelas : '-');
         var userRoomCode = String(state.user && state.user.kode_ruang ? state.user.kode_ruang : '-');
         var selectedExamTitle = hasSelectedExam ? String(selectedExam.title || '-') : 'Belum ada ujian dipilih';
-        var selectedExamSubject = hasSelectedExam ? String(selectedExam.subject_name || '-') : 'Pilih ujian dari daftar kiri';
+        var selectedExamSubject = hasSelectedExam ? String(selectedExam.subject_name || '-') : 'Pilih ujian dari daftar ujian';
         var selectedExamStartsAt = hasSelectedExam ? formatDateTime(selectedExam.starts_at) : '-';
         var selectedExamDurationMinutes = hasSelectedExam ? (Number(selectedExam.duration_minutes) || 0) : 0;
         var selectedExamDurationLabel = hasSelectedExam
@@ -1026,7 +1026,7 @@ export function createAuthStageManager(deps) {
                 ? selectedExamAutoTokenValue
                 : ((selectedExamRequiresToken || selectedExamAutoToken) ? 'Otomatis oleh sistem' : 'Tidak diperlukan'));
         var tokenFieldHelpText = !hasSelectedExam
-            ? 'Pilih ujian dari daftar kiri untuk melihat kebutuhan token.'
+            ? 'Pilih ujian dari daftar ujian untuk melihat kebutuhan token dan mengaktifkan tombol aksi.'
             : (selectedAttemptFinalizing
                 ? 'Waktu habis. Hasil diproses di background.'
                 : (selectedExamCompleted
@@ -1043,7 +1043,7 @@ export function createAuthStageManager(deps) {
         }
 
         var confirmQuickText = !hasSelectedExam
-            ? 'Pilih salah satu ujian dari daftar kiri untuk mengaktifkan detail dan tombol aksi.'
+            ? ''
             : (
                 selectedAttemptFinalizing
                     ? 'Finalisasi background berjalan. Halaman diperbarui otomatis.'

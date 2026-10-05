@@ -1854,6 +1854,7 @@
 
 .cbt-rich-option-card {
     display: flex;
+    flex-wrap: wrap;
     align-items: flex-start;
     gap: 10px;
 }
@@ -1874,15 +1875,19 @@
     border-radius: 0;
 }
 
+/* Tabel/media di dalam kartu opsi tidak bisa menyusut; tanpa lebar dasar kolom judul tergencet
+   hingga "PILIHAN A" pecah per huruf. Dengan flex-wrap tabel turun ke baris berikutnya bila sempit. */
 .cbt-rich-option-copy {
     display: flex;
-    flex: 1;
-    min-width: 0;
+    flex: 1 1 9rem;
+    min-width: 7rem;
     flex-direction: column;
     gap: 3px;
 }
 
 .cbt-rich-option-title {
+    overflow-wrap: normal;
+    word-break: keep-all;
     font-size: 12px;
     font-weight: 800;
     letter-spacing: 0.02em;
@@ -3844,4 +3849,13 @@
 
 .cbt-dot-changed {
     background: #dc2626;
+}
+
+/* Kolom sempit: rata kanan-kiri memunculkan celah lebar antarkata karena hyphens tidak bekerja untuk lang="id". */
+@media (max-width: 720px) {
+    .cbt-question-stem,
+    .cbt-option-label,
+    .cbt-tf-matrix-statement {
+        text-align: start;
+    }
 }

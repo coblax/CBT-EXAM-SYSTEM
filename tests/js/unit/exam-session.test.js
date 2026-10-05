@@ -2073,6 +2073,43 @@ describe('createExamSessionManager', function () {
         })).toEqual([]);
     });
 
+    it('brings the exam token input into view and focuses it when the token is missing', async function () {
+        var tokenInput = document.createElement('input');
+        tokenInput.id = 'cbt-exam-token';
+        tokenInput.scrollIntoView = vi.fn();
+        document.body.appendChild(tokenInput);
+        try {
+            var fixture = createFixture({
+                state: {
+                    exams: [
+                        {
+                            id: 55,
+                            duration_minutes: 60,
+                            is_class_allowed: 1,
+                            latest_attempt_id: 0,
+                            latest_attempt_status: '',
+                            requires_token: 1,
+                            token_input_required: 1
+                        }
+                    ],
+                    selectedExamId: 55,
+                    examToken: ''
+                }
+            });
+
+            await fixture.manager.handleStartExam();
+            await new Promise(function (resolve) {
+                setTimeout(resolve, 80);
+            });
+
+            expect(fixture.state.stage).toBe('confirm');
+            expect(tokenInput.scrollIntoView).toHaveBeenCalled();
+            expect(document.activeElement).toBe(tokenInput);
+        } finally {
+            tokenInput.remove();
+        }
+    });
+
     it('paints the result loading flow immediately before fetching review data', async function () {
         var fixture = createFixture({
             state: {

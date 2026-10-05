@@ -521,16 +521,18 @@
 }
 
 @media (min-width: 1001px) {
-    .cbt-exam-layout.cbt-nav-pos-left .cbt-side-card,
-    .cbt-exam-layout.cbt-nav-pos-right .cbt-side-card {
+    /* Sticky dipasang di region (grid item); kartu di dalamnya setinggi region sehingga tidak bisa
+       menempel. top memberi ruang untuk topbar sticky agar panel navigasi ikut saat soal panjang. */
+    .cbt-exam-layout.cbt-nav-pos-left .cbt-exam-region-navigation,
+    .cbt-exam-layout.cbt-nav-pos-right .cbt-exam-region-navigation {
         position: sticky;
-        top: 12px;
+        top: 84px;
     }
 
     .cbt-exam-layout.cbt-nav-pos-left .cbt-nav-grid,
     .cbt-exam-layout.cbt-nav-pos-right .cbt-nav-grid {
         grid-template-columns: repeat(5, minmax(0, 1fr));
-        max-height: min(54vh, 440px);
+        max-height: min(54vh, 440px, calc(100vh - 310px));
     }
 }
 

@@ -170,6 +170,14 @@ trait CBT_REST_Exam_Questions_Routes
             }
         }
 
+        if (
+            is_array($attempt)
+            && $is_student_request
+            && (string) ($attempt['status'] ?? '') === 'in_progress'
+        ) {
+            self::ensure_attempt_snapshots_cover_exam_questions($attempt_id, $exam_id);
+        }
+
         $window_mode = ($attempt_id > 0 && $limit > 0);
         if (
             $window_mode
@@ -324,6 +332,9 @@ trait CBT_REST_Exam_Questions_Routes
         );
         if (empty($question_manifest)) {
             $question_manifest = self::build_question_manifest($questions);
+        }
+        if (is_array($attempt)) {
+            $question_manifest = self::attach_current_content_hashes_to_manifest($exam_id, $question_manifest);
         }
         $answered_question_ids = [];
         $existing_answers_map = [];
@@ -585,6 +596,7 @@ trait CBT_REST_Exam_Questions_Routes
         if (empty($question_manifest)) {
             $question_manifest = self::build_minimal_question_manifest_from_order($question_order_ids, $question_number_map);
         }
+        $question_manifest = self::attach_current_content_hashes_to_manifest($exam_id, $question_manifest);
         $archived_review_items = $include_answer_manifest
             ? self::build_attempt_archived_review_items($attempt)
             : [];
