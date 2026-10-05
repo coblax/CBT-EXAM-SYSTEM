@@ -429,6 +429,41 @@
         font-size: 13px;
         line-height: 1.5;
     }
+    .cbt-update-progress.is-working .cbt-update-progress-fill {
+        background-image: linear-gradient(45deg, rgba(255,255,255,.28) 25%, transparent 25%, transparent 50%, rgba(255,255,255,.28) 50%, rgba(255,255,255,.28) 75%, transparent 75%, transparent), linear-gradient(90deg, var(--cbt-primary), var(--cbt-secondary));
+        background-size: 24px 24px, 100% 100%;
+        animation: cbt-update-stripes 0.9s linear infinite;
+    }
+    @keyframes cbt-update-stripes { to { background-position: 24px 0, 0 0; } }
+    .cbt-update-progress-live {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--cbt-text-main);
+        font-size: 13px;
+        font-weight: 600;
+    }
+    .cbt-update-progress-live[hidden] { display: none; }
+    .cbt-update-progress-spinner {
+        width: 14px;
+        height: 14px;
+        border: 2px solid #cbd5e1;
+        border-top-color: var(--cbt-primary);
+        border-radius: 50%;
+        animation: cbt-update-spin 0.8s linear infinite;
+        flex: 0 0 auto;
+    }
+    @keyframes cbt-update-spin { to { transform: rotate(360deg); } }
+    .cbt-update-progress-elapsed {
+        margin-left: auto;
+        color: var(--cbt-text-muted);
+        font-variant-numeric: tabular-nums;
+        font-weight: 700;
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .cbt-update-progress.is-working .cbt-update-progress-fill,
+        .cbt-update-progress-spinner { animation: none; }
+    }
     
     .cbt-update-table-wrap { overflow-x: auto; }
     .cbt-update-table {
@@ -547,9 +582,14 @@
                     <div class="cbt-update-progress-track" aria-hidden="true">
                         <div class="cbt-update-progress-fill" data-cbt-update-fill></div>
                     </div>
+                    <div class="cbt-update-progress-live" data-cbt-update-live hidden aria-live="polite">
+                        <span class="cbt-update-progress-spinner" aria-hidden="true"></span>
+                        <span data-cbt-update-live-text>Server sedang bekerja…</span>
+                        <span class="cbt-update-progress-elapsed" data-cbt-update-elapsed>0:00</span>
+                    </div>
                     <div class="cbt-update-progress-message" data-cbt-update-message>Menunggu operasi update.</div>
                     <div>
-                        <button type="button" class="button" data-cbt-update-resume> Lanjutkan </button>
+                        <button type="button" class="button" data-cbt-update-resume hidden> Lanjutkan </button>
                     </div>
                 </div>
             </div>
@@ -742,6 +782,24 @@
     var fill = panel.querySelector('[data-cbt-update-fill]');
     var message = panel.querySelector('[data-cbt-update-message]');
     var resume = panel.querySelector('[data-cbt-update-resume]');
+    var live = panel.querySelector('[data-cbt-update-live]');
+    var liveText = panel.querySelector('[data-cbt-update-live-text]');
+    var elapsedNode = panel.querySelector('[data-cbt-update-elapsed]');
+    var elapsedTimer = null;
+    var stageStartedAt = 0;
+    var currentStageKey = '';
+    var lastPayload = null;
+    // Tahap yang sedang dikerjakan server (stage pada payload = tahap berikutnya yang dijalankan tick).
+    var stageHints = {
+        fetch_release: 'Mengecek release terbaru di GitHub…',
+        download: 'Mengunduh paket update dari GitHub. Bisa 1–3 menit tergantung koneksi server.',
+        validate: 'Memeriksa checksum dan struktur paket…',
+        backup: 'Membuat backup versi lama. Bisa beberapa menit tergantung ukuran plugin.',
+        install: 'Memasang versi baru. Jangan tutup halaman ini.',
+        rollback: 'Mengembalikan versi dari backup. Jangan tutup halaman ini.',
+        post_health: 'Menjalankan health check setelah update…',
+        cleanup: 'Membersihkan file sementara…'
+    };
     var currentToken = '';
     var timer = null;
     var failureCount = 0;
@@ -786,7 +844,51 @@
         if (message) {
             message.textContent = String(payload.message || 'Menunggu operasi update.');
         }
+        lastPayload = payload;
+        var stageKey = String(payload.token || '') + ':' + String(payload.stage || '');
+        if (stageKey !== currentStageKey) {
+            currentStageKey = stageKey;
+            stageStartedAt = Date.now();
+        }
         setButtonsDisabled(!payload.complete && String(payload.status || '') !== 'paused');
+    }
+
+    function formatElapsed(ms) {
+        var total = Math.max(0, Math.floor(ms / 1000));
+        var minutes = Math.floor(total / 60);
+        var seconds = total % 60;
+        return String(minutes) + ':' + (seconds < 10 ? '0' : '') + String(seconds);
+    }
+
+    function setWorking(working) {
+        panel.classList.toggle('is-working', !!working);
+        if (live) {
+            live.hidden = !working;
+        }
+        if (resume) {
+            resume.hidden = !!working;
+        }
+        if (elapsedTimer) {
+            window.clearInterval(elapsedTimer);
+            elapsedTimer = null;
+        }
+        if (!working) {
+            return;
+        }
+        if (!stageStartedAt) {
+            stageStartedAt = Date.now();
+        }
+        var stage = lastPayload ? String(lastPayload.stage || '') : '';
+        if (liveText) {
+            liveText.textContent = stageHints[stage] || 'Server sedang bekerja…';
+        }
+        var update = function () {
+            if (elapsedNode) {
+                elapsedNode.textContent = 'berjalan ' + formatElapsed(Date.now() - stageStartedAt);
+            }
+        };
+        update();
+        elapsedTimer = window.setInterval(update, 1000);
     }
 
     function request(operation, extra) {
@@ -845,6 +947,10 @@
             return;
         }
         if (payload.complete) {
+            setWorking(false);
+            if (resume) {
+                resume.hidden = true;
+            }
             window.setTimeout(function () {
                 if (runSeq === updateOperationSeq) {
                     window.location.href = String(payload.redirect_url || window.location.href);
@@ -855,13 +961,23 @@
         scheduleTick(800, runSeq);
     }
 
-    function handleFailure(error) {
+    function handleFailure(error, runSeq) {
         failureCount++;
         panel.hidden = false;
+        // Tahap berat (unduh/backup) bisa melewati batas waktu proxy walau server tetap bekerja; server
+        // memakai kunci per job sehingga mencoba lagi aman. Coba otomatis sebelum meminta tombol Lanjutkan.
+        if (failureCount < 4 && currentToken !== '') {
+            if (message) {
+                message.textContent = 'Menunggu respons server (percobaan ' + String(failureCount) + ' dari 3)… proses tetap berjalan di server.';
+            }
+            setWorking(true);
+            scheduleTick(4000 * failureCount, runSeq || updateOperationSeq);
+            return;
+        }
+        setWorking(false);
         if (message) {
-            message.textContent = failureCount >= 3
-                ? 'Koneksi polling terhenti. Job tersimpan; tekan Lanjutkan untuk mencoba lagi.'
-                : (error && error.message ? error.message : 'Polling update gagal.');
+            message.textContent = 'Koneksi ke server terputus. Progres tersimpan; tekan Lanjutkan untuk melanjutkan dari tahap terakhir.'
+                + (error && error.message ? ' (' + error.message + ')' : '');
         }
         setButtonsDisabled(false);
     }
@@ -874,6 +990,7 @@
         updateRequestInFlight = true;
         updateRequestSeq += 1;
         var requestSeq = updateRequestSeq;
+        setWorking(true);
 
         return request(operation, extra || {}).then(function (payload) {
             if (runSeq !== updateOperationSeq) {
@@ -885,7 +1002,7 @@
             if (runSeq !== updateOperationSeq) {
                 return false;
             }
-            handleFailure(error);
+            handleFailure(error, runSeq);
             return false;
         }).then(function (ok) {
             if (requestSeq === updateRequestSeq) {
@@ -944,6 +1061,7 @@
     if (resume) {
         resume.addEventListener('click', function () {
             if (currentToken !== '' && !updateRequestInFlight) {
+                failureCount = 0;
                 scheduleTick(10, updateOperationSeq);
             }
         });
