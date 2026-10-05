@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+    # Naikkan "Version:" di cbt-exam-system.php lalu push ke main: tag + release dibuat otomatis.
+    branches:
+      - main
+    paths:
+      - cbt-exam-system.php
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -25,51 +31,71 @@ jobs:
           tools: composer
           coverage: none
 
-      - name: Validate release tag matches plugin version
+      - name: Resolve release tag
         shell: bash
         run: |
           set -euo pipefail
 
-          if [[ ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Release tag must use vMAJOR.MINOR.PATCH format. Got: ${GITHUB_REF_NAME}" >&2
-            exit 1
-          fi
-
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
           PLUGIN_VERSION=$(php -r '$header=file_get_contents("cbt-exam-system.php"); if (!preg_match("/^\\s*\\*?\\s*Version:\\s*(.+)$/mi", $header, $m)) { fwrite(STDERR, "Unable to read plugin version\n"); exit(1); } echo trim($m[1]);')
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            RELEASE_TAG="${GITHUB_REF_NAME}"
+          else
+            RELEASE_TAG="v${PLUGIN_VERSION}"
+          fi
 
-          if [ "${TAG_VERSION}" != "${PLUGIN_VERSION}" ]; then
-            echo "Tag version ${TAG_VERSION} does not match plugin header version ${PLUGIN_VERSION}" >&2
+          if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tag must use vMAJOR.MINOR.PATCH format. Got: ${RELEASE_TAG}" >&2
             exit 1
           fi
+
+          if [ "${RELEASE_TAG#v}" != "${PLUGIN_VERSION}" ]; then
+            echo "Tag version ${RELEASE_TAG#v} does not match plugin header version ${PLUGIN_VERSION}" >&2
+            exit 1
+          fi
+
+          SKIP_RELEASE=false
+          if [ "${GITHUB_REF_TYPE}" != "tag" ] && git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "Release ${RELEASE_TAG} sudah ada; tidak ada yang perlu dibuat."
+            SKIP_RELEASE=true
+          fi
+
+          echo "RELEASE_TAG=${RELEASE_TAG}" >> "${GITHUB_ENV}"
+          echo "SKIP_RELEASE=${SKIP_RELEASE}" >> "${GITHUB_ENV}"
 
       - name: Setup Node.js
+        if: env.SKIP_RELEASE != 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: npm
 
       - name: Install frontend dependencies
+        if: env.SKIP_RELEASE != 'true'
         run: npm ci
 
       - name: Build frontend assets
+        if: env.SKIP_RELEASE != 'true'
         run: npm run build
 
       - name: Check source release readiness
+        if: env.SKIP_RELEASE != 'true'
         run: npm run release:package-check
 
       - name: Install production PHP dependencies
+        if: env.SKIP_RELEASE != 'true'
         run: composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist
 
       - name: Install release packaging tools
+        if: env.SKIP_RELEASE != 'true'
         run: sudo apt-get update && sudo apt-get install -y rsync zip
 
       - name: Prepare release package
+        if: env.SKIP_RELEASE != 'true'
         shell: bash
         run: |
           set -euo pipefail
 
-          TAG_NAME="${GITHUB_REF_NAME}"
+          TAG_NAME="${RELEASE_TAG}"
           PACKAGE_NAME="cbt-exam-system.zip"
           MANIFEST_NAME="cbt-update-manifest.json"
           DIST_ROOT="${RUNNER_TEMP}/release-dist"
@@ -84,6 +110,12 @@ jobs:
           DOWNLOAD_URL="https://github.com/coblax/CBT-EXAM-SYSTEM/releases/download/${TAG_NAME}/${PACKAGE_NAME}"
           PUBLISHED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           CHANGELOG=$(git tag -l --format='%(contents)' "${TAG_NAME}")
+          if [ -z "${CHANGELOG}" ]; then
+            PREVIOUS_TAG=$(git describe --tags --abbrev=0 --match 'v*' HEAD 2>/dev/null || true)
+            if [ -n "${PREVIOUS_TAG}" ] && [ "${PREVIOUS_TAG}" != "${TAG_NAME}" ]; then
+              CHANGELOG=$(git log --no-merges --pretty='- %s' "${PREVIOUS_TAG}..HEAD")
+            fi
+          fi
           if [ -z "${CHANGELOG}" ]; then
             CHANGELOG="Release ${VERSION}"
           fi
@@ -146,8 +178,12 @@ jobs:
           echo "RELEASE_NOTES_PATH=${RELEASE_NOTES_PATH}" >> "${GITHUB_ENV}"
 
       - name: Upload release assets
+        if: env.SKIP_RELEASE != 'true'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          target_commitish: ${{ github.sha }}
+          name: CBT Exam System ${{ env.RELEASE_TAG }}
           body_path: ${{ env.RELEASE_NOTES_PATH }}
           files: |
             ${{ env.PACKAGE_PATH }}
