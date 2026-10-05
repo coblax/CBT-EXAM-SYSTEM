@@ -5,7 +5,7 @@
                     <div class="cbt-exams-hero-copy">
                         <span class="cbt-exams-kicker">Assessment</span>
                         <h1>CBT Exams</h1>
-                        <p>Kelola builder exam, jadwal pelaksanaan, kelas peserta, dan pemilihan soal dari satu halaman kerja yang lebih rapi. Alur create dan update tetap sama, hanya tampilan admin-nya dibuat lebih modern dan mudah discan.</p>
+                        <p>Kelola builder exam, jadwal pelaksanaan, kelas peserta, dan pemilihan soal dari satu halaman kerja.</p>
                     </div>
                     <div class="cbt-exams-hero-stats">
                         <article class="cbt-exams-hero-stat">
@@ -59,11 +59,13 @@
                     </details>
                 <?php endif; ?>
 
+            <?php /* Penanda posisi notice plugin lain; notice CBT memakai .inline agar tidak dipindah common.js ke dalam hero. */ ?>
+            <hr class="wp-header-end" />
             <?php if ($notice): ?>
-                <div class="notice notice-success is-dismissible"><p><?php echo esc_html($notice); ?></p></div>
+                <div class="notice notice-success is-dismissible inline"><p><?php echo esc_html($notice); ?></p></div>
             <?php endif; ?>
             <?php if ($error): ?>
-                <div class="notice notice-error is-dismissible"><p><?php echo esc_html($error); ?></p></div>
+                <div class="notice notice-error is-dismissible inline"><p><?php echo esc_html($error); ?></p></div>
             <?php endif; ?>
             <?php if (!empty($blocked_bank_exam_context['is_blocked'])): ?>
                 <section class="cbt-exam-bank-guard-card">
@@ -98,7 +100,7 @@
 
             <div id="cbt-exam-builder-panel" class="cbt-exam-page-panel<?php echo $active_exam_page_panel === 'cbt-exam-builder-panel' ? ' cbt-active' : ''; ?>" role="tabpanel">
                 <?php if (empty($subjects)): ?>
-                    <div class="notice notice-warning"><p>Belum ada mapel. Buat mapel terlebih dahulu di menu CBT Subjects.</p></div>
+                    <div class="notice notice-warning inline"><p>Belum ada mapel. Buat mapel terlebih dahulu di menu CBT Subjects.</p></div>
                 <?php else: ?>
                     <h2><?php echo $editing_exam ? 'Edit Exam' : 'Buat Exam Baru'; ?></h2>
                     <p class="description">Flow: pilih mapel, atur jadwal, tentukan kelas peserta, lalu pilih soal yang dipakai untuk exam.</p>
@@ -175,7 +177,7 @@
                                 <span class="cbt-exam-flow-arrow" aria-hidden="true">&rarr;</span>
                                 <button type="submit" class="button button-primary cbt-exam-submit-btn"><?php echo esc_html($editing_exam ? 'Update Exam' : 'Create Exam'); ?></button>
                                 <?php if ($editing_exam): ?>
-                                    <a class="button" id="cbt-exam-cancel-edit" href="<?php echo esc_url(admin_url('admin.php?page=cbt-exams')); ?>">Batal Edit</a>
+                                    <a class="button" id="cbt-exam-cancel-edit" href="<?php echo esc_url(add_query_arg(array_merge($exam_list_state_args, ['cbt_exam_panel' => 'list']), admin_url('admin.php'))); ?>">Batal Edit</a>
                                 <?php endif; ?>
                             </div>
                         </div>
@@ -919,15 +921,19 @@
                         <?php foreach ($exams as $index => $exam): ?>
                             <?php
                             $kelas_list = CBT_Admin_Exams_Service::split_target_kelas_csv((string) ($exam['target_kelas'] ?? ''));
-                            $kelas_display = !empty($kelas_list) ? implode(', ', $kelas_list) : 'Semua kelas';
+                            $kelas_display = !empty($kelas_list) ? implode(', ', $kelas_list) : 'Belum ada kelas';
+                            $format_exam_schedule = static function (string $value): string {
+                                $timestamp = strtotime($value);
+                                return $timestamp !== false ? date('d M Y H:i', $timestamp) : $value;
+                            };
                             $schedule_parts = [];
                             if (!empty($exam['starts_at'])) {
-                                $schedule_parts[] = 'Mulai: ' . (string) $exam['starts_at'];
+                                $schedule_parts[] = 'Mulai: ' . $format_exam_schedule((string) $exam['starts_at']);
                             }
                             if (!empty($exam['ends_at'])) {
-                                $schedule_parts[] = 'Selesai: ' . (string) $exam['ends_at'];
+                                $schedule_parts[] = 'Selesai: ' . $format_exam_schedule((string) $exam['ends_at']);
                             }
-                            $schedule_display = !empty($schedule_parts) ? implode(' | ', $schedule_parts) : '-';
+                            $schedule_display = !empty($schedule_parts) ? implode(' | ', $schedule_parts) : 'Tanpa jadwal (selalu terbuka)';
                             $status_value = (string) ($exam['status'] ?? 'draft');
                             $status_class = sanitize_html_class($status_value);
                             $randomize_questions_enabled = !empty($exam['randomize_questions']);
@@ -952,7 +958,7 @@
                                 </td>
                                 <td>
                                     <div class="cbt-exam-status-stack">
-                                        <span class="cbt-exam-status-pill cbt-exam-status-pill--<?php echo esc_attr($status_class); ?>"><?php echo esc_html($status_value); ?></span>
+                                        <span class="cbt-exam-status-pill cbt-exam-status-pill--<?php echo esc_attr($status_class); ?>"><?php echo esc_html((string) ($exam_status_labels[$status_value] ?? $status_value)); ?></span>
                                         <div class="cbt-exam-status-flags">
                                             <span class="cbt-exam-status-flag cbt-exam-status-flag--question<?php echo $randomize_questions_enabled ? ' is-active' : ' is-inactive'; ?>">
                                                 <?php echo esc_html($randomize_questions_enabled ? 'Acak Soal On' : 'Acak Soal Off'); ?>
@@ -977,6 +983,13 @@
                                     $attempt_total = (int) ($exam['attempt_total'] ?? 0);
                                     $attempt_in_progress = (int) ($exam['attempt_in_progress'] ?? 0);
                                     $attempt_completed = (int) ($exam['attempt_completed'] ?? 0);
+                                    $exam_delete_confirm = $attempt_total > 0
+                                        ? sprintf(
+                                            'Hapus exam "%s"? %d attempt beserta jawaban, nilai, log keamanan, dan insiden exam ini akan ikut terhapus permanen dan tidak bisa dikembalikan.',
+                                            (string) ($exam['title'] ?? ''),
+                                            $attempt_total
+                                        )
+                                        : sprintf('Hapus exam "%s"?', (string) ($exam['title'] ?? ''));
                                     ?>
                                     <div class="cbt-exam-monitoring-stack">
                                         <span><strong><?php echo esc_html((string) $attempt_total); ?></strong> total</span>
@@ -1000,7 +1013,7 @@
                                             title="Buka Results di tab baru"
                                         >Results</a>
                                         <a class="cbt-admin-action cbt-admin-action--edit cbt-exam-row-action cbt-exam-row-action--edit" href="<?php echo esc_url(add_query_arg(CBT_Admin_Exams_Service::add_exam_list_state_args(['page' => 'cbt-exams', 'edit' => (int) $exam['id']], $exam_list_state), admin_url('admin.php'))); ?>">Edit</a>
-                                        <a class="cbt-admin-action cbt-admin-action--delete cbt-exam-row-action cbt-exam-row-action--delete" href="<?php echo esc_url(wp_nonce_url(add_query_arg(CBT_Admin_Exams_Service::add_exam_list_state_args(['action' => 'cbt_delete_exam', 'id' => (int) $exam['id'], 'cbt_exam_panel' => 'list'], $exam_list_state), admin_url('admin-post.php')), 'cbt_delete_exam_' . (int) $exam['id'])); ?>" onclick="return confirm('Delete this exam?');">Delete</a>
+                                        <a class="cbt-admin-action cbt-admin-action--delete cbt-exam-row-action cbt-exam-row-action--delete" href="<?php echo esc_url(wp_nonce_url(add_query_arg(CBT_Admin_Exams_Service::add_exam_list_state_args(['action' => 'cbt_delete_exam', 'id' => (int) $exam['id'], 'cbt_exam_panel' => 'list'], $exam_list_state), admin_url('admin-post.php')), 'cbt_delete_exam_' . (int) $exam['id'])); ?>" onclick="return confirm(<?php echo esc_attr(wp_json_encode($exam_delete_confirm)); ?>);">Hapus</a>
                                     </div>
                                 </td>
                             </tr>
@@ -1009,7 +1022,8 @@
                                 <td colspan="7">
                                     <div class="cbt-admin-drawer-panel cbt-exam-list-classes-wrap">
                                         <?php if (empty($kelas_list)): ?>
-                                            <span class="cbt-exam-list-class-badge is-all">Semua Kelas</span>
+                                            <?php /* Siswa hanya melihat exam yang punya kelas target; kosong berarti tidak tampil ke siapa pun. */ ?>
+                                            <span class="cbt-exam-list-class-badge is-empty" title="Exam tanpa kelas peserta tidak tampil ke siswa mana pun.">Belum ada kelas peserta — tidak tampil ke siswa</span>
                                         <?php else: ?>
                                             <?php foreach ($kelas_list as $kelas): ?>
                                                 <span class="cbt-exam-list-class-badge"><?php echo esc_html($kelas); ?></span>
@@ -1132,11 +1146,14 @@
             <?php endif; ?>
         </div>
             <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        /* Font Google tidak di-@import: di jaringan sekolah tanpa internet request itu memblok render. */
+        .cbt-exams-page .wp-header-end {
+            display: none;
+        }
 
                 
         /* Modern Design System Tokens */
-        :root {
+        .cbt-exams-page {
             --cbt-primary: #3b82f6;
             --cbt-primary-hover: #2563eb;
             --cbt-primary-light: #eff6ff;
@@ -4470,6 +4487,20 @@
                     border-color: #bbf7d0;
                     color: #166534;
                 }
+                .cbt-exam-list-class-badge.is-empty {
+                    background: #fffbeb;
+                    border-color: #fde68a;
+                    color: #92400e;
+                }
+                .cbt-exam-redis-reset-force {
+                    display: flex;
+                    align-items: flex-start;
+                    gap: 6px;
+                    margin: 6px 0;
+                    color: #7f1d1d;
+                    font-size: 12px;
+                    font-weight: 600;
+                }
                 .cbt-exam-status-pill {
                     display: inline-flex;
                     align-items: center;
@@ -5173,7 +5204,71 @@
                     }
                 }
 
+                let snapshotInteractionPauseUntil = 0;
+
+                function hasSnapshotDirtyFields() {
+                    if (!snapshotContentContainer) {
+                        return false;
+                    }
+
+                    // Auto-refresh mengganti seluruh konten snapshot; jangan jalan selama admin sudah
+                    // mencentang/mengubah sesuatu (mis. pilihan exam untuk Bulk One-Click) agar tidak hilang.
+                    const fields = snapshotContentContainer.querySelectorAll('input, select, textarea');
+                    for (const field of fields) {
+                        if (examSnapshotFilterForm && examSnapshotFilterForm.contains(field)) {
+                            continue;
+                        }
+                        if (field.disabled || field.type === 'hidden' || field.type === 'submit' || field.type === 'button') {
+                            continue;
+                        }
+                        if (field.type === 'checkbox' || field.type === 'radio') {
+                            if (field.checked !== field.defaultChecked) {
+                                return true;
+                            }
+                            continue;
+                        }
+                        if (field.tagName === 'SELECT') {
+                            const options = Array.from(field.options);
+                            if (field.multiple) {
+                                if (options.some((option) => option.selected !== option.defaultSelected)) {
+                                    return true;
+                                }
+                                continue;
+                            }
+                            // Tanpa atribut selected, browser memilih opsi pertama sebagai default.
+                            const defaultIndex = options.findIndex((option) => option.defaultSelected);
+                            if (field.selectedIndex !== (defaultIndex >= 0 ? defaultIndex : 0)) {
+                                return true;
+                            }
+                            continue;
+                        }
+                        if (field.value !== field.defaultValue) {
+                            return true;
+                        }
+                    }
+
+                    return false;
+                }
+
                 function isSnapshotFilterInteractionActive() {
+                    if (Date.now() < snapshotInteractionPauseUntil) {
+                        return true;
+                    }
+
+                    const activeElement = document.activeElement;
+                    if (
+                        activeElement instanceof HTMLElement
+                        && snapshotContentContainer
+                        && snapshotContentContainer.contains(activeElement)
+                        && activeElement.matches('input, select, textarea')
+                    ) {
+                        return true;
+                    }
+
+                    if (hasSnapshotDirtyFields()) {
+                        return true;
+                    }
+
                     if (!examSnapshotFilterForm) {
                         return false;
                     }
@@ -5182,7 +5277,6 @@
                         return true;
                     }
 
-                    const activeElement = document.activeElement;
                     return activeElement instanceof HTMLElement && examSnapshotFilterForm.contains(activeElement);
                 }
 
@@ -5273,9 +5367,24 @@
                             }
                         }
 
+                        if (isSnapshotFilterInteractionActive()) {
+                            // Admin mulai berinteraksi selama request berjalan; jangan timpa kontennya.
+                            scheduleSnapshotAutoRefresh();
+                            return;
+                        }
+
                         snapshotContentContainer.style.opacity = '0.4';
                         requestAnimationFrame(() => {
+                            const liveFilterForm = examSnapshotFilterForm && snapshotContentContainer.contains(examSnapshotFilterForm)
+                                ? examSnapshotFilterForm
+                                : null;
                             snapshotContentContainer.innerHTML = result.data.html;
+                            // Pasang kembali form filter lama: listener auto-submit/picker hanya terikat ke node
+                            // awal, sehingga form hasil refresh tidak akan merespons perubahan filter.
+                            const freshFilterForm = snapshotContentContainer.querySelector('#cbt-exam-snapshot-filter-form');
+                            if (liveFilterForm && freshFilterForm) {
+                                freshFilterForm.replaceWith(liveFilterForm);
+                            }
                             requestAnimationFrame(() => {
                                 snapshotContentContainer.style.opacity = '1';
                             });
@@ -5287,7 +5396,7 @@
                         snapshotAjaxInFlight = false;
                         snapshotAjaxConsecutiveErrors++;
 
-                        if (snapshotAjaxConsecutiveErrors >= 3) {
+                        if (snapshotAjaxConsecutiveErrors >= 3 && !hasSnapshotDirtyFields()) {
                             isPageNavigating = true;
                             window.location.reload();
                             return;
@@ -5938,6 +6047,21 @@
                     handleSnapshotAutoRefreshState();
                 });
 
+                if (snapshotContentContainer) {
+                    // Container tetap sama walau isinya diganti, jadi listener delegasi ini bertahan.
+                    ['change', 'input', 'focusout'].forEach((eventName) => {
+                        snapshotContentContainer.addEventListener(eventName, () => {
+                            window.setTimeout(handleSnapshotAutoRefreshState, 0);
+                        });
+                    });
+                    snapshotContentContainer.addEventListener('toggle', (event) => {
+                        if (event.target instanceof HTMLDetailsElement && event.target.open) {
+                            snapshotInteractionPauseUntil = Date.now() + 60000;
+                        }
+                        handleSnapshotAutoRefreshState();
+                    }, true);
+                }
+
                 handleSnapshotAutoRefreshState();
 
                 function setExamDetailValidationNotice(isVisible, message = '') {
@@ -6187,23 +6311,34 @@
                     }
                 }
 
+                // Akses sessionStorage bisa melempar SecurityError (storage diblokir browser/kebijakan sekolah);
+                // tanpa probe ini seluruh script halaman Exams berhenti dan tab tidak bisa dipakai.
+                const builderSessionStorage = (() => {
+                    try {
+                        const storage = window.sessionStorage;
+                        storage.getItem('cbt-exam-builder-probe');
+                        return storage;
+                    } catch (error) {
+                        return null;
+                    }
+                })();
                 const resetStateKeys = parseJsonValue(resetKeysInput ? resetKeysInput.value : '[]', []);
-                if (Array.isArray(resetStateKeys) && typeof window.sessionStorage !== 'undefined') {
+                if (Array.isArray(resetStateKeys) && !!builderSessionStorage) {
                     resetStateKeys.forEach((key) => {
                         const normalizedKey = String(key || '').trim();
                         if (normalizedKey !== '') {
-                            window.sessionStorage.removeItem(normalizedKey);
+                            builderSessionStorage.removeItem(normalizedKey);
                         }
                     });
                 }
 
                 const defaultSelectedQuestionIds = parseJsonValue(selectedDefaultsInput ? selectedDefaultsInput.value : '[]', []);
                 const loadBuilderState = () => {
-                    if (builderStateKey === '' || typeof window.sessionStorage === 'undefined') {
+                    if (builderStateKey === '' || !builderSessionStorage) {
                         return null;
                     }
                     try {
-                        const rawState = window.sessionStorage.getItem(builderStateKey);
+                        const rawState = builderSessionStorage.getItem(builderStateKey);
                         if (!rawState) {
                             return null;
                         }
@@ -6216,7 +6351,7 @@
                             ? parsedState.contextFingerprint
                             : '';
                         if (currentBuilderContextFingerprint !== '' && savedFingerprint !== currentBuilderContextFingerprint) {
-                            window.sessionStorage.removeItem(builderStateKey);
+                            builderSessionStorage.removeItem(builderStateKey);
                             return null;
                         }
 
@@ -6673,11 +6808,11 @@
                 }
 
                 function saveBuilderState() {
-                    if (builderStateKey === '' || typeof window.sessionStorage === 'undefined') {
+                    if (builderStateKey === '' || !builderSessionStorage) {
                         return;
                     }
                     try {
-                        window.sessionStorage.setItem(builderStateKey, JSON.stringify({
+                        builderSessionStorage.setItem(builderStateKey, JSON.stringify({
                             contextFingerprint: currentBuilderContextFingerprint,
                             selectedQuestionIds: Array.from(selectedQuestionIds),
                             draft: collectFormDraft(),
@@ -6688,19 +6823,19 @@
                 }
 
                 function clearBuilderStateLocally() {
-                    if (typeof window.sessionStorage === 'undefined') {
+                    if (!builderSessionStorage) {
                         return;
                     }
 
                     try {
                         if (builderStateKey !== '') {
-                            window.sessionStorage.removeItem(builderStateKey);
+                            builderSessionStorage.removeItem(builderStateKey);
                         }
                         if (Array.isArray(resetStateKeys)) {
                             resetStateKeys.forEach((key) => {
                                 const normalizedKey = String(key || '').trim();
                                 if (normalizedKey !== '') {
-                                    window.sessionStorage.removeItem(normalizedKey);
+                                    builderSessionStorage.removeItem(normalizedKey);
                                 }
                             });
                         }
@@ -7368,6 +7503,11 @@
                     }
                     quickViewModal.addEventListener('click', (event) => {
                         if (event.target === quickViewModal) {
+                            closeQuickView();
+                        }
+                    });
+                    document.addEventListener('keydown', (event) => {
+                        if (event.key === 'Escape' && quickViewModal.style.display === 'block') {
                             closeQuickView();
                         }
                     });

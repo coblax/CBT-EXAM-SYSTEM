@@ -3813,6 +3813,20 @@ export function createExamSessionManager(deps) {
                 selectedExamId: Number(selectedExam && selectedExam.id) || 0
             });
 
+            if (errorCode === 'token_invalid' || errorCode === 'token_required') {
+                // Salah ketik token adalah kasus paling umum: kembalikan siswa ke form token,
+                // jangan ke layar pembukaan ujian yang memaksa klik "Kembali ke Daftar Exam".
+                var tokenRefreshMinutes = Math.max(0, Number(selectedExam && selectedExam.token_refresh_minutes) || 0);
+                blockStartExamForTokenValidation({
+                    code: errorCode,
+                    message: errorCode === 'token_required'
+                        ? 'Token ujian wajib diisi.'
+                        : 'Token ujian tidak valid. Periksa lagi token dari pengawas'
+                            + (tokenRefreshMinutes > 0 ? (' (token berganti tiap ' + tokenRefreshMinutes + ' menit, minta yang terbaru bila perlu).') : '.')
+                }, 'start-exam-token-rejected');
+                return;
+            }
+
             if (isTerminalStartAttemptError(error)) {
                 var terminalCopy = buildTerminalStartAttemptUiCopy(errorCode, error);
                 markOpeningAttemptTerminalFailure(errorMessage, errorCode, {

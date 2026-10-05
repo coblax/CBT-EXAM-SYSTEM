@@ -9,6 +9,9 @@ final class CBT_Admin_Questions_Service
     private const TEST_REDIRECT_SIGNAL = '__cbt_admin_questions_redirect__';
     private const QUESTION_IMPORT_SCOPE_CREATED = 'created';
 
+    /** ID soal yang sedang disimpan (0 = soal baru); null di luar request simpan soal. */
+    private static ?int $save_error_edit_id = null;
+
     public static function can_manage_questions(): bool
     {
         return current_user_can('cbt_manage_questions');
@@ -460,7 +463,11 @@ final class CBT_Admin_Questions_Service
                             ARRAY_A
                         );
                     }
-                    $editing_options = $wpdb->get_results($wpdb->prepare("SELECT * FROM {$option_table} WHERE question_id = %d ORDER BY id ASC", $editing_id), ARRAY_A);
+                    // Opsi hanya dimuat bila soalnya lolos cek kepemilikan; kalau tidak, opsi dan kunci
+                    // jawaban soal milik guru lain ikut terisi ke form tambah soal.
+                    $editing_options = $editing_question
+                        ? $wpdb->get_results($wpdb->prepare("SELECT * FROM {$option_table} WHERE question_id = %d ORDER BY id ASC", $editing_id), ARRAY_A)
+                        : [];
                     if ($editing_question && isset($editing_question['exam_id'])) {
                         $editing_exam_id = (int) ($editing_question['exam_id'] ?? 0);
                         $editing_question_source_question_id = (int) ($editing_question['source_question_id'] ?? 0);
@@ -1358,6 +1365,11 @@ final class CBT_Admin_Questions_Service
                     || !empty($view_question)
                     || is_array($question_delete_state)
                     || $question_import_batch_active;
+                $requested_question_tab = isset($query['cbt_question_tab']) ? sanitize_key((string) wp_unslash($query['cbt_question_tab'])) : '';
+                if (!$question_tab_is_forced && in_array($requested_question_tab, ['form', 'import', 'list'], true)) {
+                    $default_question_tab = $requested_question_tab;
+                    $question_tab_is_forced = true;
+                }
                 $question_clear_edit_url = add_query_arg($question_list_args, admin_url('admin.php'));
                 $question_reset_args = [
                     'page' => $current_page_slug,
@@ -1612,7 +1624,7 @@ final class CBT_Admin_Questions_Service
                      INNER JOIN {$exam_table} target_exam ON target_exam.id = q.exam_id
                      LEFT JOIN {$subject_table} subject ON subject.id = target_exam.subject_id
                      WHERE " . implode(' AND ', $where_parts) . "
-                     GROUP BY target_exam.id, target_exam.title, target_exam.status, target_exam.starts_at, target_exam.updated_at, subject.name, subject.code
+                     GROUP BY target_exam.id, target_exam.title, target_exam.status, target_exam.starts_at, target_exam.updated_at, target_exam.created_at, subject.name, subject.code
                      ORDER BY
                         CASE target_exam.status
                             WHEN 'published' THEN 0
@@ -1690,6 +1702,7 @@ final class CBT_Admin_Questions_Service
             $current_user_id = get_current_user_id();
     
             $id = isset($_POST['id']) ? absint($_POST['id']) : 0;
+            self::$save_error_edit_id = $id;
             $exam_id = isset($_POST['exam_id']) ? absint($_POST['exam_id']) : 0;
             $subject_id = isset($_POST['subject_id']) ? absint($_POST['subject_id']) : 0;
             $question_text = isset($_POST['question_text'])
@@ -1877,6 +1890,73 @@ final class CBT_Admin_Questions_Service
                     self::redirect_question_import_with_error($matrix_validation_error, $return_page);
                 }
             }
+
+            $points = round($points, 2);
+            if (!is_finite($points) || $points < 0.01 || $points > 999.99) {
+                self::redirect_question_import_with_error('Points soal harus antara 0.01 sampai 999.99.', $return_page);
+            }
+
+            // Semua validasi opsi harus selesai sebelum menulis ke database. Dulu validasi ini
+            // berjalan setelah soal di-update dan opsinya dihapus, sehingga error membuat soal
+            // kehilangan kunci jawaban (edit) atau tersimpan tanpa opsi (soal baru).
+            $options_to_insert = CBT_Admin_Questions_Helper::parse_options($options_raw);
+
+            if ($question_type === 'multiple_choice') {
+                $selected_correct_index = isset($validation_meta['selected_correct_index']) ? (int) $validation_meta['selected_correct_index'] : 0;
+                $has_empty_correct_reference = CBT_Admin_Questions_Helper::has_empty_correct_option_reference((string) $options_raw);
+                if (
+                    !$has_empty_correct_reference &&
+                    $selected_correct_index >= 1 &&
+                    $selected_correct_index <= 5 &&
+                    !self::manual_editor_field_has_content('cbt_mc_option_' . $selected_correct_index)
+                ) {
+                    $has_empty_correct_reference = true;
+                }
+                $choice_validation_error = CBT_Admin_Questions_Helper::validate_choice_options(
+                    'multiple_choice',
+                    $options_to_insert,
+                    ['has_empty_correct_reference' => $has_empty_correct_reference]
+                );
+                if ($choice_validation_error !== '') {
+                    self::redirect_question_import_with_error($choice_validation_error, $return_page);
+                }
+            }
+
+            if ($question_type === 'multiple_answer') {
+                $selected_correct_indexes = isset($validation_meta['selected_correct_indexes']) && is_array($validation_meta['selected_correct_indexes'])
+                    ? array_values(array_unique(array_map('intval', $validation_meta['selected_correct_indexes'])))
+                    : [];
+                $has_empty_correct_reference = CBT_Admin_Questions_Helper::has_empty_correct_option_reference((string) $options_raw);
+                if (!$has_empty_correct_reference) {
+                    foreach ($selected_correct_indexes as $selected_index) {
+                        if ($selected_index < 1 || $selected_index > 12) {
+                            continue;
+                        }
+                        if (!self::manual_editor_field_has_content('cbt_ma_option_' . $selected_index)) {
+                            $has_empty_correct_reference = true;
+                            break;
+                        }
+                    }
+                }
+                $choice_validation_error = CBT_Admin_Questions_Helper::validate_choice_options(
+                    'multiple_answer',
+                    $options_to_insert,
+                    ['has_empty_correct_reference' => $has_empty_correct_reference]
+                );
+                if ($choice_validation_error !== '') {
+                    self::redirect_question_import_with_error($choice_validation_error, $return_page);
+                }
+            }
+
+            if ($question_type === 'ordering') {
+                $ordering_validation_error = CBT_Admin_Questions_Helper::validate_ordering_options($options_to_insert);
+                if ($ordering_validation_error !== '') {
+                    self::redirect_question_import_with_error($ordering_validation_error, $return_page);
+                }
+                foreach ($options_to_insert as $ordering_idx => $ordering_option) {
+                    $options_to_insert[$ordering_idx]['is_correct'] = 0;
+                }
+            }
     
             if (!$is_admin_scope) {
                 $owned_exam = (int) $wpdb->get_var($wpdb->prepare(
@@ -1953,86 +2033,34 @@ final class CBT_Admin_Questions_Service
                     exit;
                 }
     
-                $wpdb->update(
+                $updated = $wpdb->update(
                     $question_table,
                     $data,
                     ['id' => $id],
                     ['%d', '%s', '%s', '%f', '%s', '%s', '%s'],
                     ['%d']
                 );
+                if ($updated === false) {
+                    self::redirect_question_import_with_error('Gagal memperbarui soal. Coba simpan ulang.', $return_page);
+                }
                 $question_id = $id;
             } else {
                 $data['created_at'] = current_time('mysql');
-    
-                $wpdb->insert(
+
+                $inserted = $wpdb->insert(
                     $question_table,
                     $data,
                     ['%d', '%s', '%s', '%f', '%s', '%s', '%s', '%s']
                 );
+                // insert_id tetap berisi ID insert sebelumnya saat insert gagal; jangan dipakai.
+                if ($inserted === false) {
+                    self::redirect_question_import_with_error('Gagal menyimpan soal baru. Coba simpan ulang.', $return_page);
+                }
                 $question_id = (int) $wpdb->insert_id;
             }
     
             if ($question_id > 0) {
                 $wpdb->delete($option_table, ['question_id' => $question_id], ['%d']);
-    
-                $options_to_insert = CBT_Admin_Questions_Helper::parse_options($options_raw);
-    
-                if ($question_type === 'multiple_choice') {
-                    $selected_correct_index = isset($validation_meta['selected_correct_index']) ? (int) $validation_meta['selected_correct_index'] : 0;
-                    $has_empty_correct_reference = CBT_Admin_Questions_Helper::has_empty_correct_option_reference((string) $options_raw);
-                    if (
-                        !$has_empty_correct_reference &&
-                        $selected_correct_index >= 1 &&
-                        $selected_correct_index <= 5 &&
-                        !self::manual_editor_field_has_content('cbt_mc_option_' . $selected_correct_index)
-                    ) {
-                        $has_empty_correct_reference = true;
-                    }
-                    $choice_validation_error = CBT_Admin_Questions_Helper::validate_choice_options(
-                        'multiple_choice',
-                        $options_to_insert,
-                        ['has_empty_correct_reference' => $has_empty_correct_reference]
-                    );
-                    if ($choice_validation_error !== '') {
-                        self::redirect_question_import_with_error($choice_validation_error, $return_page);
-                    }
-                }
-
-                if ($question_type === 'multiple_answer') {
-                    $selected_correct_indexes = isset($validation_meta['selected_correct_indexes']) && is_array($validation_meta['selected_correct_indexes'])
-                        ? array_values(array_unique(array_map('intval', $validation_meta['selected_correct_indexes'])))
-                        : [];
-                    $has_empty_correct_reference = CBT_Admin_Questions_Helper::has_empty_correct_option_reference((string) $options_raw);
-                    if (!$has_empty_correct_reference) {
-                        foreach ($selected_correct_indexes as $selected_index) {
-                            if ($selected_index < 1 || $selected_index > 12) {
-                                continue;
-                            }
-                            if (!self::manual_editor_field_has_content('cbt_ma_option_' . $selected_index)) {
-                                $has_empty_correct_reference = true;
-                                break;
-                            }
-                        }
-                    }
-                    $choice_validation_error = CBT_Admin_Questions_Helper::validate_choice_options(
-                        'multiple_answer',
-                        $options_to_insert,
-                        ['has_empty_correct_reference' => $has_empty_correct_reference]
-                    );
-                    if ($choice_validation_error !== '') {
-                        self::redirect_question_import_with_error($choice_validation_error, $return_page);
-                    }
-                }
-
-                if ($question_type === 'ordering') {
-                    $ordering_validation_error = CBT_Admin_Questions_Helper::validate_ordering_options($options_to_insert);
-                    if ($ordering_validation_error !== '') {
-                        self::redirect_question_import_with_error($ordering_validation_error, $return_page);
-                    }
-                    foreach ($options_to_insert as $ordering_idx => $ordering_option) {
-                        $options_to_insert[$ordering_idx]['is_correct'] = 0;
-                    }
-                }
 
                 if ($question_type === 'matching') {
                     $options_to_insert = array_map(static function (array $item): array {
@@ -2196,7 +2224,7 @@ final class CBT_Admin_Questions_Service
                 $partial_snapshot_question_ids_by_exam
             );
     
-            $success_message = $id > 0 ? 'Question updated' : 'Question saved to Bank Soal';
+            $success_message = $id > 0 ? sprintf('Soal #%d diperbarui.', $question_id) : sprintf('Soal #%d disimpan ke Bank Soal.', $question_id);
             wp_safe_redirect(add_query_arg(
                 [
                     'page' => $return_page,
@@ -2292,7 +2320,7 @@ final class CBT_Admin_Questions_Service
                     self::dispatch_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
                 }
                 CBT_Admin_Questions_Helper::delete_question_dependents([$id]);
-                $wpdb->delete($wpdb->prefix . 'cbt_questions', ['id' => $id], ['%d']);
+                $question_delete_missing = !$wpdb->delete($wpdb->prefix . 'cbt_questions', ['id' => $id], ['%d']);
                 if ($question_import_token !== '' && $question_import_scope === self::QUESTION_IMPORT_SCOPE_CREATED && in_array($id, $question_import_batch_ids, true)) {
                     CBT_Admin_Questions_Import_Helper::remove_question_import_created_question_ids_for_current_user($question_import_token, [$id]);
                 }
@@ -2303,7 +2331,7 @@ final class CBT_Admin_Questions_Service
     
             $redirect_args = [
                 'page' => $return_page,
-                'cbt_msg' => 'Question deleted',
+                'cbt_msg' => sprintf('Soal #%d dihapus.', $id),
                 'cbt_question_per_page' => $question_per_page,
                 'cbt_question_paged' => $question_paged,
             ];
@@ -2321,6 +2349,12 @@ final class CBT_Admin_Questions_Service
             }
             if ($filter_search !== '') {
                 $redirect_args['question_search'] = $filter_search;
+            }
+            if ($id <= 0 || !empty($question_delete_missing)) {
+                unset($redirect_args['cbt_msg']);
+                $question_import_batch_notice = $id > 0
+                    ? sprintf('Soal #%d tidak ditemukan atau sudah dihapus.', $id)
+                    : 'Soal tidak valid untuk dihapus.';
             }
             if ($question_import_batch_notice !== '') {
                 $redirect_args['cbt_err'] = $question_import_batch_notice;
@@ -2791,8 +2825,8 @@ final class CBT_Admin_Questions_Service
 
             $redirect_args['edit'] = $new_question_id;
             $redirect_args['cbt_msg'] = !empty($duplicate_result['duplicated_source'])
-                ? 'Sumber soal berhasil diduplikasi.'
-                : 'Question duplicated';
+                ? sprintf('Sumber soal diduplikasi menjadi soal #%d dan dibuka untuk diedit.', $new_question_id)
+                : sprintf('Soal diduplikasi menjadi soal #%d dan dibuka untuk diedit.', $new_question_id);
             self::dispatch_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
         }
 
@@ -3226,7 +3260,9 @@ final class CBT_Admin_Questions_Service
             self::clear_question_delete_transients($token);
             if ($deleted > 0) {
                 self::refresh_exam_question_delivery_snapshots_after_question_delete(array_values($affected_exam_ids));
-                $redirect_args['cbt_msg'] = sprintf('Hapus soal selesai. Total: %d, Deleted: %d, Failed: %d', $total, $deleted, $failed);
+                $redirect_args['cbt_msg'] = $failed > 0
+                    ? sprintf('Hapus soal selesai: %d dari %d terhapus, %d gagal.', $deleted, $total, $failed)
+                    : sprintf('%d soal dihapus.', $deleted);
             } else {
                 $redirect_args['cbt_err'] = 'Tidak ada soal yang berhasil dihapus.';
             }
@@ -3504,14 +3540,18 @@ final class CBT_Admin_Questions_Service
 
         private static function redirect_question_import_with_error(string $message, string $return_page = 'cbt-question-bank'): void
         {
-            wp_safe_redirect(add_query_arg(
-                [
-                    'page' => CBT_Admin_Questions_Helper::normalize_question_page_slug($return_page),
-                    'cbt_err' => $message,
-                ],
-                admin_url('admin.php')
-            ));
-            exit;
+            $args = [
+                'page' => CBT_Admin_Questions_Helper::normalize_question_page_slug($return_page),
+                'cbt_err' => $message,
+            ];
+            // Error simpan soal harus kembali ke form (soal yang sama saat edit), bukan ke daftar.
+            if (self::$save_error_edit_id !== null && self::$save_error_edit_id > 0) {
+                $args['edit'] = self::$save_error_edit_id;
+            } elseif (self::$save_error_edit_id !== null) {
+                $args['cbt_question_tab'] = 'form';
+            }
+
+            self::dispatch_redirect(add_query_arg($args, admin_url('admin.php')));
         }
 
         private static function normalize_standard_list_per_page(int $requested): int

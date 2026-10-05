@@ -304,6 +304,7 @@ CREATE TABLE wp_cbt_attempts (
   KEY idx_student_id_id (student_id, id),
   KEY idx_status_started_id (status, started_at, id),
   KEY idx_status_deadline_id (status, deadline_at, id),
+  KEY idx_status_deadline_exam (status, deadline_at, exam_id),
   KEY idx_status (status),
   CONSTRAINT fk_cbt_attempts_exam FOREIGN KEY (exam_id) REFERENCES wp_cbt_exams(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci;
@@ -343,7 +344,9 @@ CREATE TABLE wp_cbt_security_logs (
   KEY idx_attempt_occurred_at (attempt_id, occurred_at),
   KEY idx_student_occurred_at (student_id, occurred_at),
   KEY idx_event_occurred_at (event_type, occurred_at),
-  KEY idx_occurred_at (occurred_at)
+  KEY idx_occurred_at (occurred_at),
+  KEY idx_severity_occurred_at (severity, occurred_at),
+  KEY idx_exam_occurred_at (exam_id, occurred_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci;
 
 CREATE TABLE wp_cbt_exam_incidents (

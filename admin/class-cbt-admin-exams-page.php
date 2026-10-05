@@ -884,6 +884,10 @@ final class CBT_Admin_Exams_Page
                 <?php self::render_snapshot_preview_page_hidden_fields($preview_pages); ?>
                 <?php self::render_exam_readiness_page_hidden_field($exam_readiness_page); ?>
                 <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
+                <label class="cbt-exam-redis-reset-force">
+                    <input type="checkbox" name="cbt_redis_reset_force" value="1" />
+                    Tetap reset walau ada peserta ujian aktif (buffer jawaban disimpan ke database dulu)
+                </label>
                 <button type="submit" class="button button-secondary cbt-admin-btn--danger">Bersihkan Semua Redis CBT</button>
             </form>
         </div>
@@ -1172,6 +1176,7 @@ final class CBT_Admin_Exams_Page
                         class="cbt-exam-snapshot-subtab<?php echo $exam_snapshot_tab === $snapshot_tab_key ? ' is-active' : ''; ?>"
                         role="tab"
                         aria-selected="<?php echo $exam_snapshot_tab === $snapshot_tab_key ? 'true' : 'false'; ?>"
+                        title="<?php echo esc_attr((string) $snapshot_tab_meta['label'] . ': ' . (string) $snapshot_tab_meta['description']); ?>"
                     >
                         <span class="cbt-exam-snapshot-subtab-label"><?php echo esc_html((string) $snapshot_tab_meta['label']); ?></span>
                         <small><?php echo esc_html((string) $snapshot_tab_meta['description']); ?></small>
@@ -3110,6 +3115,10 @@ final class CBT_Admin_Exams_Page
                             <?php self::render_snapshot_preview_page_hidden_fields($preview_pages); ?>
                             <?php self::render_exam_readiness_page_hidden_field($readiness_problem_page); ?>
                             <?php self::render_student_snapshot_state_hidden_fields($student_snapshot_filter_state); ?>
+                            <label class="cbt-exam-redis-reset-force">
+                                <input type="checkbox" name="cbt_redis_reset_force" value="1" />
+                                Tetap reset walau ada peserta ujian aktif (buffer jawaban disimpan ke database dulu)
+                            </label>
                             <button type="submit" class="button button-secondary cbt-admin-btn--danger">Bersihkan Semua Redis CBT</button>
                         </form>
                     </div>

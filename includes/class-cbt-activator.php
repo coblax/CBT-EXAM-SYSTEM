@@ -10,7 +10,7 @@ class CBT_Activator
     private const OPTION_FRONTEND_PAGE_ID = 'cbt_exam_system_frontend_page_id';
     private const OPTION_SUPERVISOR_FRONTEND_PAGE_ID = 'cbt_exam_system_supervisor_page_id';
     private const OPTION_FRONTEND_PAGE_SYNC_PENDING = 'cbt_exam_system_frontend_page_sync_pending';
-    private const DB_VERSION = '1.6.23';
+    private const DB_VERSION = '1.6.24';
 
     public static function activate(): void
     {
@@ -355,6 +355,7 @@ class CBT_Activator
             KEY idx_student_id_id (student_id, id),
             KEY idx_status_started_id (status, started_at, id),
             KEY idx_status_deadline_id (status, deadline_at, id),
+            KEY idx_status_deadline_exam (status, deadline_at, exam_id),
             KEY idx_status (status)
         ) $charset;";
 
@@ -408,6 +409,7 @@ class CBT_Activator
         self::ensure_question_difficulty_schema($wpdb);
         self::ensure_question_sort_order_schema($wpdb);
         self::ensure_question_revisions_schema($wpdb);
+        self::ensure_performance_indexes($wpdb);
         self::migrate_question_type_details($wpdb);
         self::seed_default_subjects($wpdb);
         self::register_roles();
@@ -1240,5 +1242,50 @@ class CBT_Activator
             KEY idx_user_id (user_id),
             KEY idx_created_at (created_at)
         ) $charset;");
+    }
+
+    private static function ensure_performance_indexes(wpdb $wpdb): void
+    {
+        $prefix = $wpdb->prefix;
+
+        $index_additions = [
+            [
+                'table' => $prefix . 'cbt_security_logs',
+                'index_name' => 'idx_severity_occurred_at',
+                'sql' => "ALTER TABLE {$prefix}cbt_security_logs ADD KEY idx_severity_occurred_at (severity, occurred_at)",
+            ],
+            [
+                'table' => $prefix . 'cbt_security_logs',
+                'index_name' => 'idx_exam_occurred_at',
+                'sql' => "ALTER TABLE {$prefix}cbt_security_logs ADD KEY idx_exam_occurred_at (exam_id, occurred_at)",
+            ],
+            [
+                'table' => $prefix . 'cbt_attempts',
+                'index_name' => 'idx_status_deadline_exam',
+                'sql' => "ALTER TABLE {$prefix}cbt_attempts ADD KEY idx_status_deadline_exam (status, deadline_at, exam_id)",
+            ],
+        ];
+
+        foreach ($index_additions as $addition) {
+            $table = (string) ($addition['table'] ?? '');
+            $index_name = (string) ($addition['index_name'] ?? '');
+            $sql = (string) ($addition['sql'] ?? '');
+            if ($table === '' || $index_name === '' || $sql === '') {
+                continue;
+            }
+
+            $index_rows = $wpdb->get_results("SHOW INDEX FROM {$table}", ARRAY_A);
+            $existing_names = [];
+            foreach ((array) $index_rows as $index_row) {
+                $name = (string) ($index_row['Key_name'] ?? '');
+                if ($name !== '') {
+                    $existing_names[$name] = true;
+                }
+            }
+
+            if (!isset($existing_names[$index_name])) {
+                $wpdb->query($sql);
+            }
+        }
     }
 }

@@ -699,6 +699,8 @@ final class AdminExamsSnapshotActionsTest extends TestCase
     public function test_handle_preflight_operation_ajax_resets_redis_in_chunks(): void
     {
         $this->bootstrapSnapshotActionScaffold();
+        global $wpdb;
+        $wpdb = new AdminExamsSnapshotActionsFakeWpdb();
 
         for ($index = 0; $index < 503; $index++) {
             $GLOBALS['cbt_test_redis_storage']['cbt_ajax_reset_test:' . $index] = '{"ok":true}';
@@ -1073,6 +1075,8 @@ final class AdminExamsSnapshotActionsTest extends TestCase
     #[RunInSeparateProcess]
     public function test_handle_hard_reset_cbt_redis_clears_all_cbt_keys_and_state_options(): void
     {
+        global $wpdb;
+        $wpdb = new AdminExamsSnapshotActionsFakeWpdb();
         $this->bootstrapSnapshotActionScaffold();
 
         require_once dirname(__DIR__, 3) . '/includes/class-cbt-plugin-redis-reset-service.php';
@@ -1132,6 +1136,63 @@ final class AdminExamsSnapshotActionsTest extends TestCase
         self::assertStringContainsString('cbt_exam_snapshot_exam_id=77', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_exam_snapshot_page_77=2', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('cbt_exam_readiness_page_77=3', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_msg=Redis+CBT+berhasil+dibersihkan.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_handle_hard_reset_cbt_redis_refuses_while_attempts_are_in_progress(): void
+    {
+        $this->bootstrapSnapshotActionScaffold();
+        global $wpdb;
+        $wpdb = new AdminExamsSnapshotActionsActiveAttemptsFakeWpdb();
+        $GLOBALS['cbt_test_redis_storage']['cbt_runtime:attempt:501:answers'] = '{"q1":"A"}';
+
+        $_POST = [
+            'cbt_exam_snapshot_tab' => CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT,
+        ];
+
+        $this->invokeSnapshotActionExpectRedirect([CBT_Admin_Exams_Service::class, 'handle_hard_reset_cbt_redis']);
+
+        // Buffer jawaban siswa yang sedang ujian tidak boleh ikut terhapus.
+        self::assertArrayHasKey('cbt_runtime:attempt:501:answers', (array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
+        self::assertStringContainsString('cbt_err=Reset+Redis+dibatalkan%3A+masih+ada+2+attempt', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_preflight_operation_ajax_redis_reset_refuses_while_attempts_are_in_progress(): void
+    {
+        $this->bootstrapSnapshotActionScaffold();
+        global $wpdb;
+        $wpdb = new AdminExamsSnapshotActionsActiveAttemptsFakeWpdb();
+        $GLOBALS['cbt_test_redis_storage']['cbt_runtime:attempt:501:answers'] = '{"q1":"A"}';
+
+        $_POST = [
+            'operation' => 'start_redis_reset',
+            'nonce' => wp_create_nonce('cbt_exam_preflight_operation'),
+        ];
+        $response = $this->invokePreflightOperationAjaxExpectResponse();
+
+        self::assertFalse($response['success']);
+        self::assertStringContainsString('masih ada 2 attempt', (string) ($response['payload']['message'] ?? ''));
+        self::assertArrayHasKey('cbt_runtime:attempt:501:answers', (array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
+    }
+
+    #[RunInSeparateProcess]
+    public function test_handle_hard_reset_cbt_redis_can_be_forced_during_active_attempts(): void
+    {
+        $this->bootstrapSnapshotActionScaffold();
+        global $wpdb;
+        $wpdb = new AdminExamsSnapshotActionsActiveAttemptsFakeWpdb();
+        $GLOBALS['cbt_test_redis_storage']['cbt_exam_delivery:77'] = '{"ok":true}';
+
+        $_POST = [
+            'cbt_exam_snapshot_tab' => CBT_Admin_Exams_Service::SNAPSHOT_TAB_PREFLIGHT,
+            'cbt_redis_reset_force' => '1',
+        ];
+
+        $this->invokeSnapshotActionExpectRedirect([CBT_Admin_Exams_Service::class, 'handle_hard_reset_cbt_redis']);
+
+        self::assertArrayNotHasKey('cbt_exam_delivery:77', (array) ($GLOBALS['cbt_test_redis_storage'] ?? []));
         self::assertStringContainsString('cbt_msg=Redis+CBT+berhasil+dibersihkan.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
     }
 
@@ -2195,5 +2256,21 @@ final class AdminExamsSnapshotActionsBulkFailureFakeWpdb extends AdminExamsSnaps
         }
 
         return parent::get_results($prepared, $output);
+    }
+}
+
+final class AdminExamsSnapshotActionsActiveAttemptsFakeWpdb extends AdminExamsSnapshotActionsFakeWpdb
+{
+    /**
+     * @param string $prepared
+     * @return array<int,string>
+     */
+    public function get_col($prepared): array
+    {
+        if (strpos((string) $prepared, "FROM wp_cbt_attempts WHERE status = 'in_progress'") !== false) {
+            return ['501', '502'];
+        }
+
+        return parent::get_col($prepared);
     }
 }

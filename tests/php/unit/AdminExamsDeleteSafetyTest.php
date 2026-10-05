@@ -77,7 +77,7 @@ final class AdminExamsDeleteSafetyTest extends TestCase
         self::assertContains('START TRANSACTION', $wpdb->transactionQueries());
         self::assertContains('COMMIT', $wpdb->transactionQueries());
         self::assertNotContains('ROLLBACK', $wpdb->transactionQueries());
-        self::assertStringContainsString('cbt_msg=Exam+deleted', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_msg=Exam+%2377+dihapus', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertGreaterThan(1, (int) CBT_Cache::get_namespace_registry_entry(CBT_Cache::namespace_exam(77))['version']);
         self::assertGreaterThan(1, (int) CBT_Cache::get_namespace_registry_entry(CBT_Cache::namespace_catalog())['version']);
 
@@ -135,6 +135,21 @@ final class AdminExamsDeleteSafetyTest extends TestCase
         self::assertNotSame([], $this->storedStartSnapshotKeysFor(77));
         self::assertNotSame([], $this->storedSubmissionContextKeysFor(77));
         self::assertStringContainsString('cbt_err=Exam+bank+soal+tidak+boleh+dihapus', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+    }
+
+    public function test_exam_with_students_still_working_is_not_deleted(): void
+    {
+        global $wpdb;
+        $wpdb = new CBT_Admin_Delete_Safety_Fake_Wpdb();
+        $wpdb->inProgressAttemptCount = 3;
+        $this->seedRuntimeSnapshots(77);
+        $wpdb->resetOperationLog();
+
+        $this->invokeDeleteExamExpectRedirect();
+
+        self::assertSame([], $wpdb->transactionQueries());
+        self::assertNotSame([], $this->storedExamSnapshotKeysFor(77));
+        self::assertStringContainsString('cbt_err=Exam+%22Ujian+Matematika%22+tidak+bisa+dihapus+karena+3+siswa+masih+mengerjakan', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
     }
 
     public function test_non_owner_exam_delete_is_blocked_before_snapshot_cleanup(): void
@@ -345,6 +360,7 @@ final class CBT_Admin_Delete_Safety_Fake_Wpdb
     public string $prefix = 'wp_';
     public string $examTitle = 'Ujian Matematika';
     public int $ownerCount = 1;
+    public int $inProgressAttemptCount = 0;
     public string $failQueryContains = '';
     public string $failDeleteTable = '';
 
@@ -429,6 +445,9 @@ final class CBT_Admin_Delete_Safety_Fake_Wpdb
         }
         if (strpos($query, 'SELECT COUNT(*) FROM wp_cbt_exams WHERE id = 77 AND created_by =') !== false) {
             return $this->ownerCount;
+        }
+        if (strpos($query, "FROM wp_cbt_attempts WHERE exam_id = 77 AND status = 'in_progress'") !== false) {
+            return $this->inProgressAttemptCount;
         }
 
         return 0;

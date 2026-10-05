@@ -25,7 +25,6 @@ final class QuestionsProgressUiTest extends TestCase
             'data-cbt-questions-progress-percent',
             'data-cbt-questions-progress-fill',
             'role="progressbar"',
-            'tanpa reload halaman global',
             'data-cbt-questions-refresh-area="notices"',
             'data-cbt-questions-refresh-area="overview"',
             'data-cbt-questions-refresh-area="form-panel"',
@@ -86,5 +85,44 @@ final class QuestionsProgressUiTest extends TestCase
         self::assertStringNotContainsString('window.location.href =', $this->viewSource);
         self::assertStringNotContainsString('window.location.assign', $this->viewSource);
         self::assertStringNotContainsString('location.reload', $this->viewSource);
+    }
+
+    public function test_questions_page_keeps_form_on_server_error_and_resets_after_create(): void
+    {
+        foreach ([
+            'readQuestionResponseError',
+            "const keepSourceForm = errorMessage !== '' && (sourceTab === 'form' || sourceTab === 'import');",
+            'resetManualFormAfterCreate(source);',
+            'wp-updates-notice-added',
+            "['cbt_msg', 'cbt_err', 'cbt_question_tab', 'cbt_questions_local_refresh']",
+        ] as $needle) {
+            self::assertStringContainsString($needle, $this->viewSource);
+        }
+
+        self::assertStringNotContainsString('tanpa reload halaman global', $this->viewSource);
+        // Akses storage hanya lewat helper try/catch; di mode privat setItem bisa melempar dan mematikan script.
+        self::assertSame(1, substr_count($this->viewSource, 'window.localStorage.setItem(pageTabStorageKey'));
+    }
+
+    public function test_questions_page_notices_stay_out_of_hero_and_css_is_scoped(): void
+    {
+        self::assertStringContainsString('<hr class="wp-header-end" />', $this->viewSource);
+        self::assertStringContainsString('notice notice-success is-dismissible inline', $this->viewSource);
+        self::assertStringContainsString('notice notice-error is-dismissible inline', $this->viewSource);
+        self::assertStringNotContainsString('fonts.googleapis.com', $this->viewSource);
+        self::assertDoesNotMatchRegularExpression('/^\s*:root\s*\{/m', $this->viewSource);
+    }
+
+    public function test_duplicate_question_navigates_to_real_edit_form(): void
+    {
+        self::assertMatchesRegularExpression(
+            '/cbt-questions-row-action--duplicate"[^\n]*data-cbt-questions-tab-link="form"/',
+            $this->viewSource
+        );
+        self::assertDoesNotMatchRegularExpression(
+            '/cbt-questions-row-action--duplicate"[^\n]*data-cbt-questions-async-link/',
+            $this->viewSource
+        );
+        self::assertStringContainsString('min="0.01" max="999.99" required id="cbt-points"', $this->viewSource);
     }
 }

@@ -17,20 +17,22 @@ if (!defined('ABSPATH')) {
                         <h1>CBT Questions</h1>
                         <p>Kelola bank soal CBT melalui tab terpisah agar proses tambah manual, import, dan peninjauan daftar soal terasa lebih fokus dan tidak padat dalam satu halaman panjang.</p>
                     </div>
-                    <div class="cbt-questions-overview" data-cbt-questions-refresh-area="overview" aria-hidden="true">
+                    <div class="cbt-questions-overview" data-cbt-questions-refresh-area="overview">
                         <span class="cbt-questions-pill"><?php echo esc_html(sprintf('Total: %d soal', $total_questions)); ?></span>
                         <span class="cbt-questions-pill"><?php echo esc_html($question_scope_label); ?></span>
                         <span class="cbt-questions-pill"><?php echo esc_html(!empty($editing_question) ? 'Mode edit aktif' : (is_array($question_import_state) ? 'Import berjalan' : 'Input siap')); ?></span>
                     </div>
                 </section>
 
+                <?php /* Penanda posisi notice plugin lain; notice CBT memakai class .inline agar tidak dipindah common.js ke dalam hero. */ ?>
+                <hr class="wp-header-end" />
                 <div class="cbt-questions-notices" data-cbt-questions-refresh-area="notices">
                     <?php if ($notice): ?>
-                        <div class="notice notice-success is-dismissible"><p><?php echo esc_html($notice); ?></p></div>
+                        <div class="notice notice-success is-dismissible inline"><p><?php echo esc_html($notice); ?></p></div>
                     <?php endif; ?>
                     <?php if ($error): ?>
                         <?php $error_messages = array_values(array_filter(array_map('trim', explode('||', (string) $error)))); ?>
-                        <div class="notice notice-error is-dismissible">
+                        <div class="notice notice-error is-dismissible inline">
                             <?php if (count($error_messages) <= 1): ?>
                                 <p><?php echo esc_html($error); ?></p>
                             <?php else: ?>
@@ -44,7 +46,7 @@ if (!defined('ABSPATH')) {
                         </div>
                     <?php endif; ?>
                     <?php if ($lock_question_type): ?>
-                        <div class="notice notice-info"><p>
+                        <div class="notice notice-info inline"><p>
                             Submenu aktif: <strong><?php echo esc_html((string) ($question_type_labels[$active_question_type] ?? $active_question_type)); ?></strong>.
                             Form dan daftar soal difilter ke jenis ini.
                         </p></div>
@@ -52,11 +54,9 @@ if (!defined('ABSPATH')) {
                 </div>
 
                 <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-
-                
-        /* Modern Design System Tokens */
-        :root {
+        /* Design tokens dibatasi ke halaman ini agar tidak menimpa variabel CSS admin lain.
+           Font Google tidak di-@import: di jaringan sekolah tanpa internet request itu memblok render. */
+        .cbt-questions-page {
             --cbt-primary: #3b82f6;
             --cbt-primary-hover: #2563eb;
             --cbt-primary-light: #eff6ff;
@@ -98,6 +98,13 @@ if (!defined('ABSPATH')) {
         }
         .cbt-questions-page * {
             box-sizing: border-box;
+        }
+        .cbt-questions-page .wp-header-end,
+        .cbt-questions-notices:empty {
+            display: none;
+        }
+        .cbt-questions-notices .notice {
+            margin: 0 0 8px;
         }
             @keyframes cbtSlideUp {
                 0% { opacity: 0; transform: translateY(15px); }
@@ -2495,8 +2502,7 @@ if (!defined('ABSPATH')) {
                 <div class="cbt-questions-local-progress" data-cbt-questions-progress role="status" aria-live="polite" aria-hidden="true">
                     <div class="cbt-questions-local-progress-head">
                         <div class="cbt-questions-local-progress-title">
-                            <strong data-cbt-questions-progress-label>Menunggu aksi CBT Questions...</strong>
-                            <span>Progress ini memperbarui area Questions yang terdampak saja, tanpa reload halaman global.</span>
+                            <strong data-cbt-questions-progress-label>Memproses CBT Questions...</strong>
                         </div>
                         <span class="cbt-questions-local-progress-percent" data-cbt-questions-progress-percent>0%</span>
                     </div>
@@ -2713,7 +2719,10 @@ if (!defined('ABSPATH')) {
                         </tr>
                         <tr>
                             <th><label for="cbt-points">Points</label></th>
-                            <td><input type="number" step="0.01" min="0" id="cbt-points" name="points" value="<?php echo esc_attr($editing_question['points'] ?? '1.00'); ?>" /></td>
+                            <td>
+                                <input type="number" step="0.01" min="0.01" max="999.99" required id="cbt-points" name="points" value="<?php echo esc_attr($editing_question['points'] ?? '1.00'); ?>" />
+                                <p class="description">Nilai per soal, 0.01 sampai 999.99. Untuk tipe per-item (matrix, matching, cloze, kategorisasi, tabel, isian ganda) nilai ini dihitung per item benar.</p>
+                            </td>
                         </tr>
                         <tr class="cbt-qtype-panel<?php echo $editing_type === 'multiple_choice' ? ' cbt-active' : ''; ?>" data-qtype="multiple_choice">
                             <th>Multiple Choice</th>
@@ -4169,7 +4178,7 @@ if (!defined('ABSPATH')) {
                                         <?php endif; ?>
                                     </div>
                                 </td>
-                                <td><?php echo esc_html($question['question_type']); ?></td>
+                                <td><?php echo esc_html((string) ($question_type_labels[(string) ($question['question_type'] ?? '')] ?? ($question['question_type'] ?? ''))); ?></td>
                                 <td><?php echo esc_html(wp_trim_words((string) $question['question_text'], 12)); ?></td>
                                 <td><?php echo esc_html((string) $question['points']); ?></td>
                                 <td>
@@ -4189,9 +4198,15 @@ if (!defined('ABSPATH')) {
                                         <a class="cbt-admin-action cbt-admin-action--view cbt-questions-row-action cbt-questions-row-action--view" data-cbt-questions-inline-view="1" href="<?php echo esc_url($question_is_view_open ? $question_hide_view_url : $question_view_url); ?>"><?php echo esc_html($question_is_view_open ? 'Hide' : 'Lihat'); ?></a>
                                         <?php if (!$question_import_batch_active): ?>
                                         <a class="cbt-admin-action cbt-admin-action--edit cbt-questions-row-action cbt-questions-row-action--edit" href="<?php echo esc_url($question_edit_url); ?>"><?php echo esc_html($question_edit_label); ?></a>
-                                        <a class="cbt-admin-action cbt-admin-action--duplicate cbt-questions-row-action cbt-questions-row-action--duplicate" href="<?php echo esc_url(wp_nonce_url(add_query_arg($question_duplicate_args, admin_url('admin-post.php')), 'cbt_duplicate_question_' . (int) $question['id'])); ?>" data-cbt-questions-async-link data-cbt-questions-progress-profile="list" data-cbt-questions-refresh-areas="notices,overview,list-panel" data-cbt-questions-success-tab="form"><?php echo esc_html($question_duplicate_label); ?></a>
+                                        <?php /* Navigasi penuh: form edit (TinyMCE) untuk soal hasil duplikat harus dirender server, refresh area lokal tidak memuatnya. */ ?>
+                                        <a class="cbt-admin-action cbt-admin-action--duplicate cbt-questions-row-action cbt-questions-row-action--duplicate" href="<?php echo esc_url(wp_nonce_url(add_query_arg($question_duplicate_args, admin_url('admin-post.php')), 'cbt_duplicate_question_' . (int) $question['id'])); ?>" data-cbt-questions-tab-link="form"><?php echo esc_html($question_duplicate_label); ?></a>
                                         <?php endif; ?>
-                                        <a class="cbt-admin-action cbt-admin-action--delete cbt-questions-row-action cbt-questions-row-action--delete" href="<?php echo esc_url(wp_nonce_url(add_query_arg($question_delete_args, admin_url('admin-post.php')), 'cbt_delete_question_' . (int) $question['id'])); ?>" data-cbt-questions-async-link data-cbt-questions-progress-profile="delete" data-cbt-questions-refresh-areas="notices,overview,list-panel" data-cbt-questions-success-tab="list" onclick="return confirm('Delete this question?');">Delete</a>
+                                        <?php
+                                        $question_delete_confirm = $question_is_bank_source && $question_usage_exam_count > 0
+                                            ? sprintf('Hapus soal #%d dari Bank Soal? Soal ini sudah dipakai di %d exam (%d salinan).', (int) $question['id'], $question_usage_exam_count, $question_usage_descendant_count)
+                                            : sprintf('Hapus soal #%d?', (int) $question['id']);
+                                        ?>
+                                        <a class="cbt-admin-action cbt-admin-action--delete cbt-questions-row-action cbt-questions-row-action--delete" href="<?php echo esc_url(wp_nonce_url(add_query_arg($question_delete_args, admin_url('admin-post.php')), 'cbt_delete_question_' . (int) $question['id'])); ?>" data-cbt-questions-async-link data-cbt-questions-progress-profile="delete" data-cbt-questions-refresh-areas="notices,overview,list-panel" data-cbt-questions-success-tab="list" onclick="return confirm(<?php echo esc_attr(wp_json_encode($question_delete_confirm)); ?>);">Hapus</a>
                                     </div>
                                 </td>
                             </tr>
@@ -4525,7 +4540,31 @@ if (!defined('ABSPATH')) {
                     if (parsedUrl.origin !== window.location.origin) {
                         return;
                     }
+                    // Pesan/tab sekali pakai tidak disimpan di URL agar refresh tidak memunculkan pesan lama.
+                    ['cbt_msg', 'cbt_err', 'cbt_question_tab', 'cbt_questions_local_refresh'].forEach((key) => {
+                        parsedUrl.searchParams.delete(key);
+                    });
                     window.history.replaceState({}, '', parsedUrl.toString());
+                }
+
+                function readQuestionStoredTab() {
+                    try {
+                        return window.localStorage ? String(window.localStorage.getItem(pageTabStorageKey) || '') : '';
+                    } catch (error) {
+                        return '';
+                    }
+                }
+
+                function writeQuestionStoredTab(tabId) {
+                    if (!tabId) {
+                        return;
+                    }
+                    try {
+                        if (window.localStorage) {
+                            window.localStorage.setItem(pageTabStorageKey, tabId);
+                        }
+                    } catch (error) {
+                    }
                 }
 
                 function getQuestionAreaList(source, fallbackAreas) {
@@ -4583,6 +4622,71 @@ if (!defined('ABSPATH')) {
                     activatePageTab(targetTab || 'list', true);
                 }
 
+                function readQuestionResponseError(html) {
+                    try {
+                        const parsed = new DOMParser().parseFromString(String(html || ''), 'text/html');
+                        const errorNotice = parsed.querySelector('[data-cbt-questions-refresh-area="notices"] .notice-error');
+                        return errorNotice ? String(errorNotice.textContent || '').replace(/\s+/g, ' ').trim() : '';
+                    } catch (error) {
+                        return '';
+                    }
+                }
+
+                function refreshQuestionNoticeUi() {
+                    if (window.jQuery) {
+                        // Minta common.js WordPress memasang tombol tutup pada notice hasil fetch.
+                        window.jQuery(document).trigger('wp-updates-notice-added');
+                    }
+                    const notices = page ? page.querySelector('[data-cbt-questions-refresh-area="notices"]') : null;
+                    if (!notices || !notices.querySelector('.notice') || typeof notices.getBoundingClientRect !== 'function') {
+                        return;
+                    }
+                    const rect = notices.getBoundingClientRect();
+                    if (rect.top < 32 || rect.top > window.innerHeight) {
+                        notices.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                }
+
+                function resetManualFormAfterCreate(form) {
+                    if (!form || form.id !== 'cbt-question-manual-form') {
+                        return;
+                    }
+                    const idField = form.querySelector('input[name="id"]');
+                    if (!idField || parseInt(String(idField.value || '0'), 10) > 0) {
+                        // Edit: biarkan isi form apa adanya (sudah sama dengan data tersimpan).
+                        return;
+                    }
+
+                    // Soal baru tersimpan: kosongkan konten agar tidak tersimpan dua kali, tetapi
+                    // pertahankan subject, jenis soal, points, dan jumlah opsi yang sedang dipakai.
+                    const tinyMceGlobal = window.tinymce || window.tinyMCE;
+                    form.querySelectorAll('textarea.wp-editor-area').forEach((textarea) => {
+                        const editor = tinyMceGlobal && typeof tinyMceGlobal.get === 'function' ? tinyMceGlobal.get(textarea.id) : null;
+                        if (editor && typeof editor.setContent === 'function') {
+                            editor.setContent('');
+                            if (typeof editor.save === 'function') {
+                                editor.save();
+                            }
+                        }
+                        textarea.value = '';
+                    });
+                    form.querySelectorAll('input[type="text"], textarea:not(.wp-editor-area)').forEach((field) => {
+                        if (field.id === 'cbt-options-hidden') {
+                            return;
+                        }
+                        field.value = '';
+                    });
+                    form.querySelectorAll('input[type="checkbox"][id^="cbt-ma-correct-"]').forEach((checkbox) => {
+                        checkbox.checked = false;
+                    });
+                    syncManualCompactAuthoring();
+                    syncTableCompletionAuthoring();
+                    const firstEditor = tinyMceGlobal && typeof tinyMceGlobal.get === 'function' ? tinyMceGlobal.get('cbt_question_text_editor') : null;
+                    if (firstEditor && typeof firstEditor.focus === 'function' && !firstEditor.isHidden?.()) {
+                        firstEditor.focus();
+                    }
+                }
+
                 async function runQuestionLocalAction(source, requestUrl, options) {
                     if (!supportsQuestionPartialRefresh) {
                         showQuestionLocalRefreshError('Browser belum mendukung partial refresh untuk area Questions.');
@@ -4591,15 +4695,37 @@ if (!defined('ABSPATH')) {
 
                     const profileName = source ? String(source.getAttribute('data-cbt-questions-progress-profile') || 'list') : 'list';
                     const profile = getQuestionProgressProfile(profileName);
-                    const areas = getQuestionAreaList(source, ['notices', 'overview', 'list-panel']);
+                    const isFormSource = !!(source && source.tagName === 'FORM' && source.hasAttribute('data-cbt-questions-tab-submit'));
+                    const sourceTab = isFormSource ? String(source.getAttribute('data-cbt-questions-tab-submit') || '') : '';
                     startQuestionProgress(profileName);
                     const result = await fetchQuestionHtml(requestUrl, options);
+                    const errorMessage = readQuestionResponseError(result.html);
+                    // Validasi server gagal pada form simpan/import: cukup tampilkan notice dan tetap di
+                    // tab form supaya isian user tidak dianggap tersimpan.
+                    const keepSourceForm = errorMessage !== '' && (sourceTab === 'form' || sourceTab === 'import');
+                    const areas = keepSourceForm ? ['notices'] : getQuestionAreaList(source, ['notices', 'overview', 'list-panel']);
                     const replacedAreas = replaceQuestionRefreshAreas(result.html, areas);
                     if (replacedAreas.length === 0) {
                         throw new Error('Respons tidak memuat area Questions yang bisa diperbarui.');
                     }
                     updateQuestionHistory(new URL(result.url, window.location.href));
-                    rebindQuestionLocalUi(replacedAreas, getQuestionTargetTab(source, replacedAreas));
+                    rebindQuestionLocalUi(replacedAreas, keepSourceForm ? sourceTab : getQuestionTargetTab(source, replacedAreas));
+                    refreshQuestionNoticeUi();
+
+                    if (errorMessage !== '') {
+                        // Pesan lengkap sudah tampil sebagai notice; kartu progress cukup ditutup.
+                        window.clearInterval(questionProgressTimer);
+                        const elements = getQuestionProgressElements();
+                        if (elements) {
+                            elements.root.classList.remove('is-active', 'is-error');
+                            elements.root.setAttribute('aria-hidden', 'true');
+                        }
+                        return;
+                    }
+
+                    if (isFormSource && profileName === 'save') {
+                        resetManualFormAfterCreate(source);
+                    }
                     completeQuestionProgress(profile.done, profile.doneDetail, 'success');
                 }
 
@@ -4617,8 +4743,8 @@ if (!defined('ABSPATH')) {
                         const isActive = panel.getAttribute('data-cbt-questions-panel') === tabId;
                         panel.classList.toggle('is-active', isActive);
                     });
-                    if (persist && hasTarget && window.localStorage) {
-                        window.localStorage.setItem(pageTabStorageKey, tabId);
+                    if (persist && hasTarget) {
+                        writeQuestionStoredTab(tabId);
                     }
                 }
 
@@ -4644,37 +4770,20 @@ if (!defined('ABSPATH')) {
 
                 if (page && getQuestionTabButtons().length > 0 && getQuestionTabPanels().length > 0) {
                     let initialTab = defaultTab;
-                    if (!forceTab && window.localStorage) {
-                        const savedTab = window.localStorage.getItem(pageTabStorageKey);
+                    if (!forceTab) {
+                        const savedTab = readQuestionStoredTab();
                         if (savedTab && getQuestionTabPanels().some((panel) => panel.getAttribute('data-cbt-questions-panel') === savedTab)) {
                             initialTab = savedTab;
                         }
                     }
 
                     activatePageTab(initialTab, false);
+                    updateQuestionHistory(new URL(window.location.href));
                     scrollToQuestionHashTarget();
 
                     getQuestionTabButtons().forEach((button) => {
                         button.addEventListener('click', function () {
                             activatePageTab(String(button.getAttribute('data-cbt-questions-tab') || ''), true);
-                        });
-                    });
-
-                    Array.from(document.querySelectorAll('form[data-cbt-questions-tab-submit]')).forEach((form) => {
-                        form.addEventListener('submit', function () {
-                            const tabId = String(form.getAttribute('data-cbt-questions-tab-submit') || '');
-                            if (tabId !== '' && window.localStorage) {
-                                window.localStorage.setItem(pageTabStorageKey, tabId);
-                            }
-                        });
-                    });
-
-                    Array.from(document.querySelectorAll('[data-cbt-questions-tab-link]')).forEach((link) => {
-                        link.addEventListener('click', function () {
-                            const tabId = String(link.getAttribute('data-cbt-questions-tab-link') || '');
-                            if (tabId !== '' && window.localStorage) {
-                                window.localStorage.setItem(pageTabStorageKey, tabId);
-                            }
                         });
                     });
 
@@ -5815,10 +5924,7 @@ if (!defined('ABSPATH')) {
                         }
                         form.dataset.cbtTabMemoryBound = '1';
                         form.addEventListener('submit', function () {
-                            const tabId = String(form.getAttribute('data-cbt-questions-tab-submit') || '');
-                            if (tabId !== '' && window.localStorage) {
-                                window.localStorage.setItem(pageTabStorageKey, tabId);
-                            }
+                            writeQuestionStoredTab(String(form.getAttribute('data-cbt-questions-tab-submit') || ''));
                         });
                     });
 
@@ -5828,10 +5934,7 @@ if (!defined('ABSPATH')) {
                         }
                         link.dataset.cbtTabMemoryBound = '1';
                         link.addEventListener('click', function () {
-                            const tabId = String(link.getAttribute('data-cbt-questions-tab-link') || '');
-                            if (tabId !== '' && window.localStorage) {
-                                window.localStorage.setItem(pageTabStorageKey, tabId);
-                            }
+                            writeQuestionStoredTab(String(link.getAttribute('data-cbt-questions-tab-link') || ''));
                         });
                     });
 

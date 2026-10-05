@@ -38,6 +38,12 @@ final class CBT_Redis_Pipeline_Helper
                     }, array_values($results));
                 }
             } catch (Throwable $throwable) {
+                error_log(sprintf(
+                    '[CBT] Redis pipeline SETEX failed, falling back to direct writes: %s in %s:%d',
+                    $throwable->getMessage(),
+                    $throwable->getFile(),
+                    $throwable->getLine()
+                ));
             }
         }
 

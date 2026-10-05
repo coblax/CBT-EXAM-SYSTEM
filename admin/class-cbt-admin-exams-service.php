@@ -2739,6 +2739,24 @@ final class CBT_Admin_Exams_Service
                 }
             }
 
+            $in_progress_attempts = (int) $wpdb->get_var(
+                $wpdb->prepare(
+                    "SELECT COUNT(*) FROM {$wpdb->prefix}cbt_attempts WHERE exam_id = %d AND status = 'in_progress'",
+                    $id
+                )
+            );
+            if ($in_progress_attempts > 0) {
+                // Menghapus exam ikut menghapus attempt & jawaban; jangan lakukan saat siswa masih mengerjakan.
+                self::redirect_exam_delete_with_error(
+                    sprintf(
+                        'Exam "%s" tidak bisa dihapus karena %d siswa masih mengerjakan. Tutup exam dan tunggu attempt selesai terlebih dahulu.',
+                        $exam_title,
+                        $in_progress_attempts
+                    ),
+                    $exam_list_state
+                );
+            }
+
             try {
                 self::clear_deleted_exam_runtime_snapshots($id);
             } catch (Throwable $throwable) {
@@ -2829,7 +2847,7 @@ final class CBT_Admin_Exams_Service
                 [
                     'page' => 'cbt-exams',
                     'cbt_exam_panel' => 'list',
-                    'cbt_msg' => 'Exam deleted',
+                    'cbt_msg' => $id > 0 ? sprintf('Exam #%d dihapus beserta attempt dan hasilnya.', $id) : 'Exam tidak valid.',
                 ],
                 $exam_list_state
             ),
@@ -3757,6 +3775,13 @@ final class CBT_Admin_Exams_Service
             ]);
         }
 
+        $reset_guard = self::prepare_redis_reset_guard(!empty($_POST['cbt_redis_reset_force']));
+        if (empty($reset_guard['allowed'])) {
+            self::redirect_exam_snapshot_page($exam_list_state, [
+                'cbt_err' => (string) $reset_guard['message'],
+            ]);
+        }
+
         $result = CBT_Plugin_Redis_Reset_Service::reset_all_plugin_keys();
         $message_key = !empty($result['success']) ? 'cbt_msg' : 'cbt_err';
         $message = (string) ($result['message'] ?? 'Gagal membersihkan Redis CBT.');
@@ -3773,6 +3798,67 @@ final class CBT_Admin_Exams_Service
         self::redirect_exam_snapshot_page($exam_list_state, [
             $message_key => $message,
         ]);
+    }
+
+    /**
+     * Redis CBT juga menampung buffer jawaban siswa (cbt_runtime:*) yang belum ter-flush ke
+     * database dan sesi login aktif. Reset hanya boleh jalan bila tidak ada attempt berjalan,
+     * atau admin memaksa dan buffer jawaban attempt berjalan berhasil disimpan ke DB dulu.
+     *
+     * @return array{allowed:bool,message:string,in_progress:int}
+     */
+    private static function prepare_redis_reset_guard(bool $force): array
+    {
+        global $wpdb;
+
+        $attempt_ids = array_values(array_filter(array_map('absint', (array) $wpdb->get_col(
+            "SELECT id FROM {$wpdb->prefix}cbt_attempts WHERE status = 'in_progress' ORDER BY id ASC LIMIT 5000"
+        ))));
+        $in_progress = count($attempt_ids);
+        if ($in_progress === 0) {
+            return [
+                'allowed' => true,
+                'message' => '',
+                'in_progress' => 0,
+            ];
+        }
+
+        if (!$force) {
+            return [
+                'allowed' => false,
+                'message' => sprintf(
+                    'Reset Redis dibatalkan: masih ada %d attempt ujian yang berjalan. Reset akan mengeluarkan siswa dari sesinya dan bisa menghapus jawaban yang belum tersimpan. Tunggu ujian selesai, atau centang "Tetap reset" bila darurat.',
+                    $in_progress
+                ),
+                'in_progress' => $in_progress,
+            ];
+        }
+
+        $pending_attempts = 0;
+        if (class_exists('CBT_Runtime') && CBT_Runtime::is_ready()) {
+            foreach ($attempt_ids as $attempt_id) {
+                $flush_result = CBT_Runtime::flush_attempt($attempt_id, true);
+                if ((int) ($flush_result['pending_count'] ?? 0) > 0) {
+                    $pending_attempts++;
+                }
+            }
+        }
+        if ($pending_attempts > 0) {
+            return [
+                'allowed' => false,
+                'message' => sprintf(
+                    'Reset Redis dibatalkan: buffer jawaban %d attempt belum berhasil disimpan ke database. Coba lagi beberapa detik lagi.',
+                    $pending_attempts
+                ),
+                'in_progress' => $in_progress,
+            ];
+        }
+
+        return [
+            'allowed' => true,
+            'message' => sprintf('%d attempt berjalan: buffer jawaban sudah disimpan ke database sebelum reset.', $in_progress),
+            'in_progress' => $in_progress,
+        ];
     }
 
     public static function handle_set_adaptive_load_override(): void
@@ -4713,6 +4799,12 @@ final class CBT_Admin_Exams_Service
                     self::dispatch_preflight_operation_ajax(false, [
                         'message' => 'Helper reset Redis CBT belum tersedia di environment ini.',
                     ], 400);
+                }
+                $reset_guard = self::prepare_redis_reset_guard(!empty($_POST['cbt_redis_reset_force']));
+                if (empty($reset_guard['allowed'])) {
+                    self::dispatch_preflight_operation_ajax(false, [
+                        'message' => (string) $reset_guard['message'],
+                    ], 409);
                 }
                 $result = CBT_Plugin_Redis_Reset_Service::start_reset_job('admin_ajax');
                 $state = isset($result['state']) && is_array($result['state']) ? $result['state'] : [];
@@ -8956,6 +9048,13 @@ final class CBT_Admin_Exams_Service
         }
         if ($title === '') {
             return new WP_Error('invalid_title', 'Judul exam wajib diisi.', $id);
+        }
+        if (self::is_bank_exam_title($title)) {
+            // Awalan ini dipakai di seluruh sistem untuk mengenali bank soal mapel.
+            return new WP_Error('invalid_title', 'Judul exam tidak boleh diawali "Bank Soal - " karena awalan itu khusus untuk bank soal mapel.', $id);
+        }
+        if ($status === 'published' && $target_kelas === '') {
+            return new WP_Error('invalid_target_kelas', 'Exam Published wajib punya minimal satu kelas peserta. Tanpa kelas, exam tidak tampil ke siswa mana pun.', $id);
         }
         if ($kkm_percentage < 0 || $kkm_percentage > 100) {
             return new WP_Error('invalid_kkm', 'KKM harus berada pada rentang 0 sampai 100.', $id);

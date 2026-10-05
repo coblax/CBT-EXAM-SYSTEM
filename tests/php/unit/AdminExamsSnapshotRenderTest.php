@@ -32,6 +32,7 @@ final class AdminExamsSnapshotRenderTest extends TestCase
         self::assertStringContainsString('Progress One-Click Pra Ujian', $html);
         self::assertStringContainsString('Bersihkan Semua Snapshot', $html);
         self::assertStringContainsString('Bersihkan Semua Redis CBT', $html);
+        self::assertStringContainsString('name="cbt_redis_reset_force"', $html);
         self::assertStringContainsString('Adaptive Load', $html);
         self::assertStringContainsString('Paksa Busy (15 menit)', $html);
         self::assertStringContainsString('Paksa Critical (15 menit)', $html);
@@ -816,6 +817,7 @@ final class AdminExamsSnapshotRenderTest extends TestCase
         self::assertStringContainsString('Exam kedua masuk antrean preflight.', $html);
         self::assertStringContainsString('Mode bulk dibatasi maksimal 10 exam per run.', $html);
         self::assertStringContainsString('Bersihkan Semua Redis CBT', $html);
+        self::assertStringContainsString('name="cbt_redis_reset_force"', $html);
         self::assertStringContainsString('reset runtime harian antar beberapa exam', $html);
         self::assertStringNotContainsString('Siswa Bermasalah', $html);
         self::assertStringNotContainsString('Bersihkan Semua Snapshot', $html);

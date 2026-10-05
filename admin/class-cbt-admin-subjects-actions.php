@@ -18,20 +18,21 @@ final class CBT_Admin_Subjects_Actions
         $name = isset($_POST['name']) ? sanitize_text_field(wp_unslash((string) $_POST['name'])) : '';
         $code_raw = isset($_POST['code']) ? sanitize_text_field(wp_unslash((string) $_POST['code'])) : '';
         $description = isset($_POST['description']) ? sanitize_textarea_field(wp_unslash((string) $_POST['description'])) : '';
+        $list_state = self::read_list_state($_POST);
 
         $result = CBT_Admin_Subjects_Service::save_subject_record($id, $name, $code_raw, $description);
         if (is_wp_error($result)) {
-            self::redirect_subjects_page([
+            // Tetap di mode edit supaya fallback tanpa JS tidak membuang konteks subject yang sedang diubah.
+            self::redirect_subjects_page($list_state + ($id > 0 ? ['edit' => $id] : ['cbt_subject_tab' => 'form']) + [
                 'cbt_err' => $result->get_error_message(),
             ]);
         }
 
-        $msg = (string) ($result['message'] ?? ($id > 0 ? 'Subject updated' : 'Subject created'));
-
         CBT_Cache::invalidate_catalog();
 
-        self::redirect_subjects_page([
-            'cbt_msg' => $msg,
+        self::redirect_subjects_page($list_state + [
+            'cbt_subject_tab' => 'list',
+            'cbt_msg' => (string) ($result['message'] ?? ($id > 0 ? 'Subject diperbarui.' : 'Subject ditambahkan.')),
         ]);
     }
 
@@ -44,39 +45,24 @@ final class CBT_Admin_Subjects_Actions
         $id = isset($_GET['id']) ? absint(wp_unslash((string) $_GET['id'])) : 0;
         check_admin_referer('cbt_delete_subject_' . $id);
 
-        $subject_per_page = CBT_Admin_Subjects_Service::normalize_standard_list_per_page(
-            isset($_GET['cbt_subject_per_page']) ? absint(wp_unslash((string) $_GET['cbt_subject_per_page'])) : 20
-        );
-        $subject_filter_id = isset($_GET['cbt_subject_filter_id']) ? absint(wp_unslash((string) $_GET['cbt_subject_filter_id'])) : 0;
-        $subject_paged = isset($_GET['cbt_subject_paged']) ? max(1, absint(wp_unslash((string) $_GET['cbt_subject_paged']))) : 1;
-        $redirect_args = [
-            'cbt_subject_per_page' => $subject_per_page,
-            'cbt_subject_paged' => $subject_paged,
-        ];
-        if ($subject_filter_id > 0) {
-            $redirect_args['cbt_subject_filter_id'] = $subject_filter_id;
+        $redirect_args = self::read_list_state($_GET) + ['cbt_subject_tab' => 'list'];
+        if ($id <= 0) {
+            self::redirect_subjects_page($redirect_args + [
+                'cbt_err' => 'Subject tidak valid.',
+            ]);
         }
 
-        if ($id > 0) {
-            global $wpdb;
-            $exam_count = (int) $wpdb->get_var($wpdb->prepare(
-                "SELECT COUNT(*) FROM {$wpdb->prefix}cbt_exams WHERE subject_id = %d",
-                $id
-            ));
-
-            if ($exam_count > 0) {
-                self::redirect_subjects_page($redirect_args + [
-                    'cbt_msg' => 'Subject masih dipakai oleh ujian dan tidak bisa dihapus.',
-                ]);
-            }
-
-            $wpdb->delete($wpdb->prefix . 'cbt_subjects', ['id' => $id], ['%d']);
+        $result = CBT_Admin_Subjects_Service::delete_subject($id);
+        if (($result['status'] ?? '') !== 'deleted') {
+            self::redirect_subjects_page($redirect_args + [
+                'cbt_err' => (string) ($result['message'] ?? 'Subject gagal dihapus.'),
+            ]);
         }
 
         CBT_Cache::invalidate_catalog();
 
         self::redirect_subjects_page($redirect_args + [
-            'cbt_msg' => 'Subject deleted',
+            'cbt_msg' => (string) ($result['message'] ?? 'Subject dihapus.'),
         ]);
     }
 
@@ -88,29 +74,12 @@ final class CBT_Admin_Subjects_Actions
 
         check_admin_referer('cbt_bulk_delete_subjects');
 
-        global $wpdb;
-        $subject_table = $wpdb->prefix . 'cbt_subjects';
-        $exam_table = $wpdb->prefix . 'cbt_exams';
-        $bulk_mode = isset($_POST['bulk_mode']) ? sanitize_text_field(wp_unslash((string) $_POST['bulk_mode'])) : 'selected';
-        $subject_per_page = CBT_Admin_Subjects_Service::normalize_standard_list_per_page(
-            isset($_POST['cbt_subject_per_page']) ? absint(wp_unslash((string) $_POST['cbt_subject_per_page'])) : 20
-        );
-        $subject_filter_id = isset($_POST['cbt_subject_filter_id']) ? absint(wp_unslash((string) $_POST['cbt_subject_filter_id'])) : 0;
-        $subject_paged = isset($_POST['cbt_subject_paged']) ? max(1, absint(wp_unslash((string) $_POST['cbt_subject_paged']))) : 1;
-        $redirect_args = [
-            'cbt_subject_per_page' => $subject_per_page,
-            'cbt_subject_paged' => $subject_paged,
-        ];
-        if ($subject_filter_id > 0) {
-            $redirect_args['cbt_subject_filter_id'] = $subject_filter_id;
-        }
+        $bulk_mode = isset($_POST['bulk_mode']) ? sanitize_key(wp_unslash((string) $_POST['bulk_mode'])) : 'selected';
+        $list_state = self::read_list_state($_POST);
+        $redirect_args = $list_state + ['cbt_subject_tab' => 'list'];
 
         if ($bulk_mode === 'all') {
-            if ($subject_filter_id > 0) {
-                $target_ids = [$subject_filter_id];
-            } else {
-                $target_ids = array_map('intval', (array) $wpdb->get_col("SELECT id FROM {$subject_table}"));
-            }
+            $target_ids = CBT_Admin_Subjects_Service::get_subject_ids_matching_search((string) ($list_state['cbt_subject_q'] ?? ''));
         } else {
             $raw_subject_ids = isset($_POST['subject_ids']) && is_array($_POST['subject_ids']) ? wp_unslash($_POST['subject_ids']) : [];
             $target_ids = array_map('absint', $raw_subject_ids);
@@ -125,44 +94,45 @@ final class CBT_Admin_Subjects_Actions
 
         $deleted_count = 0;
         $blocked_count = 0;
+        $failed_count = 0;
 
         foreach ($target_ids as $subject_id) {
-            $exam_count = (int) $wpdb->get_var($wpdb->prepare(
-                "SELECT COUNT(*) FROM {$exam_table} WHERE subject_id = %d",
-                $subject_id
-            ));
-
-            if ($exam_count > 0) {
-                $blocked_count++;
-                continue;
-            }
-
-            $deleted = $wpdb->delete($subject_table, ['id' => $subject_id], ['%d']);
-            if ($deleted) {
+            $result = CBT_Admin_Subjects_Service::delete_subject((int) $subject_id);
+            $status = (string) ($result['status'] ?? '');
+            if ($status === 'deleted') {
                 $deleted_count++;
+            } elseif ($status === 'in_use') {
+                $blocked_count++;
+            } elseif ($status !== 'not_found') {
+                $failed_count++;
             }
-        }
-
-        $messages = [];
-        if ($deleted_count > 0) {
-            $messages[] = sprintf('Deleted: %d', $deleted_count);
-        }
-        if ($blocked_count > 0) {
-            $messages[] = sprintf('Skipped (dipakai exam): %d', $blocked_count);
-        }
-
-        if (empty($messages)) {
-            self::redirect_subjects_page($redirect_args + [
-                'cbt_err' => 'Tidak ada subject yang berhasil dihapus.',
-            ]);
         }
 
         if ($deleted_count > 0) {
             CBT_Cache::invalidate_catalog();
         }
 
+        $messages = [];
+        if ($deleted_count > 0) {
+            $messages[] = sprintf('%d subject dihapus', $deleted_count);
+        }
+        if ($blocked_count > 0) {
+            $messages[] = sprintf('%d dilewati karena masih dipakai ujian/bank soal', $blocked_count);
+        }
+        if ($failed_count > 0) {
+            $messages[] = sprintf('%d gagal dihapus', $failed_count);
+        }
+
+        if ($deleted_count === 0) {
+            self::redirect_subjects_page($redirect_args + [
+                'cbt_err' => !empty($messages)
+                    ? 'Tidak ada subject yang dihapus: ' . implode(', ', $messages) . '.'
+                    : 'Tidak ada subject yang dihapus.',
+            ]);
+        }
+
         self::redirect_subjects_page($redirect_args + [
-            'cbt_msg' => implode(' | ', $messages),
+            'cbt_msg' => implode(', ', $messages) . '.',
         ]);
     }
 
@@ -188,7 +158,8 @@ final class CBT_Admin_Subjects_Actions
             }
 
             self::redirect_subjects_page([
-                'cbt_msg' => (string) ($result['message'] ?? 'Import subjects selesai.'),
+                'cbt_subject_import_done' => 1,
+                'cbt_msg' => (string) ($result['message'] ?? 'Import subject selesai.'),
             ]);
         }
 
@@ -269,8 +240,29 @@ final class CBT_Admin_Subjects_Actions
     private static function redirect_subject_import_with_error(string $message): void
     {
         self::redirect_subjects_page([
+            'cbt_subject_tab' => 'import',
             'cbt_err' => $message,
         ]);
+    }
+
+    /**
+     * @param array<string,mixed> $source
+     * @return array<string,int|string>
+     */
+    private static function read_list_state(array $source): array
+    {
+        $state = [
+            'cbt_subject_per_page' => CBT_Admin_Subjects_Service::normalize_standard_list_per_page(
+                isset($source['cbt_subject_per_page']) ? absint(wp_unslash((string) $source['cbt_subject_per_page'])) : 20
+            ),
+            'cbt_subject_paged' => isset($source['cbt_subject_paged']) ? max(1, absint(wp_unslash((string) $source['cbt_subject_paged']))) : 1,
+        ];
+        $search = CBT_Admin_Subjects_Service::normalize_search_query($source['cbt_subject_q'] ?? '');
+        if ($search !== '') {
+            $state['cbt_subject_q'] = $search;
+        }
+
+        return $state;
     }
 
     private static function redirect_subjects_page(array $args = []): void

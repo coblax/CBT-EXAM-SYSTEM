@@ -116,7 +116,7 @@ final class QuestionsActionHandlersTest extends TestCase
         self::assertSame('Alpha', (string) ($wpdb->insertedOptions[0]['option_text'] ?? ''));
         self::assertStringContainsString('edit=900', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
         self::assertStringContainsString('question_search=bank+copy', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
-        self::assertStringContainsString('cbt_msg=Sumber+soal+berhasil+diduplikasi.', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_msg=Sumber+soal+diduplikasi+menjadi+soal+', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
     }
 
     private function bootstrapQuestionHandlers(): void

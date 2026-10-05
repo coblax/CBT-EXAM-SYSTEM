@@ -6,6 +6,13 @@ if (!defined('ABSPATH')) {
 
 final class CBT_Admin_Subjects_Service
 {
+    public const NAME_MAX_LENGTH = 120;
+    public const CODE_MAX_LENGTH = 30;
+    private const BANK_EXAM_TITLE_PREFIX = 'Bank Soal - ';
+    private const SEARCH_MAX_LENGTH = 100;
+    private const IMPORT_FAILURE_DETAIL_LIMIT = 20;
+    private const IMPORT_RESULT_TTL = 900;
+
     public static function can_manage_subjects(): bool
     {
         return self::is_admin_scope() || current_user_can('cbt_manage_subjects');
@@ -32,53 +39,37 @@ final class CBT_Admin_Subjects_Service
             $editing = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE id = %d", $editing_id), ARRAY_A);
         }
 
-        $subject_filter_rows = $wpdb->get_results(
-            "SELECT id, name
-             FROM {$table}
-             ORDER BY name ASC",
-            ARRAY_A
-        );
-        $subject_filter_options = [];
-        foreach ((array) $subject_filter_rows as $subject_filter_row) {
-            $subject_filter_id = (int) ($subject_filter_row['id'] ?? 0);
-            $subject_filter_name = trim((string) ($subject_filter_row['name'] ?? ''));
-            if ($subject_filter_id <= 0 || $subject_filter_name === '') {
-                continue;
-            }
-            $subject_filter_options[$subject_filter_id] = $subject_filter_name;
-        }
-
         $subject_per_page = isset($query['cbt_subject_per_page'])
             ? self::normalize_standard_list_per_page(absint(wp_unslash((string) $query['cbt_subject_per_page'])))
             : 20;
-        $subject_filter_id = isset($query['cbt_subject_filter_id']) ? absint(wp_unslash((string) $query['cbt_subject_filter_id'])) : 0;
-        if ($subject_filter_id > 0 && !isset($subject_filter_options[$subject_filter_id])) {
-            $subject_filter_id = 0;
-        }
+        $subject_search = self::normalize_search_query($query['cbt_subject_q'] ?? '');
         $subject_current_page = isset($query['cbt_subject_paged']) ? max(1, absint(wp_unslash((string) $query['cbt_subject_paged']))) : 1;
         $total_subjects = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table}");
-        $subject_where_sql = '';
-        $subject_where_params = [];
-        if ($subject_filter_id > 0) {
-            $subject_where_sql = " WHERE id = %d";
-            $subject_where_params = [$subject_filter_id];
-        }
-        $filtered_subject_total = $subject_where_sql !== ''
-            ? (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$table}{$subject_where_sql}", ...$subject_where_params))
+        $search_filter = self::build_search_where_clause($subject_search);
+        $filtered_subject_total = $search_filter['sql'] !== ''
+            ? (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$table}{$search_filter['sql']}", ...$search_filter['params']))
             : $total_subjects;
         $subject_total_pages = max(1, (int) ceil($filtered_subject_total / $subject_per_page));
         if ($subject_current_page > $subject_total_pages) {
             $subject_current_page = $subject_total_pages;
         }
         $subject_offset = ($subject_current_page - 1) * $subject_per_page;
-        $subject_query_params = array_merge($subject_where_params, [$subject_per_page, $subject_offset]);
         $subjects = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT * FROM {$table}{$subject_where_sql} ORDER BY name ASC LIMIT %d OFFSET %d",
-                ...$subject_query_params
+                "SELECT * FROM {$table}{$search_filter['sql']} ORDER BY name ASC, id ASC LIMIT %d OFFSET %d",
+                ...array_merge($search_filter['params'], [$subject_per_page, $subject_offset])
             ),
             ARRAY_A
         );
+        $subjects = is_array($subjects) ? $subjects : [];
+        $subject_usage_map = self::get_subject_usage_map(array_map(static function ($subject): int {
+            return (int) ($subject['id'] ?? 0);
+        }, $subjects));
+        $editing_usage = !empty($editing)
+            ? (self::get_subject_usage_map([(int) ($editing['id'] ?? 0)])[(int) ($editing['id'] ?? 0)] ?? self::empty_usage())
+            : null;
+        $subjects_in_use_total = self::count_subjects_in_use();
+
         $notice = isset($query['cbt_msg']) ? sanitize_text_field(wp_unslash((string) $query['cbt_msg'])) : '';
         $error = isset($query['cbt_err']) ? sanitize_text_field(wp_unslash((string) $query['cbt_err'])) : '';
         $subject_import_token = isset($query['cbt_subject_import_token']) ? sanitize_key((string) wp_unslash((string) $query['cbt_subject_import_token'])) : '';
@@ -88,6 +79,7 @@ final class CBT_Admin_Subjects_Service
         $subject_import_created = 0;
         $subject_import_updated = 0;
         $subject_import_failed = 0;
+        $subject_import_failures = [];
         $subject_import_progress_percent = 0.0;
         $subject_import_is_running = false;
         $subject_import_continue_url = '';
@@ -102,6 +94,7 @@ final class CBT_Admin_Subjects_Service
                 $subject_import_created = max(0, isset($subject_import_state['created']) ? (int) $subject_import_state['created'] : 0);
                 $subject_import_updated = max(0, isset($subject_import_state['updated']) ? (int) $subject_import_state['updated'] : 0);
                 $subject_import_failed = max(0, isset($subject_import_state['failed']) ? (int) $subject_import_state['failed'] : 0);
+                $subject_import_failures = self::normalize_import_failures($subject_import_state['failures'] ?? []);
                 $subject_import_progress_percent = $subject_import_total > 0
                     ? round(((float) $subject_import_offset / (float) $subject_import_total) * 100, 2)
                     : 0.0;
@@ -117,37 +110,66 @@ final class CBT_Admin_Subjects_Service
                 $error = 'Sesi import subject tidak ditemukan atau sudah berakhir. Silakan upload ulang file.';
             }
         }
+        $subject_import_result = !empty($query['cbt_subject_import_done'])
+            ? self::get_last_import_result_for_current_user()
+            : null;
+
+        $requested_tab = isset($query['cbt_subject_tab']) ? sanitize_key((string) wp_unslash((string) $query['cbt_subject_tab'])) : '';
         $default_subject_tab = 'list';
+        $subject_tab_is_forced = false;
         if ($total_subjects === 0) {
+            // Tanpa data, tab daftar hanya menampilkan empty state; langsung arahkan ke form.
             $default_subject_tab = 'form';
+            $subject_tab_is_forced = true;
         }
-        if (is_array($subject_import_state)) {
+        if (in_array($requested_tab, ['form', 'import', 'list'], true)) {
+            $default_subject_tab = $requested_tab;
+            $subject_tab_is_forced = true;
+        }
+        if (is_array($subject_import_state) || is_array($subject_import_result)) {
             $default_subject_tab = 'import';
+            $subject_tab_is_forced = true;
         }
         if (!empty($editing)) {
             $default_subject_tab = 'form';
+            $subject_tab_is_forced = true;
         }
-        $subject_tab_is_forced = !empty($editing) || is_array($subject_import_state);
+
         $subject_list_query_args = [
             'page' => 'cbt-subjects',
             'cbt_subject_per_page' => $subject_per_page,
         ];
-        if ($subject_filter_id > 0) {
-            $subject_list_query_args['cbt_subject_filter_id'] = $subject_filter_id;
+        if ($subject_search !== '') {
+            $subject_list_query_args['cbt_subject_q'] = $subject_search;
         }
         $subject_clear_edit_query_args = $subject_list_query_args;
         $subject_clear_edit_query_args['cbt_subject_paged'] = $subject_current_page;
+        $subject_clear_edit_query_args['cbt_subject_tab'] = 'list';
         $subject_clear_edit_url = add_query_arg(
             $subject_clear_edit_query_args,
             admin_url('admin.php')
         );
-        $subject_reset_filter_url = admin_url('admin.php?page=cbt-subjects');
+        $subject_reset_filter_url = add_query_arg(
+            [
+                'page' => 'cbt-subjects',
+                'cbt_subject_per_page' => $subject_per_page,
+                'cbt_subject_tab' => 'list',
+            ],
+            admin_url('admin.php')
+        );
+        $subject_open_form_url = add_query_arg(
+            [
+                'page' => 'cbt-subjects',
+                'cbt_subject_tab' => 'form',
+            ],
+            admin_url('admin.php')
+        );
         $subject_list_chip_label = $filtered_subject_total === $total_subjects
             ? sprintf('%d total', $total_subjects)
-            : sprintf('%d hasil dari %d', $filtered_subject_total, $total_subjects);
+            : sprintf('%d dari %d', $filtered_subject_total, $total_subjects);
         $subject_list_total_label = $filtered_subject_total === $total_subjects
             ? sprintf('Total subject: %d', $total_subjects)
-            : sprintf('Total subject: %d dari %d', $filtered_subject_total, $total_subjects);
+            : sprintf('Menampilkan %d dari %d subject', $filtered_subject_total, $total_subjects);
         $subject_pagination_links = [];
         if ($subject_total_pages > 1) {
             $subject_pagination_links = paginate_links([
@@ -169,18 +191,19 @@ final class CBT_Admin_Subjects_Service
         return compact(
             'default_subject_tab',
             'editing',
+            'editing_usage',
             'error',
             'notice',
             'subject_clear_edit_url',
             'subject_current_page',
-            'subject_filter_id',
-            'subject_filter_options',
             'subject_import_continue_url',
             'subject_import_created',
             'subject_import_failed',
+            'subject_import_failures',
             'subject_import_is_running',
             'subject_import_offset',
             'subject_import_progress_percent',
+            'subject_import_result',
             'subject_import_state',
             'subject_import_token',
             'subject_import_total',
@@ -188,15 +211,301 @@ final class CBT_Admin_Subjects_Service
             'subject_list_chip_label',
             'subject_list_query_args',
             'subject_list_total_label',
+            'subject_open_form_url',
             'subject_pagination_links',
             'subject_per_page',
             'subject_reset_filter_url',
+            'subject_search',
             'subject_tab_is_forced',
             'subject_total_pages',
+            'subject_usage_map',
             'subjects',
+            'subjects_in_use_total',
             'total_subjects'
         ) + [
             'filtered_subject_total' => $filtered_subject_total,
+        ];
+    }
+
+    /**
+     * @param mixed $raw
+     */
+    public static function normalize_search_query($raw): string
+    {
+        if (!is_scalar($raw)) {
+            return '';
+        }
+
+        $search = sanitize_text_field(wp_unslash((string) $raw));
+        $search = trim((string) preg_replace('/\s+/', ' ', $search));
+        if (function_exists('mb_substr')) {
+            return mb_substr($search, 0, self::SEARCH_MAX_LENGTH);
+        }
+
+        return substr($search, 0, self::SEARCH_MAX_LENGTH);
+    }
+
+    /**
+     * @return array{sql:string,params:array<int,string>}
+     */
+    private static function build_search_where_clause(string $search): array
+    {
+        if ($search === '') {
+            return [
+                'sql' => '',
+                'params' => [],
+            ];
+        }
+
+        global $wpdb;
+        $like = '%' . $wpdb->esc_like($search) . '%';
+
+        return [
+            'sql' => ' WHERE (name LIKE %s OR code LIKE %s)',
+            'params' => [$like, $like],
+        ];
+    }
+
+    /**
+     * @return int[]
+     */
+    public static function get_subject_ids_matching_search(string $search): array
+    {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'cbt_subjects';
+        $search_filter = self::build_search_where_clause($search);
+        $sql = "SELECT id FROM {$table}{$search_filter['sql']} ORDER BY id ASC";
+        $ids = $search_filter['sql'] !== ''
+            ? $wpdb->get_col($wpdb->prepare($sql, ...$search_filter['params']))
+            : $wpdb->get_col($sql);
+
+        return array_values(array_filter(array_map('absint', is_array($ids) ? $ids : [])));
+    }
+
+    /**
+     * Pemakaian subject: exam biasa, soal di bank soal, dan siswa yang memilih mapel ini.
+     *
+     * @param int[] $subject_ids
+     * @return array<int,array{exam_count:int,bank_question_count:int,choice_count:int,deletable:bool}>
+     */
+    public static function get_subject_usage_map(array $subject_ids): array
+    {
+        $subject_ids = array_values(array_unique(array_filter(array_map('absint', $subject_ids))));
+        if (empty($subject_ids)) {
+            return [];
+        }
+
+        global $wpdb;
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $choice_table = $wpdb->prefix . 'cbt_student_subject_choices';
+        $placeholders = implode(',', array_fill(0, count($subject_ids), '%d'));
+        $bank_like = $wpdb->esc_like(self::BANK_EXAM_TITLE_PREFIX) . '%';
+
+        $usage = [];
+        foreach ($subject_ids as $subject_id) {
+            $usage[$subject_id] = self::empty_usage();
+        }
+
+        $exam_rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT subject_id, COUNT(*) AS exam_count
+                 FROM {$exam_table}
+                 WHERE subject_id IN ({$placeholders}) AND title NOT LIKE %s
+                 GROUP BY subject_id",
+                ...array_merge($subject_ids, [$bank_like])
+            ),
+            ARRAY_A
+        );
+        foreach ((array) $exam_rows as $row) {
+            $subject_id = (int) ($row['subject_id'] ?? 0);
+            if (isset($usage[$subject_id])) {
+                $usage[$subject_id]['exam_count'] = (int) ($row['exam_count'] ?? 0);
+            }
+        }
+
+        $bank_rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT e.subject_id, COUNT(q.id) AS question_count
+                 FROM {$exam_table} e
+                 INNER JOIN {$question_table} q ON q.exam_id = e.id
+                 WHERE e.subject_id IN ({$placeholders}) AND e.title LIKE %s
+                 GROUP BY e.subject_id",
+                ...array_merge($subject_ids, [$bank_like])
+            ),
+            ARRAY_A
+        );
+        foreach ((array) $bank_rows as $row) {
+            $subject_id = (int) ($row['subject_id'] ?? 0);
+            if (isset($usage[$subject_id])) {
+                $usage[$subject_id]['bank_question_count'] = (int) ($row['question_count'] ?? 0);
+            }
+        }
+
+        $choice_rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT subject_id, COUNT(*) AS choice_count
+                 FROM {$choice_table}
+                 WHERE subject_id IN ({$placeholders})
+                 GROUP BY subject_id",
+                ...$subject_ids
+            ),
+            ARRAY_A
+        );
+        foreach ((array) $choice_rows as $row) {
+            $subject_id = (int) ($row['subject_id'] ?? 0);
+            if (isset($usage[$subject_id])) {
+                $usage[$subject_id]['choice_count'] = (int) ($row['choice_count'] ?? 0);
+            }
+        }
+
+        foreach ($usage as $subject_id => $row) {
+            $usage[$subject_id]['deletable'] = $row['exam_count'] === 0 && $row['bank_question_count'] === 0;
+        }
+
+        return $usage;
+    }
+
+    /**
+     * @return array{exam_count:int,bank_question_count:int,choice_count:int,deletable:bool}
+     */
+    private static function empty_usage(): array
+    {
+        return [
+            'exam_count' => 0,
+            'bank_question_count' => 0,
+            'choice_count' => 0,
+            'deletable' => true,
+        ];
+    }
+
+    private static function count_subjects_in_use(): int
+    {
+        global $wpdb;
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $bank_like = $wpdb->esc_like(self::BANK_EXAM_TITLE_PREFIX) . '%';
+
+        return (int) $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT COUNT(DISTINCT e.subject_id)
+                 FROM {$exam_table} e
+                 WHERE e.subject_id IS NOT NULL
+                   AND (e.title NOT LIKE %s OR EXISTS (SELECT 1 FROM {$question_table} q WHERE q.exam_id = e.id))",
+                $bank_like
+            )
+        );
+    }
+
+    public static function describe_subject_usage(array $usage): string
+    {
+        $parts = [];
+        if ((int) ($usage['exam_count'] ?? 0) > 0) {
+            $parts[] = sprintf('%d ujian', (int) $usage['exam_count']);
+        }
+        if ((int) ($usage['bank_question_count'] ?? 0) > 0) {
+            $parts[] = sprintf('%d soal di bank soal', (int) $usage['bank_question_count']);
+        }
+
+        return implode(' dan ', $parts);
+    }
+
+    /**
+     * Hapus subject bila tidak dipakai ujian/bank soal. Bank soal kosong dan pilihan mapel
+     * siswa untuk subject ini ikut dibersihkan agar tidak tersisa data yatim.
+     *
+     * @return array{status:string,message:string}
+     */
+    public static function delete_subject(int $subject_id): array
+    {
+        global $wpdb;
+
+        $subject = self::find_subject_by_id($subject_id);
+        if ($subject === null) {
+            return [
+                'status' => 'not_found',
+                'message' => 'Subject tidak ditemukan atau sudah dihapus.',
+            ];
+        }
+
+        $subject_name = (string) ($subject['name'] ?? ('#' . $subject_id));
+        $usage = self::get_subject_usage_map([$subject_id])[$subject_id] ?? self::empty_usage();
+        if (empty($usage['deletable'])) {
+            return [
+                'status' => 'in_use',
+                'message' => sprintf(
+                    'Subject "%s" masih dipakai %s sehingga tidak bisa dihapus.',
+                    $subject_name,
+                    self::describe_subject_usage($usage)
+                ),
+            ];
+        }
+
+        $exam_table = $wpdb->prefix . 'cbt_exams';
+        $question_table = $wpdb->prefix . 'cbt_questions';
+        $choice_table = $wpdb->prefix . 'cbt_student_subject_choices';
+        $bank_like = $wpdb->esc_like(self::BANK_EXAM_TITLE_PREFIX) . '%';
+
+        $empty_bank_exam_ids = array_values(array_filter(array_map('absint', (array) $wpdb->get_col(
+            $wpdb->prepare(
+                "SELECT e.id FROM {$exam_table} e
+                 WHERE e.subject_id = %d AND e.title LIKE %s
+                   AND NOT EXISTS (SELECT 1 FROM {$question_table} q WHERE q.exam_id = e.id)",
+                $subject_id,
+                $bank_like
+            )
+        ))));
+        $choice_user_ids = array_values(array_filter(array_map('absint', (array) $wpdb->get_col(
+            $wpdb->prepare("SELECT DISTINCT user_id FROM {$choice_table} WHERE subject_id = %d", $subject_id)
+        ))));
+
+        $wpdb->query('START TRANSACTION');
+        foreach ($empty_bank_exam_ids as $bank_exam_id) {
+            $wpdb->delete($exam_table, ['id' => $bank_exam_id], ['%d']);
+        }
+
+        // Cek ulang di dalam transaksi supaya exam yang baru dibuat bersamaan tidak kehilangan mapel.
+        $remaining_exam_count = (int) $wpdb->get_var(
+            $wpdb->prepare("SELECT COUNT(*) FROM {$exam_table} WHERE subject_id = %d", $subject_id)
+        );
+        if ($remaining_exam_count > 0) {
+            $wpdb->query('ROLLBACK');
+            return [
+                'status' => 'in_use',
+                'message' => sprintf('Subject "%s" masih dipakai ujian sehingga tidak bisa dihapus.', $subject_name),
+            ];
+        }
+
+        if (!empty($choice_user_ids)) {
+            $wpdb->delete($choice_table, ['subject_id' => $subject_id], ['%d']);
+        }
+
+        $deleted = $wpdb->delete($wpdb->prefix . 'cbt_subjects', ['id' => $subject_id], ['%d']);
+        if (!$deleted) {
+            $wpdb->query('ROLLBACK');
+            return [
+                'status' => 'failed',
+                'message' => sprintf('Gagal menghapus subject "%s".', $subject_name),
+            ];
+        }
+        $wpdb->query('COMMIT');
+
+        if (class_exists('CBT_Cache')) {
+            CBT_Cache::invalidate_exams($empty_bank_exam_ids);
+            foreach ($choice_user_ids as $user_id) {
+                CBT_Cache::invalidate_user($user_id);
+            }
+        }
+        if (class_exists('CBT_Exam_Availability_Cache') && method_exists('CBT_Exam_Availability_Cache', 'clear_student_snapshot')) {
+            foreach ($choice_user_ids as $user_id) {
+                CBT_Exam_Availability_Cache::clear_student_snapshot($user_id);
+            }
+        }
+
+        return [
+            'status' => 'deleted',
+            'message' => sprintf('Subject "%s" dihapus.', $subject_name),
         ];
     }
 
@@ -290,7 +599,14 @@ final class CBT_Admin_Subjects_Service
         if ($name === '') {
             return new WP_Error('subject_name_required', 'Nama mapel wajib diisi.');
         }
+        if (self::text_length($name) > self::NAME_MAX_LENGTH) {
+            return new WP_Error('subject_name_too_long', sprintf('Nama mapel maksimal %d karakter.', self::NAME_MAX_LENGTH));
+        }
+        if (strlen(strtoupper(sanitize_key($code_raw))) > self::CODE_MAX_LENGTH) {
+            return new WP_Error('subject_code_too_long', sprintf('Code subject maksimal %d karakter.', self::CODE_MAX_LENGTH));
+        }
 
+        $existing_subject = null;
         if ($id > 0) {
             $existing_subject = self::find_subject_by_id($id);
             if ($existing_subject === null) {
@@ -322,9 +638,11 @@ final class CBT_Admin_Subjects_Service
                 return new WP_Error('subject_update_failed', 'Gagal memperbarui subject.');
             }
 
+            self::sync_bank_exam_title($id, (string) ($existing_subject['name'] ?? ''), $name);
+
             return [
                 'status' => 'updated',
-                'message' => 'Subject updated',
+                'message' => sprintf('Subject "%s" diperbarui.', $name),
             ];
         }
 
@@ -340,8 +658,35 @@ final class CBT_Admin_Subjects_Service
 
         return [
             'status' => 'created',
-            'message' => 'Subject created',
+            'message' => sprintf('Subject "%s" ditambahkan.', $name),
         ];
+    }
+
+    /**
+     * Bank soal dicari lewat subject_id, tetapi judulnya ikut tampil di builder exam dan
+     * daftar exam, jadi rename subject harus ikut memperbarui judul bank soal.
+     */
+    private static function sync_bank_exam_title(int $subject_id, string $old_name, string $new_name): void
+    {
+        if ($subject_id <= 0 || $new_name === '' || $old_name === $new_name) {
+            return;
+        }
+
+        global $wpdb;
+        $wpdb->query(
+            $wpdb->prepare(
+                "UPDATE {$wpdb->prefix}cbt_exams SET title = %s, updated_at = %s WHERE subject_id = %d AND title LIKE %s",
+                self::BANK_EXAM_TITLE_PREFIX . $new_name,
+                current_time('mysql'),
+                $subject_id,
+                $wpdb->esc_like(self::BANK_EXAM_TITLE_PREFIX) . '%'
+            )
+        );
+    }
+
+    private static function text_length(string $value): int
+    {
+        return function_exists('mb_strlen') ? mb_strlen($value) : strlen($value);
     }
 
     /**
@@ -367,6 +712,7 @@ final class CBT_Admin_Subjects_Service
         $created = isset($state['created']) ? (int) $state['created'] : 0;
         $updated = isset($state['updated']) ? (int) $state['updated'] : 0;
         $failed = isset($state['failed']) ? (int) $state['failed'] : 0;
+        $failures = self::normalize_import_failures($state['failures'] ?? []);
         if ($total <= 0 || empty($rows)) {
             self::clear_subject_import_transients($token);
             return new WP_Error('subject_rows_empty', 'Data import subject kosong.');
@@ -388,10 +734,12 @@ final class CBT_Admin_Subjects_Service
         for ($index = $offset; $index < $target_end; $index++) {
             $row = isset($rows[$index]) && is_array($rows[$index]) ? (array) $rows[$index] : [];
 
+            $failure_reason = '';
             try {
-                $result = self::upsert_subject_from_row($row);
+                $result = self::upsert_subject_from_row($row, $failure_reason);
             } catch (Throwable $exception) {
                 $result = 'failed';
+                $failure_reason = 'terjadi error saat menyimpan';
             }
 
             if ($result === 'created') {
@@ -400,6 +748,14 @@ final class CBT_Admin_Subjects_Service
                 $updated++;
             } else {
                 $failed++;
+                if (count($failures) < self::IMPORT_FAILURE_DETAIL_LIMIT) {
+                    $failures[] = sprintf(
+                        'Baris %d%s: %s',
+                        $index + 2,
+                        trim((string) ($row['name'] ?? '')) !== '' ? ' (' . self::normalize_subject_name((string) $row['name']) . ')' : '',
+                        $failure_reason !== '' ? $failure_reason : 'gagal diproses'
+                    );
+                }
             }
 
             $end = $index + 1;
@@ -412,6 +768,7 @@ final class CBT_Admin_Subjects_Service
         $state['created'] = $created;
         $state['updated'] = $updated;
         $state['failed'] = $failed;
+        $state['failures'] = $failures;
 
         if ($state['offset'] < $total) {
             $state_saved = set_transient(self::get_subject_import_state_key($token), $state, 12 * HOUR_IN_SECONDS);
@@ -431,16 +788,81 @@ final class CBT_Admin_Subjects_Service
             CBT_Cache::invalidate_catalog();
         }
 
+        set_transient(self::get_import_result_key(get_current_user_id()), [
+            'total' => $total,
+            'created' => $created,
+            'updated' => $updated,
+            'failed' => $failed,
+            'failures' => $failures,
+            'finished_at' => time(),
+        ], self::IMPORT_RESULT_TTL);
+
         return [
             'status' => 'complete',
             'message' => sprintf(
-                'Import subjects selesai. Total: %d, Created: %d, Updated: %d, Failed: %d',
+                'Import subject selesai. Total: %d, baru: %d, diperbarui: %d, gagal: %d.',
                 $total,
                 $created,
                 $updated,
                 $failed
             ),
         ];
+    }
+
+    /**
+     * @return array{total:int,created:int,updated:int,failed:int,failures:array<int,string>}|null
+     */
+    public static function get_last_import_result_for_current_user(): ?array
+    {
+        $user_id = get_current_user_id();
+        if ($user_id <= 0) {
+            return null;
+        }
+
+        $result = get_transient(self::get_import_result_key($user_id));
+        if (!is_array($result)) {
+            return null;
+        }
+
+        return [
+            'total' => max(0, (int) ($result['total'] ?? 0)),
+            'created' => max(0, (int) ($result['created'] ?? 0)),
+            'updated' => max(0, (int) ($result['updated'] ?? 0)),
+            'failed' => max(0, (int) ($result['failed'] ?? 0)),
+            'failures' => self::normalize_import_failures($result['failures'] ?? []),
+        ];
+    }
+
+    /**
+     * @param mixed $failures
+     * @return array<int,string>
+     */
+    private static function normalize_import_failures($failures): array
+    {
+        if (!is_array($failures)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($failures as $failure) {
+            if (!is_scalar($failure)) {
+                continue;
+            }
+            $text = sanitize_text_field((string) $failure);
+            if ($text !== '') {
+                $normalized[] = $text;
+            }
+            if (count($normalized) >= self::IMPORT_FAILURE_DETAIL_LIMIT) {
+                break;
+            }
+        }
+
+        return $normalized;
+    }
+
+    private static function get_import_result_key(int $user_id): string
+    {
+        return 'cbt_subject_import_result_' . absint($user_id);
     }
 
     /**
@@ -506,7 +928,7 @@ final class CBT_Admin_Subjects_Service
 
             $row = [];
             foreach ($header as $idx => $col) {
-                $row[$col] = isset($data[$idx]) ? trim((string) $data[$idx]) : '';
+                $row[$col] = isset($data[$idx]) ? self::ensure_utf8(trim((string) $data[$idx])) : '';
             }
             $rows[] = $row;
         }
@@ -582,11 +1004,35 @@ final class CBT_Admin_Subjects_Service
      */
     private static function normalize_subject_import_header(array $header): array
     {
-        return array_map(static function ($item): string {
+        $aliases = [
+            'nama' => 'name',
+            'nama mapel' => 'name',
+            'nama subject' => 'name',
+            'mapel' => 'name',
+            'kode' => 'code',
+            'kode mapel' => 'code',
+            'kode subject' => 'code',
+            'deskripsi' => 'description',
+            'keterangan' => 'description',
+        ];
+
+        return array_map(static function ($item) use ($aliases): string {
             $clean = trim((string) $item);
-            $clean = preg_replace('/^\xEF\xBB\xBF/', '', $clean);
-            return strtolower($clean);
+            $clean = (string) preg_replace('/^\xEF\xBB\xBF/', '', $clean);
+            $clean = strtolower(trim((string) preg_replace('/[\s_]+/', ' ', $clean)));
+            return $aliases[$clean] ?? $clean;
         }, $header);
+    }
+
+    private static function ensure_utf8(string $value): string
+    {
+        if ($value === '' || !function_exists('mb_check_encoding') || mb_check_encoding($value, 'UTF-8')) {
+            return $value;
+        }
+
+        // CSV hasil "Save as CSV" Excel Windows memakai Windows-1252, bukan UTF-8.
+        $converted = mb_convert_encoding($value, 'UTF-8', 'Windows-1252');
+        return is_string($converted) ? $converted : $value;
     }
 
     /**
@@ -596,22 +1042,28 @@ final class CBT_Admin_Subjects_Service
     private static function validate_subject_import_header(array $header)
     {
         if (!in_array('name', $header, true)) {
-            return new WP_Error('import_header_invalid', 'Header file tidak valid. Kolom name wajib ada.');
+            return new WP_Error('import_header_invalid', 'Header file tidak valid. Kolom name (atau nama) wajib ada di baris pertama.');
         }
 
         return true;
     }
 
-    private static function upsert_subject_from_row(array $row): string
+    private static function upsert_subject_from_row(array $row, ?string &$failure_reason = null): string
     {
         global $wpdb;
 
+        $failure_reason = '';
         $table = $wpdb->prefix . 'cbt_subjects';
         $name = self::normalize_subject_name((string) ($row['name'] ?? ''));
         $code = self::normalize_subject_code((string) ($row['code'] ?? ''));
         $description = self::normalize_subject_description((string) ($row['description'] ?? ''));
 
         if ($name === '') {
+            $failure_reason = 'kolom name kosong';
+            return 'failed';
+        }
+        if (self::text_length($name) > self::NAME_MAX_LENGTH) {
+            $failure_reason = sprintf('name lebih dari %d karakter', self::NAME_MAX_LENGTH);
             return 'failed';
         }
 
@@ -622,19 +1074,24 @@ final class CBT_Admin_Subjects_Service
         $existing_by_name = self::find_subject_by_name($name);
 
         if ($existing_by_code !== null && $existing_by_name !== null && (int) ($existing_by_code['id'] ?? 0) !== (int) ($existing_by_name['id'] ?? 0)) {
+            $failure_reason = sprintf(
+                'code %s milik subject "%s", tetapi name sudah dipakai subject lain',
+                $code,
+                (string) ($existing_by_code['name'] ?? '')
+            );
             return 'failed';
         }
 
         $existing = $existing_by_code ?? $existing_by_name;
 
-        $data = [
-            'name' => $name,
-            'code' => $code,
-            'description' => $description,
-            'updated_at' => current_time('mysql'),
-        ];
-
         if ($existing && isset($existing['id'])) {
+            // Kolom opsional yang kosong di file tidak boleh menghapus data yang sudah ada.
+            $data = [
+                'name' => $name,
+                'code' => $code !== '' ? $code : (string) ($existing['code'] ?? ''),
+                'description' => $description !== '' ? $description : (string) ($existing['description'] ?? ''),
+                'updated_at' => current_time('mysql'),
+            ];
             $updated = $wpdb->update(
                 $table,
                 $data,
@@ -642,18 +1099,33 @@ final class CBT_Admin_Subjects_Service
                 ['%s', '%s', '%s', '%s'],
                 ['%d']
             );
+            if ($updated === false) {
+                $failure_reason = 'gagal menyimpan ke database';
+                return 'failed';
+            }
 
-            return $updated === false ? 'failed' : 'updated';
+            self::sync_bank_exam_title((int) $existing['id'], (string) ($existing['name'] ?? ''), $name);
+            return 'updated';
         }
 
-        $data['created_at'] = current_time('mysql');
+        $data = [
+            'name' => $name,
+            'code' => $code,
+            'description' => $description,
+            'updated_at' => current_time('mysql'),
+            'created_at' => current_time('mysql'),
+        ];
         $inserted = $wpdb->insert(
             $table,
             $data,
             ['%s', '%s', '%s', '%s', '%s']
         );
+        if (!$inserted) {
+            $failure_reason = 'gagal menyimpan ke database';
+            return 'failed';
+        }
 
-        return $inserted ? 'created' : 'failed';
+        return 'created';
     }
 
     private static function get_subject_import_state_key(string $token): string

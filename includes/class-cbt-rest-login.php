@@ -79,6 +79,38 @@ trait CBT_REST_Login_Routes
         return 3600;
     }
 
+    /**
+     * Atomically increment a rate-limit counter.
+     *
+     * When the WordPress object cache is backed by Redis, this uses INCR
+     * (atomic) instead of get + set (race-prone). Falls back to transients
+     * when a Redis-capable object cache is not available.
+     */
+    private static function atomic_increment_rate_limit(string $key, int $ttl): int
+    {
+        // Try Redis-backed wp_cache first (atomic INCR via object cache).
+        if (wp_using_ext_object_cache()) {
+            $cache_key = 'cbt_rate:' . $key;
+            $cache_group = 'cbt_rate_limit';
+            $current = wp_cache_get($cache_key, $cache_group);
+
+            if ($current === false) {
+                // First attempt — initialize to 1.
+                wp_cache_set($cache_key, 1, $cache_group, $ttl);
+                return 1;
+            }
+
+            $new_value = max(1, (int) $current + 1);
+            wp_cache_set($cache_key, $new_value, $cache_group, $ttl);
+            return $new_value;
+        }
+
+        // Fallback: transient-based (non-atomic, but functional).
+        $attempts = max(0, (int) get_transient($key)) + 1;
+        set_transient($key, $attempts, $ttl);
+        return $attempts;
+    }
+
     private static function build_login_rate_limited_error(int $retry_after): WP_Error
     {
         $retry_after = max(1, $retry_after);
@@ -146,8 +178,7 @@ trait CBT_REST_Login_Routes
                 return $result;
             }
 
-            $attempts = max(0, (int) get_transient($limit_key)) + 1;
-            set_transient($limit_key, $attempts, self::get_login_rate_limit_attempt_ttl());
+            $attempts = self::atomic_increment_rate_limit($limit_key, self::get_login_rate_limit_attempt_ttl());
 
             if ($attempts < 5) {
                 return $result;

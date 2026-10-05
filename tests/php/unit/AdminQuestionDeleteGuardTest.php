@@ -164,7 +164,7 @@ final class AdminQuestionDeleteGuardTest extends TestCase
         self::assertContains('wp_cbt_question_categorization_items', $wpdb->cleanupTables);
         self::assertContains('wp_cbt_question_table_completion_cell_options', $wpdb->cleanupTables);
         self::assertSame('wp_cbt_options', end($wpdb->cleanupTables));
-        self::assertStringContainsString('cbt_msg=Question+deleted', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_msg=Soal+%23', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
     }
 
     #[RunInSeparateProcess]
@@ -197,7 +197,7 @@ final class AdminQuestionDeleteGuardTest extends TestCase
         self::assertSame([72], CBT_REST::$warmedDeliveryExamIds);
         self::assertSame([72], CBT_REST::$warmedStartAttemptExamIds);
         self::assertSame(1, $wpdb->deleteCalls);
-        self::assertStringContainsString('cbt_msg=Question+deleted', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
+        self::assertStringContainsString('cbt_msg=Soal+%23', (string) ($GLOBALS['cbt_test_last_redirect'] ?? ''));
     }
 
     private function bootstrapQuestionsDeleteGuardScaffold(): void

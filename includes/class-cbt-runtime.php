@@ -408,6 +408,13 @@ class CBT_Runtime
 
             return is_array($results) && count($results) === $operation_count;
         } catch (Throwable $throwable) {
+            error_log(sprintf(
+                '[CBT] Redis pipeline buffer write failed for attempt %d: %s in %s:%d',
+                $attempt_id,
+                $throwable->getMessage(),
+                $throwable->getFile(),
+                $throwable->getLine()
+            ));
             return false;
         }
     }
@@ -1544,6 +1551,11 @@ class CBT_Runtime
             $acquired = ($result === true || strtoupper((string) $result) === 'OK');
             return $acquired ? $token : '';
         } catch (Throwable $throwable) {
+            error_log(sprintf(
+                '[CBT] Redis named lock acquire failed for key %s: %s',
+                $key,
+                $throwable->getMessage()
+            ));
             return '';
         }
     }
