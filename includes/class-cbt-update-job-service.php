@@ -41,6 +41,11 @@ final class CBT_Update_Job_Service
      */
     public static function start_install(string $source = 'ajax')
     {
+        $busy = self::reject_when_mutation_running();
+        if (is_wp_error($busy)) {
+            return $busy;
+        }
+
         $state = CBT_Update_Release_Helper::get_release_state(true);
         $ready = CBT_Update_Release_Helper::validate_install_ready($state);
         if (is_wp_error($ready)) {
@@ -69,6 +74,11 @@ final class CBT_Update_Job_Service
      */
     public static function start_rollback(string $backup_id, string $source = 'ajax')
     {
+        $busy = self::reject_when_mutation_running();
+        if (is_wp_error($busy)) {
+            return $busy;
+        }
+
         $backup = CBT_Update_Backup_Service::get_backup($backup_id);
         if (!is_array($backup)) {
             return new WP_Error('backup_not_found', 'Backup rollback tidak ditemukan.');
@@ -125,15 +135,48 @@ final class CBT_Update_Job_Service
             return $job;
         }
 
-        $type = (string) ($job['type'] ?? 'check');
-        if ($type === 'check') {
-            return self::tick_check($job);
-        }
-        if ($type === 'rollback') {
-            return self::tick_rollback($job);
+        // Polling ganda (dua tab, retry saat unduhan lambat) tidak boleh menjalankan stage yang sama
+        // bersamaan: dua Plugin_Upgrader yang menimpa folder plugin sekaligus bisa merusak instalasi.
+        $lock_key = 'update_job_tick:' . (string) ($job['token'] ?? '');
+        $has_lock = class_exists('CBT_Cache') ? CBT_Cache::acquire_lock($lock_key, 300, ['type' => 'update_job_tick']) : true;
+        if (!$has_lock) {
+            return $job;
         }
 
-        return self::tick_install($job);
+        try {
+            $type = (string) ($job['type'] ?? 'check');
+            if ($type === 'check') {
+                return self::tick_check($job);
+            }
+            if ($type === 'rollback') {
+                return self::tick_rollback($job);
+            }
+
+            return self::tick_install($job);
+        } finally {
+            if (class_exists('CBT_Cache')) {
+                CBT_Cache::release_lock($lock_key);
+            }
+        }
+    }
+
+    /**
+     * @return true|WP_Error
+     */
+    private static function reject_when_mutation_running()
+    {
+        $active = self::get_active_job();
+        if (
+            is_array($active)
+            && in_array((string) ($active['type'] ?? ''), ['install', 'rollback'], true)
+            && in_array((string) ($active['status'] ?? ''), ['running', 'paused', 'reload_required'], true)
+            // Job yang macet (mis. PHP crash di tengah install) tidak boleh memblokir update selamanya.
+            && (time() - (int) ($active['updated_at_ts'] ?? 0)) < 1800
+        ) {
+            return new WP_Error('update_job_running', 'Masih ada proses update/rollback yang berjalan. Tunggu sampai selesai.');
+        }
+
+        return true;
     }
 
     /**
